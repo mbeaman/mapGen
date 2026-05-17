@@ -50,7 +50,11 @@ fn mesh_invariants() {
     assert_eq!(mesh.neighbors.len(), n);
 
     for (i, verts) in mesh.cell_vertices.iter().enumerate() {
-        assert!(verts.len() >= 3, "cell {i} has only {} vertices", verts.len());
+        assert!(
+            verts.len() >= 3,
+            "cell {i} has only {} vertices",
+            verts.len()
+        );
         for &v in verts {
             assert!(
                 (v as usize) < mesh.vertices.len(),
