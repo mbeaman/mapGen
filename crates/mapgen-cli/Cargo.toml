@@ -20,3 +20,6 @@ clap = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 flate2 = { workspace = true }
+resvg = { workspace = true }
+usvg = { workspace = true }
+tiny-skia = { workspace = true }

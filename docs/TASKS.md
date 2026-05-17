@@ -51,23 +51,28 @@ session, and ship a manual tuning tool to replace the Refinery.
 
 ### Sweep CLI
 
-- [ ] **(3-4h) `mapgen sweep` subcommand.**
-  - Spec: `mapgen sweep --seed <u64> --knob <name> --range <lo>..<hi>
-    --steps <n> --out <dir>`
-  - Renders N maps with that knob varied; writes `<knob>_<value>.svg` per
-    step + an `index.html` that grids them for eyeball selection.
-  - Initial supported knobs: `erosion_rate`, `base_precip`, `lapse_rate`,
-    `axial_tilt`.
-  - Acceptance: `mapgen sweep --seed 42 --knob erosion_rate --range
-    0.01..0.10 --steps 8 --out /tmp/sweep` produces 8 PNGs + index.html.
+- [x] **(3-4h) `mapgen sweep` subcommand.**
+  - Shipped. New `Knob` enum in `crates/mapgen-cli/src/sweep.rs` maps
+    `{erosion_rate, base_precip, lapse_rate, axial_tilt}` → field
+    overrides on `ErosionParams` / `ClimateParams`. Pipeline now exposes
+    `mapgen_world::generate_full_with(params, erosion_params,
+    climate_params)`; the original `generate_full` is a thin
+    defaults-only wrapper.
+  - PNG export wired via `resvg` 0.47 / `usvg` 0.47 / `tiny-skia` 0.12
+    (workspace-pinned, native-only — added to `mapgen-cli` only).
+    Confirmed acceptance: `mapgen sweep --seed 42 --knob erosion_rate
+    --range 0.01..0.10 --steps 8 --out /tmp/mapgen-sweep` writes 8 PNGs
+    + 8 SVGs + `index.html`; first run with compile ~14s, subsequent
+    runs <1s.
+  - `parse_range` / `Knob::parse` covered by 6 unit tests in
+    `sweep::tests`.
 
-- [ ] **(15m) tuning log.**
-  - Create `docs/tuning_log.md`.
-  - First entry: what we manually chose for the existing realism knobs
-    (`base_precip = 0.7`, `lapse_rate = 0.45`, Köppen `arid_threshold
-    = 0.10 + 0.04·t_warm`, etc.) and the seed/audit that justified each.
-  - Acceptance: file exists; an external reader can reconstruct *why*
-    each default has its current value.
+- [x] **(15m) tuning log.**
+  - `docs/tuning_log.md` shipped. Retroactive first pass: every climate,
+    erosion, Köppen, hydrology, and biome knob currently in the codebase
+    listed with current value, justification, method (sweep / audit /
+    derived / reference), and source commit. Closes with three named
+    sweep candidates for the next round.
 
 ---
 

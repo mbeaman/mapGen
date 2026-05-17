@@ -1,5 +1,7 @@
 //! `mapgen` — native developer CLI.
 
+mod sweep;
+
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
@@ -44,6 +46,35 @@ enum Cmd {
         #[arg(long, default_value = "maps/world.svg")]
         out: PathBuf,
     },
+    /// Sweep one parameter knob across a range and render every step
+    /// plus an `index.html` grid for eyeball selection.
+    Sweep {
+        #[arg(long)]
+        seed: u64,
+        /// Knob to vary. One of: erosion_rate, base_precip, lapse_rate, axial_tilt.
+        #[arg(
+            long,
+            long_help = "Knob to vary. Supported (default · typical range · units):\n  \
+                         erosion_rate (0.04 · 0.01..0.10 · unitless k)\n  \
+                         base_precip  (0.7  · 0.4..1.0   · saturated-ocean fraction)\n  \
+                         lapse_rate   (0.45 · 0.30..0.60 · normalized °C per unit elev)\n  \
+                         axial_tilt   (0.41 · 0.20..0.50 · RADIANS — 0.41 ≈ 23.5°)"
+        )]
+        knob: String,
+        /// `lo..hi` (e.g. `0.01..0.10`). Inclusive form `lo..=hi` accepted.
+        #[arg(long)]
+        range: String,
+        #[arg(long, default_value_t = 8)]
+        steps: usize,
+        /// Cell count per generated world. Lower = faster sweep,
+        /// fewer details per map. 4000 is a good ratio for tuning.
+        #[arg(long, default_value_t = 4_000)]
+        cells: usize,
+        #[arg(long, default_value = "biomes")]
+        style: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -76,6 +107,17 @@ fn main() -> Result<()> {
             }
             fs::write(&out, svg).with_context(|| format!("writing {}", out.display()))?;
             eprintln!("wrote svg: {}", out.display());
+        }
+        Cmd::Sweep {
+            seed,
+            knob,
+            range,
+            steps,
+            cells,
+            style,
+            out,
+        } => {
+            sweep::run(seed, &knob, &range, steps, cells, &style, &out)?;
         }
     }
     Ok(())

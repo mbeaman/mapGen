@@ -44,12 +44,28 @@ impl Default for GenerateParams {
 /// that exercise individual stages should call `generate()` + the stages
 /// they need.
 pub fn generate_full(params: GenerateParams) -> WorldData {
+    generate_full_with(
+        params,
+        erosion::ErosionParams::default(),
+        climate::ClimateParams::default(),
+    )
+}
+
+/// Same as [`generate_full`] but with caller-supplied `ErosionParams` and
+/// `ClimateParams`. Used by the `mapgen sweep` CLI to vary a single
+/// parameter while keeping the rest of the pipeline at defaults.
+/// Defaults-only callers should prefer [`generate_full`].
+pub fn generate_full_with(
+    params: GenerateParams,
+    erosion_params: erosion::ErosionParams,
+    climate_params: climate::ClimateParams,
+) -> WorldData {
     let rng = mapgen_core::StageRng::new(params.seed);
     let mut world = generate(params);
 
     erosion::run(
         &mut world,
-        erosion::ErosionParams::default(),
+        erosion_params,
         &mut rng.stream(mapgen_core::Stage::Erosion),
     );
     hydrology::detect_coast(&mut world);
@@ -58,7 +74,7 @@ pub fn generate_full(params: GenerateParams) -> WorldData {
     hydrology::accumulate_flow(&mut world, &flow_dir);
     hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
     ocean::run(&mut world);
-    climate_seasonal::run(&mut world, climate::ClimateParams::default());
+    climate_seasonal::run(&mut world, climate_params);
     biomes::classify(&mut world);
     world
 }

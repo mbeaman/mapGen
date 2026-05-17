@@ -38,6 +38,11 @@ ciborium = "0.2"
 
 # Rendering
 svg = "0.17"
+# PNG export (native-only — used by mapgen-cli for the sweep grid).
+# Arch §1 originally pinned 0.43; bumped to current stable after API verification.
+resvg = "0.47"
+usvg = "0.47"
+tiny-skia = "0.12"
 
 # Math (cross-platform determinism)
 libm = "0.2"
