@@ -20,3 +20,8 @@ Cargo.lock.bak
 # Env
 .env
 .env.local
+
+# Session-local state (resume prompts, scratch notes) — NEVER commit
+/.local/
+*.session-state.md
+*.resume-prompt.md
