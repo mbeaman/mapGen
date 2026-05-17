@@ -38,13 +38,19 @@ pub struct WorldMeta {
 
 impl Default for WorldMeta {
     fn default() -> Self {
-        Self { seed: 0, schema_version: SCHEMA_VERSION }
+        Self {
+            seed: 0,
+            schema_version: SCHEMA_VERSION,
+        }
     }
 }
 
 impl WorldMeta {
     pub fn new(seed: u64) -> Self {
-        Self { seed, schema_version: SCHEMA_VERSION }
+        Self {
+            seed,
+            schema_version: SCHEMA_VERSION,
+        }
     }
 }
 

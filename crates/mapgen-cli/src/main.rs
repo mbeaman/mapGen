@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use flate2::{Compression, read::GzDecoder, write::GzEncoder};
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use mapgen_core::WorldData;
 use mapgen_render::style::Style;
 use mapgen_world::GenerateParams;
@@ -49,7 +49,13 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Generate { seed, cells, plates, nations, out } => {
+        Cmd::Generate {
+            seed,
+            cells,
+            plates,
+            nations,
+            out,
+        } => {
             let params = GenerateParams {
                 seed,
                 cell_count: cells,

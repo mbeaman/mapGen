@@ -45,7 +45,11 @@ pub fn generate(params: GenerateParams) -> WorldData {
     );
 
     let mesh_data = mesh.into_mesh_data();
-    let terrain = plates::generate(&mesh_data, params.plate_count, &mut rng.stream(Stage::Plates));
+    let terrain = plates::generate(
+        &mesh_data,
+        params.plate_count,
+        &mut rng.stream(Stage::Plates),
+    );
 
     WorldData {
         meta: WorldMeta::new(params.seed),

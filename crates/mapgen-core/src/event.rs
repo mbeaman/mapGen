@@ -99,7 +99,9 @@ impl EventLog {
     }
 
     pub fn major(&self, salience_floor: f32) -> impl Iterator<Item = &Event> {
-        self.events.iter().filter(move |e| e.salience >= salience_floor)
+        self.events
+            .iter()
+            .filter(move |e| e.salience >= salience_floor)
     }
 }
 

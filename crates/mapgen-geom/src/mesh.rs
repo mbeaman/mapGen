@@ -37,11 +37,17 @@ impl Mesh {
         let seeds = poisson_disk_2d(params.width, params.height, min_dist, 30, rng);
         let sites: Vec<Point> = seeds
             .iter()
-            .map(|p| Point { x: p[0] as f64, y: p[1] as f64 })
+            .map(|p| Point {
+                x: p[0] as f64,
+                y: p[1] as f64,
+            })
             .collect();
 
         let bbox = BoundingBox::new(
-            Point { x: (params.width as f64) / 2.0, y: (params.height as f64) / 2.0 },
+            Point {
+                x: (params.width as f64) / 2.0,
+                y: (params.height as f64) / 2.0,
+            },
             params.width as f64,
             params.height as f64,
         );
@@ -53,7 +59,11 @@ impl Mesh {
             .build()
             .expect("voronoi build");
 
-        Self { width: params.width, height: params.height, voronoi }
+        Self {
+            width: params.width,
+            height: params.height,
+            voronoi,
+        }
     }
 
     pub fn cell_count(&self) -> usize {
@@ -123,7 +133,12 @@ mod tests {
     fn neighbor_symmetry() {
         let mut rng = StageRng::new(3).stream(Stage::Mesh);
         let mesh = Mesh::build(
-            MeshBuildParams { width: 256.0, height: 256.0, target_cells: 400, lloyd_iterations: 2 },
+            MeshBuildParams {
+                width: 256.0,
+                height: 256.0,
+                target_cells: 400,
+                lloyd_iterations: 2,
+            },
             &mut rng,
         );
         let data = mesh.into_mesh_data();

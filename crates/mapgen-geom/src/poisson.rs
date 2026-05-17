@@ -27,10 +27,7 @@ pub fn poisson_disk_2d<R: RngCore>(
     let mut points: Vec<[f32; 2]> = Vec::new();
     let mut active: Vec<u32> = Vec::new();
 
-    let seed = [
-        rng.gen_range(0.0..width),
-        rng.gen_range(0.0..height),
-    ];
+    let seed = [rng.gen_range(0.0..width), rng.gen_range(0.0..height)];
     push(&mut points, &mut active, &mut grid, grid_w, cell_size, seed);
 
     while !active.is_empty() {

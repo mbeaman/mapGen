@@ -35,7 +35,11 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
     // 2. Per-plate kind / drift / base elevation.
     let mut plates: Vec<PlateRecord> = Vec::with_capacity(plate_count);
     for &c in &centers {
-        let kind = if rng.gen::<f32>() < 0.55 { PlateKind::Oceanic } else { PlateKind::Continental };
+        let kind = if rng.gen::<f32>() < 0.55 {
+            PlateKind::Oceanic
+        } else {
+            PlateKind::Continental
+        };
         let theta = rng.gen_range(0.0..TAU);
         let speed = rng.gen_range(0.4..1.0);
         let drift = [speed * fmath::cos(theta), speed * fmath::sin(theta)];
@@ -43,7 +47,12 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
             PlateKind::Oceanic => rng.gen_range(-0.55..-0.30),
             PlateKind::Continental => rng.gen_range(0.05..0.30),
         };
-        plates.push(PlateRecord { kind, center: c, drift, base_elevation });
+        plates.push(PlateRecord {
+            kind,
+            center: c,
+            drift,
+            base_elevation,
+        });
     }
 
     // 3. Assign each cell to nearest plate center.
@@ -62,7 +71,9 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
         .collect();
 
     // 4. Base elevation from plate.
-    let mut elevation: Vec<f32> = (0..n).map(|i| plates[plate_id[i].0 as usize].base_elevation).collect();
+    let mut elevation: Vec<f32> = (0..n)
+        .map(|i| plates[plate_id[i].0 as usize].base_elevation)
+        .collect();
 
     // 5. Boundary uplift. Walk every cell; for each neighbor on a different
     // plate, compute stress and accumulate an uplift contribution.
@@ -94,9 +105,9 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
             // Magnitude scaled by plate-kind interaction.
             let scale = match (plates[pi].kind, plates[pj].kind) {
                 (PlateKind::Continental, PlateKind::Continental) => 0.60, // fold belt + plateau
-                (PlateKind::Continental, PlateKind::Oceanic) => 0.50,     // coastal mountain on continent
-                (PlateKind::Oceanic, PlateKind::Continental) => -0.25,    // oceanic side subsides (trench)
-                (PlateKind::Oceanic, PlateKind::Oceanic) => 0.20,         // island arc
+                (PlateKind::Continental, PlateKind::Oceanic) => 0.50, // coastal mountain on continent
+                (PlateKind::Oceanic, PlateKind::Continental) => -0.25, // oceanic side subsides (trench)
+                (PlateKind::Oceanic, PlateKind::Oceanic) => 0.20,      // island arc
             };
             uplift[i] += stress * scale;
         }
@@ -108,7 +119,11 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
     // 6. Two passes of neighbor-averaging to soften plate seams.
     elevation = smooth(&mesh.neighbors, &elevation, 2, 0.5);
 
-    TerrainData { elevation, plate_id, plates }
+    TerrainData {
+        elevation,
+        plate_id,
+        plates,
+    }
 }
 
 #[inline]
@@ -128,7 +143,11 @@ fn smooth(neighbors: &[Vec<u32>], values: &[f32], passes: usize, weight: f32) ->
             for &j in ns {
                 sum += current[j as usize];
             }
-            let avg = if ns.is_empty() { current[i] } else { sum / ns.len() as f32 };
+            let avg = if ns.is_empty() {
+                current[i]
+            } else {
+                sum / ns.len() as f32
+            };
             next[i] = current[i] * (1.0 - weight) + avg * weight;
         }
         std::mem::swap(&mut current, &mut next);

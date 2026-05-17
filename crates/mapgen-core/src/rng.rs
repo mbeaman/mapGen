@@ -1,7 +1,7 @@
 //! Deterministic RNG harness. One master seed feeds independent sub-streams
 //! per pipeline stage so re-rolling a stage cannot perturb downstream stages.
 
-use rand_chacha::{ChaCha8Rng, rand_core::SeedableRng};
+use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
 /// Pipeline stages, each with an independent RNG sub-stream. Discriminants are
 /// part of the determinism contract — never renumber an existing stage; only
