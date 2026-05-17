@@ -5,6 +5,7 @@ pub mod biomes;
 pub mod climate;
 pub mod erosion;
 pub mod hydrology;
+pub mod noise;
 pub mod plates;
 
 use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};
@@ -34,7 +35,10 @@ impl Default for GenerateParams {
     }
 }
 
-/// Phase 1: mesh + plate-driven heightmap, nothing else.
+/// Build a world up through the geography pipeline: mesh, plate uplift,
+/// noise overlay with domain warping. Later stages (erosion, hydrology,
+/// climate, biomes) are called by the consumer explicitly so each can be
+/// tested and re-run in isolation.
 pub fn generate(params: GenerateParams) -> WorldData {
     let rng = StageRng::new(params.seed);
 
@@ -55,10 +59,16 @@ pub fn generate(params: GenerateParams) -> WorldData {
         &mut rng.stream(Stage::Plates),
     );
 
-    WorldData {
+    let mut world = WorldData {
         meta: WorldMeta::new(params.seed),
         mesh: mesh_data,
         terrain,
         ..Default::default()
-    }
+    };
+    noise::overlay(
+        &mut world,
+        noise::NoiseParams::default(),
+        &mut rng.stream(Stage::Noise),
+    );
+    world
 }
