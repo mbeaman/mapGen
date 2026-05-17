@@ -1,0 +1,21 @@
+[package]
+name = "mapgen-lore"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Claude integration. Native-only; never compiled for WASM."
+
+# Crate is a no-op on wasm32 to enforce the native-only invariant.
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+mapgen-core = { path = "../mapgen-core" }
+mapgen-history = { path = "../mapgen-history" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }

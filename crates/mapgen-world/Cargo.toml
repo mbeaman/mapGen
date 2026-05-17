@@ -1,0 +1,21 @@
+[package]
+name = "mapgen-world"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Geography pipeline: plates, noise, erosion, hydrology, climate, biomes, society."
+
+[dependencies]
+mapgen-core = { path = "../mapgen-core" }
+mapgen-geom = { path = "../mapgen-geom" }
+noise = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+serde = { workspace = true }
+smallvec = { workspace = true }
+indexmap = { workspace = true }
+libm = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

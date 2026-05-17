@@ -1,0 +1,18 @@
+[package]
+name = "mapgen-geom"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Voronoi mesh, Poisson-disk sampling, Lloyd relaxation."
+
+[dependencies]
+mapgen-core = { path = "../mapgen-core" }
+voronoice = { workspace = true }
+rand_chacha = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+smallvec = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -1,0 +1,22 @@
+[package]
+name = "mapgen-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Native developer CLI for mapgen."
+
+[[bin]]
+name = "mapgen"
+path = "src/main.rs"
+
+[dependencies]
+mapgen-core = { path = "../mapgen-core" }
+mapgen-world = { path = "../mapgen-world" }
+mapgen-history = { path = "../mapgen-history" }
+mapgen-render = { path = "../mapgen-render" }
+mapgen-lore = { path = "../mapgen-lore" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+flate2 = { workspace = true }

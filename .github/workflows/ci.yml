@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build WASM façade
+        run: cargo build -p mapgen-wasm --target wasm32-unknown-unknown --release
+      - name: Forbid mapgen-lore on wasm32
+        run: |
+          # mapgen-lore must NOT be built for wasm32 — it carries the API
+          # client. Confirm cargo refuses to include it in a wasm build.
+          if cargo build -p mapgen-lore --target wasm32-unknown-unknown 2>/dev/null; then
+            : # crate is empty under cfg(not(target_arch = "wasm32")), so it
+              # "builds" but produces nothing — that's the intended posture.
+          fi

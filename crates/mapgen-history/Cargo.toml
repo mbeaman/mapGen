@@ -1,0 +1,15 @@
+[package]
+name = "mapgen-history"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent-based history simulation and append-only event log."
+
+[dependencies]
+mapgen-core = { path = "../mapgen-core" }
+rand_chacha = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+indexmap = { workspace = true }
+smallvec = { workspace = true }
