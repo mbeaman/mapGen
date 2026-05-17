@@ -9,6 +9,7 @@ use style::Style;
 pub fn render(world: &WorldData, style: Style) -> String {
     match style {
         Style::Greyscale => style::greyscale::render(world),
+        Style::Biomes => style::biomes::render(world),
         Style::OrnateAntique => style::ornate_antique::render(world),
     }
 }
