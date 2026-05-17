@@ -73,24 +73,32 @@ pub fn render(world: &WorldData) -> String {
     out.push_str("</g>");
 
     // --- Rivers ----------------------------------------------------------
+    //
+    // Each consecutive cell-pair in a river chain is its own segment
+    // with a width derived from the upstream cell's flow value, so the
+    // river visibly widens at every confluence. Without this, the
+    // single per-river width misses the entire "river growth" story.
     out.push_str(
         r##"<g stroke="#3b6d99" fill="none" stroke-linecap="round" stroke-linejoin="round">"##,
     );
+    let flow = &world.hydrology.flow;
     for river in &world.hydrology.rivers {
         if river.cells.len() < 2 {
             continue;
         }
-        out.push_str(r##"<polyline points=""##);
-        for (k, &c) in river.cells.iter().enumerate() {
-            let s = mesh.sites[c as usize];
-            if k > 0 {
-                out.push(' ');
-            }
-            write!(out, "{:.1},{:.1}", s[0], s[1]).unwrap();
+        for w in river.cells.windows(2) {
+            let a = mesh.sites[w[0] as usize];
+            let b = mesh.sites[w[1] as usize];
+            // Width from the flow at the downstream cell — captures growth.
+            let f = flow.get(w[1] as usize).copied().unwrap_or(1.0);
+            let sw = (f.sqrt() * 0.18).clamp(0.5, 5.0);
+            write!(
+                out,
+                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke-width="{:.2}"/>"##,
+                a[0], a[1], b[0], b[1], sw
+            )
+            .unwrap();
         }
-        // Width clamps to a sensible visible range.
-        let sw = (river.width * 6.0).clamp(0.6, 4.0);
-        write!(out, r##"" stroke-width="{sw:.2}"/>"##).unwrap();
     }
     out.push_str("</g>");
 
@@ -137,6 +145,7 @@ fn biome_color(biome: u8, elev: f32) -> &'static str {
         11 => "#b8b3a8", // ALPINE
         12 => "#7da6c8", // SEA_SHALLOW
         13 => "#3a5d85", // SEA_DEEP
+        14 => "#4d8a3a", // RIPARIAN — saturated green river corridor
         _ => "#a0a0a0",  // unassigned / unknown
     }
 }

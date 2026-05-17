@@ -72,16 +72,14 @@ pub fn classify(world: &WorldData) -> Vec<KoppenClass> {
     out
 }
 
-/// One cell's classification. Inputs are normalized:
-///
-/// * temperature where 0 ≈ 0°C (freezing), 0.04 ≈ +1°C, 1.0 ≈ +25°C
-///   (tropical sea-level mean);
-/// * precipitation as fraction of saturated-ocean baseline.
+/// One cell's classification. Inputs are normalized as follows.
+/// Temperature: 0 ≈ 0°C (freezing), 0.04 ≈ +1°C, 1.0 ≈ +25°C (tropical
+/// sea-level mean). Precipitation: fraction of saturated-ocean baseline.
 ///
 /// Thresholds are calibrated against the actual distribution our 3-cell
-/// + orographic model produces on a 4-6k cell continent. Earth-faithful
-/// references: tree line ≈ 10°C warmest month, tropical floor ≈ 18°C
-/// coldest month, Köppen aridity P/T ≈ 14 cm/°C.
+/// orographic model produces on a 4-6k cell continent. Earth-faithful
+/// references: tree line at ~10°C warmest month, tropical floor at
+/// ~18°C coldest month, Köppen aridity P/T threshold ~14 cm/°C.
 fn classify_one(ts: f32, tw: f32, ps: f32, pw: f32) -> KoppenClass {
     let t_warm = ts.max(tw); // warmest-month proxy
     let t_cold = ts.min(tw); // coldest-month proxy

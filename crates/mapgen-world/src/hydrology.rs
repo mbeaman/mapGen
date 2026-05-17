@@ -213,28 +213,62 @@ pub fn accumulate_flow(world: &mut WorldData, flow_dir: &[Option<u32>]) {
     world.hydrology.flow = flow;
 }
 
-/// Extract rivers (cells over the flow threshold) by walking from each
-/// headwater downstream until reaching sea, lake, or the map boundary.
-/// River width scales as `sqrt(max_flow_along_chain)` per Amit Patel.
+/// Extract rivers as polylines from physical headwaters down to sea or
+/// lake. Realism rules (calibrated against the user's audit):
 ///
-/// Lakes are deferred — the priority-flood epsilon currently makes every
-/// raised plateau drain to the sea, so the lake table stays empty for now
-/// and Phase 2's lake extraction lives with a follow-up improvement.
-pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], flow_threshold: f32) {
+/// * **Adaptive threshold** — top ~12% of land cells by flow
+///   accumulation become river-eligible. A fixed numeric threshold does
+///   not generalize across world sizes / climates; with 6k-cell worlds
+///   and unit-precip flow accumulation, 0.05 included nearly every
+///   land cell.
+/// * **Physical headwaters** — a river only starts at a cell whose
+///   elevation is high enough to be a highland (≥ 0.30 normalized) OR
+///   that is adjacent to a lake (lake-outlet origin). Lowland creeks
+///   that spontaneously appear in flat country are dropped.
+/// * **Minimum length** — rivers under 3 cells are dropped (creeks, not
+///   rivers).
+/// * **Width** — per-river `width` field stores the maximum flow along
+///   the chain; the renderer additionally varies segment width per-cell
+///   from `world.hydrology.flow[cell]` so the river grows visibly at
+///   confluences.
+///
+/// The `_flow_threshold` argument is retained for API compatibility but
+/// is now ignored — the adaptive percentile rule supersedes it.
+pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], _flow_threshold: f32) {
+    use std::collections::BTreeSet;
+
     let n = world.mesh.cell_count();
     let elev = &world.terrain.elevation;
     let flow = &world.hydrology.flow;
+    let neighbors = &world.mesh.neighbors;
 
-    // A cell is "river" if it's land and carries enough flow.
+    // 1. Adaptive threshold.
+    let mut land_flows: Vec<f32> = (0..n).filter(|&i| elev[i] > 0.0).map(|i| flow[i]).collect();
+    if land_flows.is_empty() {
+        world.hydrology.rivers = Vec::new();
+        return;
+    }
+    land_flows.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    let cutoff_idx = ((land_flows.len() as f32) * 0.12) as usize;
+    let adaptive_threshold = land_flows.get(cutoff_idx).copied().unwrap_or(0.0).max(2.0);
+
+    // 2. Mark river-eligible cells.
     let mut is_river = vec![false; n];
     for i in 0..n {
-        if elev[i] > 0.0 && flow[i] >= flow_threshold {
+        if elev[i] > 0.0 && flow[i] >= adaptive_threshold {
             is_river[i] = true;
         }
     }
 
-    // Count incoming river-flow edges per cell so we can identify
-    // headwaters (zero-incoming river cells).
+    // 3. Lake cell index for headwater-at-outlet rule.
+    let lake_cells: BTreeSet<u32> = world
+        .hydrology
+        .lakes
+        .iter()
+        .flat_map(|l| l.cells.iter().copied())
+        .collect();
+
+    // 4. Headwaters = river cells with no upstream river cell.
     let mut incoming = vec![0u32; n];
     for c in 0..n {
         if !is_river[c] {
@@ -252,7 +286,13 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], flow_thre
         if !is_river[start] || incoming[start] != 0 {
             continue;
         }
-        // Walk downstream from the headwater until we hit sea or a dead end.
+        // Physical-origin rule.
+        let is_highland = elev[start] >= 0.30;
+        let is_lake_outlet = neighbors[start].iter().any(|&j| lake_cells.contains(&j));
+        if !is_highland && !is_lake_outlet {
+            continue;
+        }
+
         let mut chain = vec![start as u32];
         let mut c = start;
         while let Some(d) = flow_dir[c] {
@@ -262,7 +302,10 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], flow_thre
                 break;
             }
         }
-        // Width scales as sqrt(max flow on the chain).
+        if chain.len() < 3 {
+            continue;
+        }
+
         let max_flow = chain
             .iter()
             .map(|&i| flow[i as usize])
@@ -275,5 +318,5 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], flow_thre
     }
 
     world.hydrology.rivers = rivers;
-    // `fill_depressions` already populated `lakes`; don't clobber them here.
+    // `fill_depressions` already populated `lakes`; don't clobber.
 }

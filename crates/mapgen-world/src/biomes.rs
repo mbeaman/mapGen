@@ -20,6 +20,10 @@ pub const SHRUBLAND: u8 = 10;
 pub const ALPINE: u8 = 11;
 pub const SEA_SHALLOW: u8 = 12;
 pub const SEA_DEEP: u8 = 13;
+/// Riparian / gallery — applied as an override to river cells (and
+/// near-river cells) that pass through arid surroundings, modeling the
+/// Nile-through-Sahara effect. Counts as biome 14.
+pub const RIPARIAN: u8 = 14;
 
 /// Sentinel for "not yet assigned." Tests rely on this.
 pub const UNASSIGNED: u8 = u8::MAX;
@@ -124,5 +128,44 @@ pub fn classify(world: &mut WorldData) {
     }
 
     world.climate.biome = biome;
+    apply_riparian(world);
     crate::patch::apply_biome_patches(world);
+}
+
+/// Overwrite the biome of every river cell that passes through arid
+/// surroundings (or whose own classified biome is arid) with RIPARIAN
+/// — modeling the Nile-through-Sahara / Colorado-through-Mojave effect.
+/// A river through a forest stays forest; only the arid-corridor case
+/// becomes a green riparian stripe.
+pub fn apply_riparian(world: &mut WorldData) {
+    let n = world.mesh.cell_count();
+    if world.climate.biome.len() != n {
+        return;
+    }
+    // Collect river cells.
+    let river_cells: std::collections::BTreeSet<u32> = world
+        .hydrology
+        .rivers
+        .iter()
+        .flat_map(|r| r.cells.iter().copied())
+        .collect();
+    if river_cells.is_empty() {
+        return;
+    }
+    let arid = |b: u8| matches!(b, DESERT | SHRUBLAND | SAVANNA);
+    let mut new_biomes = world.climate.biome.clone();
+    for &rc in &river_cells {
+        let i = rc as usize;
+        if world.terrain.elevation[i] <= 0.0 {
+            continue;
+        }
+        let self_arid = arid(world.climate.biome[i]);
+        let any_arid_neighbor = world.mesh.neighbors[i]
+            .iter()
+            .any(|&j| arid(world.climate.biome[j as usize]));
+        if self_arid || any_arid_neighbor {
+            new_biomes[i] = RIPARIAN;
+        }
+    }
+    world.climate.biome = new_biomes;
 }
