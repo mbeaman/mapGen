@@ -161,7 +161,7 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
 ///   0.33 : subtropical desert trough → 0.4
 ///   0.55 : mid-lat westerly storm track → 1.1
 ///   1.0  : polar dry → 0.3
-fn band_precip(abs_lat: f32) -> f32 {
+pub(crate) fn band_precip(abs_lat: f32) -> f32 {
     // Two cosine bumps + linear pole falloff.
     let itcz = (-((abs_lat - 0.0) * 4.5).powi(2)).exp() * 0.9;
     let storm = (-((abs_lat - 0.55) * 4.5).powi(2)).exp() * 0.7;
@@ -174,7 +174,7 @@ fn band_precip(abs_lat: f32) -> f32 {
 ///
 /// Convention: wind vector points in the direction air is moving.
 /// Returned vector is in world coords where +x = east, +y = south.
-fn wind_vector(lat_norm: f32) -> [f32; 2] {
+pub(crate) fn wind_vector(lat_norm: f32) -> [f32; 2] {
     let abs_lat = lat_norm.abs();
     // Convert |abs_lat| to a "band index" in [0..3]:
     //   0.0–0.33: trades (easterlies blowing toward equator).

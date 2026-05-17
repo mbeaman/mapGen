@@ -3,8 +3,10 @@
 
 pub mod biomes;
 pub mod climate;
+pub mod climate_seasonal;
 pub mod erosion;
 pub mod hydrology;
+pub mod koppen;
 pub mod noise;
 pub mod ocean;
 pub mod patch;
@@ -56,7 +58,7 @@ pub fn generate_full(params: GenerateParams) -> WorldData {
     hydrology::accumulate_flow(&mut world, &flow_dir);
     hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
     ocean::run(&mut world);
-    climate::run(&mut world, climate::ClimateParams::default());
+    climate_seasonal::run(&mut world, climate::ClimateParams::default());
     biomes::classify(&mut world);
     world
 }

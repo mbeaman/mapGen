@@ -137,6 +137,17 @@ pub struct ClimateData {
     /// if ocean stage hasn't run.
     #[serde(default)]
     pub coastal_temp_anomaly: Vec<f32>,
+    /// Seasonal climate (filled by `climate_seasonal::run`). Annual
+    /// values above are means of these two passes. Empty if seasonal
+    /// stage hasn't run.
+    #[serde(default)]
+    pub temperature_summer: Vec<f32>,
+    #[serde(default)]
+    pub temperature_winter: Vec<f32>,
+    #[serde(default)]
+    pub precipitation_summer: Vec<f32>,
+    #[serde(default)]
+    pub precipitation_winter: Vec<f32>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
