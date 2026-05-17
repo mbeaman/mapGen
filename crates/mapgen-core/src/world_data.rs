@@ -9,7 +9,7 @@ use crate::{
     ids::PlateId,
 };
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -28,6 +28,10 @@ pub struct WorldData {
     pub events: EventLog,
     #[serde(default)]
     pub works: Vec<Work>,
+    /// Lore-driven overrides on top of scientific defaults. Empty by
+    /// default. History sim and authored content populate this.
+    #[serde(default)]
+    pub patches: crate::patch::PatchData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -128,6 +132,11 @@ pub struct ClimateData {
     pub precipitation: Vec<f32>,
     pub temperature: Vec<f32>,
     pub biome: Vec<u8>,
+    /// Per-cell temperature delta from ocean currents (gyre limbs +
+    /// upwelling). Computed by `ocean::run` before `climate::run`. Empty
+    /// if ocean stage hasn't run.
+    #[serde(default)]
+    pub coastal_temp_anomaly: Vec<f32>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

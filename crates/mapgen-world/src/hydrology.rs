@@ -17,7 +17,7 @@ use std::collections::BinaryHeap;
 
 use mapgen_core::{
     fmath,
-    world_data::{River, WorldData},
+    world_data::{Lake, River, WorldData},
 };
 
 /// Min-heap entry: lowest elevation pops first; ties broken by cell index
@@ -70,14 +70,23 @@ pub fn detect_coast(world: &mut WorldData) {
 /// A tiny ε is added to each raised cell to guarantee a strict descent
 /// gradient out of formerly-flat regions, otherwise `flow_directions`
 /// would return `None` over the filled plateau.
+///
+/// Side effect: a cell that gets raised by *more than* a small threshold
+/// is recorded as an internally-drained basin cell. After the flood
+/// completes, contiguous groups of these cells are grouped into Lake
+/// records, with `level` = their (already-raised) elevation.
 pub fn fill_depressions(world: &mut WorldData) {
     let n = world.mesh.cell_count();
     let neighbors = &world.mesh.neighbors;
     let elev = &mut world.terrain.elevation;
     const EPS: f32 = 1e-5;
+    /// Raise amount above which we treat the cell as a real lake (not
+    /// just a flat-region ε offset).
+    const LAKE_RAISE_THRESHOLD: f32 = 0.005;
 
     let mut processed = vec![false; n];
     let mut heap: BinaryHeap<ElevCell> = BinaryHeap::new();
+    let mut raised = vec![false; n]; // cells filled enough to count as a lake
 
     // Seed from sea cells — water can always drain there.
     for i in 0..n {
@@ -101,10 +110,12 @@ pub fn fill_depressions(world: &mut WorldData) {
                 continue;
             }
             processed[j] = true;
-            // Raise to just above spill so flow_directions can find a
-            // strictly-descending exit.
+            let original = elev[j];
             if elev[j] <= spill {
                 elev[j] = spill + EPS;
+                if elev[j] - original > LAKE_RAISE_THRESHOLD {
+                    raised[j] = true;
+                }
             }
             heap.push(ElevCell {
                 elev: elev[j],
@@ -112,6 +123,38 @@ pub fn fill_depressions(world: &mut WorldData) {
             });
         }
     }
+
+    // Group contiguous raised cells into Lake records via BFS.
+    let mut visited = vec![false; n];
+    let mut lakes: Vec<Lake> = Vec::new();
+    for start in 0..n {
+        if !raised[start] || visited[start] {
+            continue;
+        }
+        let mut queue = vec![start as u32];
+        visited[start] = true;
+        let mut group: Vec<u32> = Vec::new();
+        while let Some(c) = queue.pop() {
+            group.push(c);
+            for &nbr in &neighbors[c as usize] {
+                let j = nbr as usize;
+                if !visited[j] && raised[j] {
+                    visited[j] = true;
+                    queue.push(nbr);
+                }
+            }
+        }
+        // Lake level: max elevation of its cells (= spill point).
+        let level = group
+            .iter()
+            .map(|&c| world.terrain.elevation[c as usize])
+            .fold(f32::NEG_INFINITY, f32::max);
+        lakes.push(Lake {
+            cells: group,
+            level,
+        });
+    }
+    world.hydrology.lakes = lakes;
 }
 
 /// Steepest-descent flow direction. Returns one entry per cell: `Some(j)`
@@ -232,5 +275,5 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], flow_thre
     }
 
     world.hydrology.rivers = rivers;
-    world.hydrology.lakes = Vec::new();
+    // `fill_depressions` already populated `lakes`; don't clobber them here.
 }

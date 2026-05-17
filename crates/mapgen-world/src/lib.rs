@@ -6,6 +6,8 @@ pub mod climate;
 pub mod erosion;
 pub mod hydrology;
 pub mod noise;
+pub mod ocean;
+pub mod patch;
 pub mod plates;
 
 use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};
@@ -33,6 +35,30 @@ impl Default for GenerateParams {
             nation_count: 8,
         }
     }
+}
+
+/// Convenience: run every scientific stage in canonical order and return
+/// a world ready for rendering. CLI consumers should call this; tests
+/// that exercise individual stages should call `generate()` + the stages
+/// they need.
+pub fn generate_full(params: GenerateParams) -> WorldData {
+    let rng = mapgen_core::StageRng::new(params.seed);
+    let mut world = generate(params);
+
+    erosion::run(
+        &mut world,
+        erosion::ErosionParams::default(),
+        &mut rng.stream(mapgen_core::Stage::Erosion),
+    );
+    hydrology::detect_coast(&mut world);
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
+    hydrology::accumulate_flow(&mut world, &flow_dir);
+    hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
+    ocean::run(&mut world);
+    climate::run(&mut world, climate::ClimateParams::default());
+    biomes::classify(&mut world);
+    world
 }
 
 /// Build a world up through the geography pipeline: mesh, plate uplift,

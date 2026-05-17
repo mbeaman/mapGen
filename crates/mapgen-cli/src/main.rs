@@ -63,7 +63,7 @@ fn main() -> Result<()> {
                 nation_count: nations,
                 ..Default::default()
             };
-            let world = mapgen_world::generate(params);
+            let world = mapgen_world::generate_full(params);
             write_world(&out, &world)?;
             eprintln!("wrote world: {}", out.display());
         }

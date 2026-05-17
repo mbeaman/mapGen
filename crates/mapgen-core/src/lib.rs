@@ -4,6 +4,7 @@ pub mod entities;
 pub mod event;
 pub mod fmath;
 pub mod ids;
+pub mod patch;
 pub mod rng;
 pub mod world_data;
 
