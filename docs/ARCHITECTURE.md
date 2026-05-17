@@ -1,5 +1,17 @@
 # Fantasy Map Generator — Implementation Plan
 
+> **Status: LOCKED 2026-05-17.** Reviewed by one constructive reviewer + two
+> devil's advocates (technical, product/scope) on 2026-05-17. Both DAs
+> converged on RADICAL SCOPE CUT against the originally proposed §5.5
+> (Refinery + Time-Resolved Simulation). This document adopts their
+> prescription: keep the conceptual content of §5.5 as design reference,
+> defer the Refinery to Phase 6+, replace Phase 2.5 with a one-day
+> property-tests + sweep-CLI pass, proceed directly to Phase 3.
+>
+> Unlocking requires explicit user approval and a triggering signal —
+> e.g., the first ornate render reveals realism gaps that targeted
+> property tests can't catch.
+
 ## Context
 
 Greenfield Rust project at `/home/user/mapGen` on branch `claude/fantasy-map-generator-1du5B`. The user wants a fantasy map generator that produces lore-rich worlds with cartography that looks like it came from "an exotic map shop." This plan covers the **vertical-slice MVP**: one continent, 6–12 nations, 500 years of simulated history, and one ornately rendered SVG — proving the full pipeline end-to-end before expanding.
@@ -116,20 +128,29 @@ Exit: `cargo run -p mapgen-cli -- generate --seed 1 | mapgen render > out.svg` s
 Droplet erosion + thermal sweep; Priority-Flood depression fill → steepest-descent flow graph → flow accumulation → rivers (corner-routed, √flow width); orographic precipitation (prevailing winds + rain shadow); Whittaker LUT biomes (`data/whittaker.csv` committed).
 Exit: SVG shows rivers in blue, biome-colored cells. Property tests pass: rivers monotonically descend, elevation mass-conserved ±ε under erosion, no endorheic basin without lake.
 
-**Phase 2.5 — Refinery + Rules** (4–6 days, blocks Phase 3)
-Land the iteration architecture *before* the cultures stage, so cultures-stage parameters get auto-tuned from day one and every future calibration regression is caught by a Rule. Substages:
+**Phase 2.5 — Realism property tests + sweep CLI** (1–2 days, blocks Phase 3)
+*Revised 2026-05-17 — both devil's-advocate reviews recommended killing the
+Refinery design. The minimal replacement does the regression-net job at a
+fraction of the cost. See §5.5 for the full reasoning.*
 
-*2.5a. Rule trait + composite scorer.* `mapgen-world/src/rules/` with the Earth-grounded rule set above. Each rule cites its real-world reference data in a doc comment.
+*2.5a. Property tests.* Encode every realism failure caught this session
+(and anticipated classes) as `#[test]` invariants in
+`crates/mapgen-world/tests/realism_invariants.rs`. Asserts on
+distribution-level properties: biome %, river density, ocean-current
+sign, latitudinal banding correlation. Runs in CI; <1s per test.
 
-*2.5b. Operation trait + tunable-knob registry.* `mapgen-world/src/operations/`. Every existing pipeline parameter (Köppen aridity threshold, erosion rate, base_precip, etc.) registers itself as a tunable knob with a range.
+*2.5b. Sweep CLI.* `mapgen sweep --seed 42 --knob <param>
+--range <lo>..<hi> --steps <n> --out <dir>` renders N maps in a grid
+for eyeball selection. Half a day of work. Replaces the Refinery's
+practical use case (finding good defaults) with manual selection.
 
-*2.5c. Refinery loop.* `mapgen-world/src/refinery.rs`. SA-style accept/revert with plateau detection. Determinism: each iteration's RNG is `splitmix64(master, iter_index)`.
+*2.5c. Pin tunable defaults.* For each parameter where we ran a sweep,
+commit the chosen value with a comment citing the seed and the metric
+used to pick it. The chosen-defaults log is `docs/tuning_log.md`.
 
-*2.5d. CLI surface.* `mapgen generate --iterate 200 --target-score 0.85`. `mapgen audit --in world.json.gz` prints per-rule scores. `mapgen log --in world.json.gz` prints the refinement history (which operations the Refinery tried and accepted).
-
-*2.5e. Time-resolved epochs.* Restructure `generate_full` into the named-epoch pipeline so the Refinery can schedule operations by epoch. Earlier epochs run once and cache; later epochs re-run when only their knobs are tuned. Cache key = hash of all upstream knobs.
-
-Exit: `mapgen generate --iterate 50 --seed 42` produces a world whose composite score is above the current hand-tuned baseline. The audit command shows each rule's score; the log shows which knobs the Refinery converged on.
+Exit: every realism failure from sessions 1–3 has a corresponding
+property test that fails on its bug pattern. `mapgen sweep` works end
+to end on at least one knob (`erosion_rate` recommended).
 
 **Phase 3 — Cultures + polities + naming + ornate render** (10–14 days) — **aesthetic payoff phase**
 Now split into substages, each with its own spec file:
@@ -220,64 +241,38 @@ docs/target_aesthetic.svg                                          # hand-author
 
 ---
 
-## 5.5. Iteration: Refinery + Time-Resolved Simulation
+## 5.5. Iteration: deferred. Property tests + sweep CLI suffice for now.
 
-The generator is **not a one-shot pipeline**. It is a composition of two iterations:
+> **Revised 2026-05-17.** The original §5.5 proposed a full Refinery
+> optimization loop (simulated annealing over ~20-40 tunable knobs against a
+> ~20-rule scoring function) plus a code restructure of the pipeline into
+> six named time-resolved epochs. Both devil's advocates (technical and
+> product/scope) recommended a radical scope cut. The arguments that
+> changed the design:
+>
+> - **SA on 20+ continuous knobs against a piecewise objective with 5-30s
+>   eval cost is effectively random search.** Goodhart's law dominates:
+>   any rule matching Earth statistics produces statistical sludge.
+> - **The regression-net argument collapses to property tests.** Every
+>   "Rule scoring 0.0 on biome distribution" *is* `assert!(deserts/land
+>   < 0.50)`. Property tests catch the same bug class in <1s of CI time
+>   vs 30min of search. The Refinery was being justified for a job that
+>   property tests already do.
+> - **The "time-resolved epochs" reframing is a thesaurus pass.** The
+>   existing `Stage` enum already encodes causal order. Renaming to
+>   `Epoch` adds vocabulary, not mechanism. Code restructure costs 1-2
+>   weeks for zero new capability.
+> - **Scope priority.** The user's stated goal is "exotic map shop"
+>   aesthetic. After three sessions there's not yet a settlement icon
+>   on a map. Building auto-tuning infrastructure before the first
+>   ornate render is the textbook displacement-activity pattern.
+>
+> What's kept from the original §5.5:
 
-### (A) In-world time simulation
+### Causal precedence (kept as design reference)
 
-The world isn't built by stages running once; it's built by **time advancing**. The same systems (geology, climate, hydrology, biology, society) run continuously, just at different time resolutions per epoch.
-
-```
-                 simulated in-world time →
-T = −1Gy ── −100My ── −10My ── −100ky ── −10ky ── −3ky ── −1ky ── 0 (present)
-  │           │         │         │         │       │        │       │
-  │           │         │         │         │       │        │       │
- plates    erosion   coast     glaciation  climate cultures civilizations
- form      sculpts   stable                stabilizes form   wars/religions
-                                                 │            │
-                                                 ▼            ▼
-                                            languages      polities
-                                            religions      events
-```
-
-Each epoch advances every system that's awake at that time scale:
-
-| Epoch | Time scale | Awake systems | Tick size |
-|---|---|---|---|
-| Deep time | −1Gy → −100My | plates, hotspots, volcanism, basin formation | 50 My |
-| Sculpting | −100My → −10My | tectonic motion, mountain building, erosion at scale | 5 My |
-| Glaciation | −100ky → −10ky | climate, glaciation cycles, sea-level, biome migration | 5 ky |
-| Holocene | −10ky → −3ky | stable climate, soil, biomes, megafauna, early humans | 500 y |
-| Cultural | −3ky → −1ky | language families form, cultures settle, religions emerge | 50 y |
-| Civilizational | −1ky → 0 | polities, wars, dynasties, schisms, technology spread | 5 y |
-
-This is **not** a separate "history sim" tacked on after a static pipeline — it's a single time arrow with system awakenings as it advances. Geology is awake at T=−1Gy; cultures wake up around T=−3ky; ornate render happens at T=now.
-
-### (B) The Refinery — cross-run optimization
-
-Outside the time simulation, a Refinery loop tries different parameters / operations / algorithms, runs the time sim, scores against rules, and accepts-or-reverts:
-
-```
-                ┌───────────────────────────────────────┐
-                │  best world snapshot (highest score)  │
-                └───────────────────────────────────────┘
-                         ▲                       │
-                  accept │                       │ revert
-                         │                       ▼
-   time-sim(params) ──► world ──► score(world) ──► operation? ──► params'
-       ▲                                                            │
-       └────────────────────────────────────────────────────────────┘
-              new master seed (deterministic, indexed by iteration)
-```
-
-Operations (Add/Refine/Replace/Deepen) modify the **parameters** that the time sim runs against. The output is the best world found, not the last. Simulated-annealing acceptance permits temporary regressions to escape local optima; plateau detection signals convergence.
-
-The Refinery may be **time-budgeted** (`--budget 30s`) or **iteration-budgeted** (`--iterate 200`), with the simulation's own runtime as the inner cost — early iterations are cheaper because the loop can short-circuit if a parameter choice scores poorly without running the full time sim.
-
-### Causal precedence: details create details
-
-Within the time sim, every detail emerges *because of* earlier details. The causal chain (read top → bottom = chronological + caused-by):
+Every detail emerges *because of* earlier details. The chain (read top to
+bottom = chronological + caused-by):
 
 ```
 plate kinds + drift vectors
@@ -298,187 +293,78 @@ climate bands (3-cell × ocean SST × continentality)       erosion patterns
                                        ↓
                            polities + religions + trade networks
                                        ↓
-                           land impact (deforestation, mining, sacred groves, scars)
+                           land impact (deforestation, mining, sacred groves)
                                        ↓                  ↑
                                        └──── feedback ────┘
 ```
 
-The feedback edge at the bottom is the crucial part: **cultures change the land**, which changes the biomes, which changes the cultures. After 3,000 years of human civilization, the land downwind of major cities is deforested; the soil is depleted; rivers have shifted. The "natural baseline" at T=now is not the same as the baseline at T=−3ky.
+The feedback edge — cultures change the land, which changes the biomes,
+which changes the cultures — is what makes the resulting world feel
+earned. We will model this with **a second biome pass** after cultures
+emit `LorePatch` records during Phase 3, not by restructuring the
+pipeline into time-resolved epochs.
 
-### What nature wants
+### What races want (kept as Phase 3 design reference)
 
-Each natural system has an implicit utility function (its physics):
-
-| System | Wants |
-|---|---|
-| Plate tectonics | Convert potential energy via mantle convection (drift, subduct, uplift) |
-| Erosion | Reduce slope, transport mass downhill (entropy) |
-| Hydrology | Water at lowest gravitational point |
-| Climate | Distribute solar energy poleward |
-| Biomes | Fill suitable habitat (selection pressure) |
-| Ecosystems | Conserve nutrients in closed cycles |
-
-Nature has no agency, but the *direction of its drift* is deterministic given parameters. The time sim ratchets toward each system's local equilibrium at its own time scale.
-
-### What races want — agent utility functions
-
-Cultures and races *do* have agency. Each carries a utility function the time sim agent layer maximizes:
+Each race archetype carries an implicit utility function that drives
+where the cultures stage places them and what land impact they leave.
 
 | Race archetype | Wants | Yields |
 |---|---|---|
 | Human (Mediterranean) | Trade harbors, fertile deltas, defensible cities | Coastal city clusters; cleared agricultural hinterland |
-| Human (Norse / Viking) | Coastal access, timber, raiding range | Coastal villages; ship-burial mounds; cleared lowland forests |
-| Human (Steppe nomad) | Grasslands for horses, mobility, weak settled neighbors | Burial kurgans; expanded grassland (overgrazing); no permanent scarring |
+| Human (Norse) | Coastal access, timber, raiding range | Coastal villages; ship-burial mounds; cleared lowland forests |
+| Human (Steppe nomad) | Grasslands for horses, mobility | Burial kurgans; expanded grassland (overgrazing); no scarring |
 | Human (River-valley) | Alluvial floodplain, irrigation, dense population | Canalized rivers; intensive agriculture; flood-control mounds |
-| Elf (High) | Pristine old-growth forest, leyline access, isolation from humans | Forest preserved or magically enhanced; spire-towers in canopy |
-| Elf (Wood) | Dense temperate or tropical rainforest, low cultural footprint | Old-growth preserved indefinitely; almost invisible settlements |
-| Dwarf (Mountain) | Mineral-bearing mountains, defensible hold, ore networks | Mine networks (subterranean); gate-towers; scarred foothills with spoil heaps |
+| Elf (High) | Pristine old-growth forest, leyline access, isolation | Forest preserved or magically enhanced; spire-towers in canopy |
+| Elf (Wood) | Dense temperate/tropical rainforest, low cultural footprint | Old-growth preserved; almost invisible settlements |
+| Dwarf (Mountain) | Mineral-bearing mountains, defensible hold, ore networks | Mine networks; gate-towers; scarred foothills with spoil heaps |
 | Dwarf (Hill) | Iron-bearing foothills with arable land adjacent | Terraced hills; surface mining; visible quarries |
-| Orc | Marginal lands or conquered fertile lands | Burnt earth around settlements; ruined farms |
+| Orc | Marginal lands OR conquered fertile lands | Burnt earth around settlements; ruined farms |
 | Halfling | Fertile rolling grassland with streams, weak threats | Cultivated landscape (visually pristine, agriculturally intensive) |
 | Lizardfolk | Swamp/wetland with abundant prey | Stilt-villages on water; preserved wetland |
-| Sea folk (merfolk / triton) | Shallow coastal waters, reefs, kelp forests | Sunken temples, offshore megaliths visible at low tide |
-| Underdark (drow / duergar) | Deep cavern complexes, lightless rivers, fungal forests | Portal sites on surface only |
+| Sea folk | Shallow coastal waters, reefs, kelp forests | Sunken temples, offshore megaliths at low tide |
+| Underdark | Deep cavern complexes, lightless rivers | Portal sites on surface only |
 | Giant (Frost) | Glaciers, permafrost | Megalithic ice-halls; mammoth-bone middens |
-| Dragon (territorial) | Hoard-defensible peaks, fear-radius | Depopulated zone for ~10 cells; treasure hoard at lair |
 
-When wants conflict (two cultures want the same biome), the time sim has to resolve via **war** (Mearsheimer), **migration** (Khaldun frontier), **trade equilibrium**, or **extinction**. The history-sim causal loops we already stubbed (Turchin, Khaldun, Mearsheimer, Succession, Schism, Hero) are exactly the conflict-resolution mechanisms.
+The 14-archetype roster is **data, not code** — lives at
+`crates/mapgen-world/data/race_archetypes.csv` so seeds can drop entire
+races (no-elves world, giants-only world) without recompiling. Phase 3
+implements 4-5 archetypes; the rest land as data extensions.
 
-### What causes change
+### What replaces the Refinery: property tests + sweep CLI
 
-Per epoch, the active causes of change:
+For every realism failure caught (now or in future), the discipline is:
 
-| Cause | Epoch | Effect |
-|---|---|---|
-| Mantle convection | Deep time | Plates drift, oceans open/close |
-| Hot-spot tracks | All | Volcanic island chains, basaltic floods |
-| Erosion + deposition | All | Heightmap smooths, valleys cut, deltas grow |
-| Glaciation cycles (Milankovitch) | Glaciation | Sea-level drops, ice scours, refugia preserve genes |
-| Climate forcing (volcanic, solar) | All post-glaciation | Crop failures, plague years, migrations |
-| Species migration | Holocene+ | Megafauna corridors, biome boundary shifts |
-| Cultural diffusion | Cultural+ | Language families spread along routes |
-| Cultural conflict | Cultural+ | Wars, refugee patches, ruined cities |
-| Religious schism | Civilizational | Crusades, holy-site contestation, doctrinal patches |
-| Technology adoption | Civilizational | Land-use intensification, mining, deforestation |
-| Cataclysms (rare) | Any | Patches with `cause_event`: Mournland, Burnt Lands, Desolations |
-| Divine intervention | Any post-cultural | Patches: sacred groves, blighted earth, manifest zones |
+1. Write a property test in `crates/mapgen-world/tests/realism_invariants.rs`
+   (or a topic-specific file) that fails on the bug. This is the
+   regression net.
+2. Fix the code. Test goes green.
+3. If the bug was about parameter calibration (not algorithm choice),
+   add a sweep over that parameter to `examples/sweep_<knob>.rs` and
+   record the chosen default in `docs/tuning_log.md`.
 
-Each is encoded as either a **physical update rule** (deterministic from parameters) or an **agent decision** (resolved by utility maximization) or a **rare event roll** (with cause_event provenance back into the chronicle).
-
-### Composition: the two loops together
-
+The CLI exposes:
 ```
-for refinery_iter in 0..budget:
-    params ← propose(rules, history)
-    seed ← splitmix64(master, refinery_iter)
-    world ← TimeSimulation::run(params, seed)
-        ├ epoch deep_time(50My ticks):   plates → mountains → basins
-        ├ epoch sculpting(5My ticks):    erosion → coast
-        ├ epoch glaciation(5ky ticks):   ice ages → refugia
-        ├ epoch holocene(500y ticks):    biomes → species → early humans
-        ├ epoch cultural(50y ticks):     languages → cultures → religions
-        └ epoch civilizational(5y ticks): polities → wars → land impact
-    score ← compose(rules.score(world))
-    if score > best.score:
-        best ← world
-    elif SA_accept(Δscore, temperature):
-        current ← world
-    else:
-        revert
-    if plateau(history): break
-return best
+mapgen sweep --seed 42 --knob <param> --range <lo>..<hi> --steps <n> --out <dir>
 ```
+which renders N maps in a grid for eyeball selection. The artist picks
+the best, commits the chosen value as the new default.
 
-The same code that runs Phase 2 today is the **deep_time + sculpting + glaciation** epochs of the time sim. The "cultures stage" in Phase 3 is the **cultural epoch**. The Phase 4 history sim is the **civilizational epoch**. Phase 5's render visualizes the final state at T=now.
+This is concretely cheaper than the Refinery, gets ~80% of its
+practical value (finding good defaults), and is implementable in half a
+day.
 
-Re-framed this way, the project is more coherent: there is one time arrow, and our existing pipeline stages are *snapshots at different epochs*.
+### Deferred to Phase 6+ (post-ornate-render)
 
-### Rules of compliance (what the Refinery scores)
+- The full Refinery loop with SA acceptance and operation taxonomy.
+- The time-resolved epoch restructure with caching by knob-hash.
+- The composite-score audit CLI (`mapgen audit`).
+- Auto-Rule generation from caught bugs.
 
-Starter rule set, grouped by epoch. Each `Rule` reports a score in [0, 1] plus a weight and a per-rule "failing cells" set for targeted operations.
-
-```
-Deep-time epoch:
-  R-G1  hypsometric_curve_matches_earth        elevation histogram vs Earth's
-  R-G2  mountain_belts_along_plate_boundaries  spatial corr (peaks ↔ plate edges)
-  R-G3  coastline_fractal_dimension            D-box ≈ 1.25 for Earth
-
-Sculpting epoch:
-  R-S1  drainage_basin_count_per_continent
-  R-S2  river_density_5_to_15_pct
-  R-S3  physical_headwater_origins
-
-Glaciation epoch:
-  R-Gl1 fjord_count_at_high_latitude_coasts    (when glaciation enabled)
-  R-Gl2 refugium_count_inside_glacier_mask
-
-Holocene epoch:
-  R-C1  latitudinal_precip_correlation         3-cell pattern
-  R-C2  ocean_current_sign                     east coast warmer @ mid-lat
-  R-C3  koppen_distribution_within_earth_band
-  R-B1  biome_distribution_within_earth_pct
-  R-B2  latitudinal_biome_banding_correlation
-  R-B3  riparian_corridor_present_in_arid
-
-Cultural epoch:
-  R-Cu1 every_culture_in_preferred_habitat
-  R-Cu2 zipf_rank_size_city_distribution
-  R-Cu3 cultures_diverge_with_geographic_isolation
-  R-Cu4 race_habitat_competition_resolved
-
-Civilizational epoch:
-  R-Ci1 polities_have_capitals_on_suitable_cells
-  R-Ci2 land_impact_visible_around_old_settlements
-  R-Ci3 religion_sacred_sites_align_with_doctrine
-  R-Ci4 history_events_have_causal_chains_to_geography
-```
-
-The composite score is a **weighted geometric mean**: any catastrophic-zero rule pulls the whole down, preventing the loop from over-optimizing one rule while another collapses.
-
-### Validating "compliance increases over time"
-
-Two distinct trajectories:
-
-1. **Within a Refinery run**: score curve over iterations, with SA-style temporary regressions but monotone-best. The best-so-far snapshot is what gets returned.
-2. **Across project sessions**: as we add new rules and operations, the achievable best score on the same seed should improve. We track `seed_42_baseline.json` as a regression dataset — if a change drops the best-achievable score, the change is suspect.
-
-The discipline this enforces: **every realism fix lands as a Rule first**. If I miscalibrate ocean currents again, the corresponding Rule scores it 0.0; the next Refinery run automatically reverts the bad change. The user catching the desert-everywhere bug becomes a Rule that prevents the same class of bug forever.
-
----
-
-Tests are the executable spec. No feature lands without its test landing first in the same or prior commit. Per phase, per module, per feature:
-
-1. **Write the failing test** that encodes the invariant or behavior. Run it; confirm it fails for the expected reason (not a typo).
-2. **Implement the minimum** to make the test pass.
-3. **Refactor** with the test as safety net.
-4. **Phase exit** = the phase's spec file (`tests/phaseN_spec.rs`) is green, not "I wrote some code and the unit tests passed."
-
-Every phase begins by committing a `phaseN_spec.rs` file of failing tests that defines what "phase N done" means. Implementation then drives them green. This makes the spec auditable in the diff: the test file is the contract.
-
-Three tiers of tests, all run in CI:
-
-**Tier A — Byte-identical golden hashes.** Fixed seed 42, fixed params. Serialize `WorldData` as CBOR (stable byte order, unlike JSON); hash the CBOR and the rendered SVG; commit hashes under `tests/golden/`. Run separately on `x86_64-linux` and `wasm32-unknown-unknown` (via `wasm-bindgen-test` headless Chrome). Both targets must match. This is the test that catches `libm` regressions, iteration-order bugs, and noise-library updates. **Debug-mode only** — release float ordering can drift; document this. Pull this forward into Phase 2 (originally scheduled for Phase 5) so float-drift bugs surface before erosion + hydrology + climate stack on top.
-
-**Tier B — `proptest` invariants.**
-- Every river cell's downstream neighbor has strictly lower elevation.
-- `sum(elevation_after_erosion) ≈ sum(elevation_before) ± 1e-3 * cells` (mass conservation modulo coast outflow).
-- Every event's `cause_ids` reference prior events (`year(cause) <= year(event)`).
-- Every event's `actors`/`patients` are live entities at `event.year`.
-- No `Claim` outlives its `Polity` without being marked dormant.
-- Every settlement is reachable from its capital via the road graph.
-
-**Tier C — `insta` snapshot tests** on small-scale (1k-cell) SVG strings for fast renderer feedback.
-
-**Local validation gate (run before every push, not just CI):**
-```
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo test --workspace --target wasm32-unknown-unknown    # from Phase 2 onward
-wasm-pack test --headless --chrome crates/mapgen-wasm     # from Phase 5 onward
-```
-
-Same commands run in CI. Discipline: the first commit of every phase is the spec file (red). The last commit of every phase makes it green plus refactors.
+If the first ornate render reveals classes of realism gap that property
+tests can't catch (e.g., spatial pattern correlations across the whole
+map), the Refinery design is on the shelf for revival. Until that
+signal exists, it stays shelved.
 
 ---
 
