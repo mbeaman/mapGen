@@ -1,0 +1,170 @@
+# Tasks — active work
+
+Living tactical list. Architectural plan: `docs/ARCHITECTURE.md`. Deferred
+work: `docs/BACKLOG.md`. Session snapshot (not committed): `.local/session-state.md`.
+
+**Status legend:** `[ ]` todo · `[/]` in-progress · `[x]` done · `[-]` blocked
+· `[~]` cut (with link to commit / BACKLOG entry).
+
+**Discipline:** check off in the same commit that lands the work. When cutting
+a task, either move it to BACKLOG.md with a revival trigger or note here why
+it was abandoned. Don't let stale items linger.
+
+---
+
+## Phase 2.5 — Realism property tests + sweep CLI (~1-2 days)
+
+Goal: lock in regression coverage for the bug classes the user caught this
+session, and ship a manual tuning tool to replace the Refinery.
+
+### Test coverage closure
+
+- [ ] **(1h) proptest cases for pipeline invariants.**
+  - File: `crates/mapgen-world/tests/proptest_invariants.rs`
+  - At minimum: `flow_directions` strictly descends; `patch.strength_at`
+    always in `[0, 1]`; `generate_full` doesn't panic for random seeds in
+    `1..100`.
+  - Acceptance: `cargo test --workspace` shows proptest cases passing;
+    workspace `proptest` dep is finally exercised.
+
+- [ ] **(1h) renderer tests.**
+  - File: `crates/mapgen-render/tests/svg_invariants.rs`
+  - Checks: SVG is valid XML (parseable); polygon count equals
+    `mesh.cell_count`; all 14 + RIPARIAN biome colors emitted at least
+    once across a 4k-cell seed-42 world; no NaN coordinates.
+  - Acceptance: `mapgen-render` goes from 0 tests to ≥4.
+
+- [ ] **(30m) CLI round-trip integration test.**
+  - File: `crates/mapgen-cli/tests/roundtrip.rs`
+  - `mapgen generate --seed 42 --out tmp.json.gz` then `mapgen render --in
+    tmp.json.gz --style biomes --out tmp.svg`; assert SVG ≥100KB and starts
+    with `<?xml` or `<svg`.
+  - Acceptance: `mapgen-cli` goes from 0 tests to 1.
+
+- [ ] **(30m) smoke seed sweep.**
+  - File: `crates/mapgen-world/tests/smoke_seeds.rs`
+  - Run 10 seeds (1..=10) through `generate_full()`; assert no panic +
+    minimum quality bars per seed (≥3 distinct biomes on land, ≥1 river,
+    ≥1 lake, both land and sea cells present).
+  - Acceptance: catches future seed-specific generation crashes; runs
+    in <10s.
+
+### Sweep CLI
+
+- [ ] **(3-4h) `mapgen sweep` subcommand.**
+  - Spec: `mapgen sweep --seed <u64> --knob <name> --range <lo>..<hi>
+    --steps <n> --out <dir>`
+  - Renders N maps with that knob varied; writes `<knob>_<value>.svg` per
+    step + an `index.html` that grids them for eyeball selection.
+  - Initial supported knobs: `erosion_rate`, `base_precip`, `lapse_rate`,
+    `axial_tilt`.
+  - Acceptance: `mapgen sweep --seed 42 --knob erosion_rate --range
+    0.01..0.10 --steps 8 --out /tmp/sweep` produces 8 PNGs + index.html.
+
+- [ ] **(15m) tuning log.**
+  - Create `docs/tuning_log.md`.
+  - First entry: what we manually chose for the existing realism knobs
+    (`base_precip = 0.7`, `lapse_rate = 0.45`, Köppen `arid_threshold
+    = 0.10 + 0.04·t_warm`, etc.) and the seed/audit that justified each.
+  - Acceptance: file exists; an external reader can reconstruct *why*
+    each default has its current value.
+
+---
+
+## Phase 3 — Cultures + polities + naming + ornate render (~10-14 days)
+
+The aesthetic-payoff phase. Substages each gated by a phase-spec file with
+failing tests.
+
+### Phase 3a — Cultures stage
+
+- [ ] (1d) `cultures_spec.rs` failing-test contract
+- [ ] (1d) `Race`, `Culture`, `Alignment`, `TechProfile`, `MagicStyle`,
+  `SettlementIcon`, `Architecture`, `DiplomaticPattern` enums in
+  `mapgen-core/src/entities.rs`
+- [ ] (1d) `cultures::populate` — habitat scoring + weighted Voronoi
+  assignment writes `culture_id` per cell
+- [ ] (4h) `crates/mapgen-world/data/race_archetypes.csv` with 4-5 MVP
+  archetypes (1 human variant + 1 elf + 1 dwarf + 1 orc + 1 halfling)
+
+### Phase 3b — Religions
+
+- [ ] (4h) `Religion` entity + `PantheonPattern` enum
+  (Mono/Poly/Dual/Animism/Ancestor/CosmicOrder) in `mapgen-core`
+- [ ] (4h) `religions::found` — 1-3 religions per world, tied to founder
+  culture, spread by alignment compatibility
+
+### Phase 3c — Polities
+
+- [ ] (1d) `polities_spec.rs` failing tests (every settlement reachable
+  from its capital; capital on suitable cell; Zipf rank-size)
+- [ ] (4h) Suitability-weighted Poisson capitals filtered by
+  `Culture.settlement` preference
+- [ ] (1d) Christaller k=4 hierarchy + A* roads with reuse discount
+
+### Phase 3d — Naming
+
+- [ ] (1d) Phonotactic generator + Markov fallback, per `Language`
+- [ ] (deferred — see BACKLOG.md "Sound-change rules across language families")
+
+### Phase 3e — Ornate render (the screenshot)
+
+- [ ] (4h) Probe `roughr` 0.12 API — `Generator::new` is private; find
+  the correct builder entry point. If unworkable, vendor ~600 LOC of
+  Rough.js bezier-perturbation algorithm.
+- [ ] (2h) Hand-author `docs/target_aesthetic.svg` as the visual reference
+  every render decision compares against (per the original Phase 3 day-1
+  recommendation).
+- [ ] (1d) Parchment background + perturbed coastline (4 offset ripples,
+  roughr-jittered)
+- [ ] (1d) Tolkien triangular mountain icons + biome-keyed scatter tree
+  forests
+- [ ] (4h) Typography: bundle Cinzel + IM Fell English + EB Garamond
+  WOFF2 in SVG `<defs>`
+- [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn aging
+- [ ] (1d) Settlement glyphs derived from
+  `Culture.settlement × Culture.architecture`
+- [ ] (4h) Imhof-style label placement (basic — full simulated-annealing
+  variant is post-MVP)
+
+---
+
+## Cross-cutting / hygiene
+
+- [ ] (15m) Bump `SCHEMA_VERSION` (currently v2) when the next breaking
+  WorldData change lands (likely with Phase 3a — cultures field).
+- [ ] (30m) Baseline performance — measure `generate_full` for 4k / 15k /
+  30k cell counts, record in `docs/perf_baseline.md`. Set a regression
+  budget (e.g., "must stay under 1.5x of baseline").
+- [ ] (deferred — see BACKLOG.md "Cross-platform byte-identical golden
+  hashes") `wasm-bindgen-test` for native↔wasm32 hash parity.
+
+---
+
+## Done (recent context)
+
+Last ~30 commits, summarized. Full history in `git log --oneline`.
+
+- [x] Phase 1: workspace + mesh + plate heightmap + greyscale render
+- [x] Phase 2: erosion (stream-power + lateral-bank), hydrology
+  (Priority-Flood, flow, rivers), climate, biomes
+- [x] LorePatch foundation (`mapgen-core/src/patch.rs`)
+- [x] 3-cell atmospheric circulation
+- [x] Ocean currents (with sign-bug fix mid-session)
+- [x] Real lake extraction in Priority-Flood
+- [x] Köppen-Geiger seasonal climate + classification
+- [x] Realism fix: 5 compounding bugs that produced desert-everywhere maps
+- [x] River realism: density, physical headwaters, riparian biome,
+  confluence width growth
+- [x] Architecture review + lock (constructive + 2 devil's advocates →
+  Refinery cut, scope tightened)
+- [x] `docs/BACKLOG.md` — 30 deferred items with revival triggers
+- [x] `.local/session-state.md` + `.local/resume-prompt.md` (gitignored)
+- [x] This task list
+
+---
+
+When adding a new task: keep it small enough to land in one focused
+work-session (≤4h). Larger items get a sub-list. When in doubt, prefer
+"start one task" over "design five tasks." This file is a working tool,
+not a plan.
