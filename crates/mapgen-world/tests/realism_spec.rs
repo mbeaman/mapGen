@@ -279,7 +279,7 @@ fn real_lakes_emerge_from_priority_flood() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn ocean_currents_warm_west_coasts_at_mid_latitudes() {
+fn ocean_currents_warm_east_coasts_at_mid_latitudes() {
     let mut world = generate(params(42));
     hydrology::detect_coast(&mut world);
     ocean::run(&mut world);
@@ -337,9 +337,15 @@ fn ocean_currents_warm_west_coasts_at_mid_latitudes() {
     }
     let west_avg: f32 = west_temps.iter().sum::<f32>() / west_temps.len() as f32;
     let east_avg: f32 = east_temps.iter().sum::<f32>() / east_temps.len() as f32;
+    // Warm western-boundary current (Gulf Stream, Kuroshio) flows
+    // *poleward* along the western edge of an ocean basin, which is
+    // the EAST coast of a continent. Cold eastern-boundary current
+    // (California, Canary, Benguela) flows equatorward along the
+    // continent's WEST coast. So at low-mid latitudes, east coast >
+    // west coast.
     assert!(
-        west_avg > east_avg,
-        "at mid latitudes, west coast (warm gulf-stream-like current) should be warmer than east coast: west={west_avg:.3}, east={east_avg:.3}"
+        east_avg > west_avg,
+        "at mid latitudes, east coast (warm western-boundary current, Gulf-Stream-analogue) should be warmer than west coast (cold eastern-boundary current, California-analogue): east={east_avg:.3}, west={west_avg:.3}"
     );
 }
 

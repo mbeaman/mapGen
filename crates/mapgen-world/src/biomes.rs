@@ -57,7 +57,17 @@ pub fn classify(world: &mut WorldData) {
                 };
                 continue;
             }
-            if elev[i] >= 0.6 && world.climate.temperature[i] < 0.0 {
+            // Alpine override for any high-elevation cell with cold
+            // summers (≥ 0.45 elevation AND tundra-class summer temp).
+            // Without this, mid-elevation cells in the temperate band
+            // get misclassified as low-lying tundra.
+            let summer_t = world
+                .climate
+                .temperature_summer
+                .get(i)
+                .copied()
+                .unwrap_or(world.climate.temperature[i]);
+            if elev[i] >= 0.45 && summer_t < 0.30 {
                 biome[i] = ALPINE;
                 continue;
             }

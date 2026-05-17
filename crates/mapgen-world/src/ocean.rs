@@ -64,10 +64,16 @@ pub fn run(world: &mut WorldData) {
             continue;
         }
         let avg_dx = land_dx_sum / land_count as f32;
-        // avg_dx > 0 means land lies east of the sea = sea is west of
-        // land = the WEST coast of a continent. That's where the warm
-        // western-boundary current sits (Gulf Stream).
-        let sign = if avg_dx > 0.0 { 1.0 } else { -1.0 };
+        // Sign convention (corrected):
+        //   avg_dx > 0  →  land is east of sea  →  sea is at the EAST
+        //                 boundary of an ocean basin  →  this is the
+        //                 WEST coast of a continent  →  COLD eastern-
+        //                 boundary current (California, Canary, Benguela).
+        //   avg_dx < 0  →  land is west of sea  →  sea is at the WEST
+        //                 boundary of an ocean basin  →  this is the
+        //                 EAST coast of a continent  →  WARM western-
+        //                 boundary current (Gulf Stream, Kuroshio).
+        let sign = if avg_dx > 0.0 { -1.0 } else { 1.0 };
         anomaly[i] = sign * 0.4 * band_strength;
     }
 

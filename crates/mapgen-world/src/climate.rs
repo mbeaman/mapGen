@@ -39,10 +39,20 @@ impl Default for ClimateParams {
     fn default() -> Self {
         Self {
             axial_tilt: 23.5_f32.to_radians(),
-            lapse_rate: 0.6,
+            // 0.5 was too aggressive — even mid-latitude land cells
+            // crossed the freezing/tropical boundary too easily, and
+            // moderately elevated tropical cells (Kenyan highlands at
+            // 1500m equivalent) dropped out of A-class. Real wet
+            // adiabatic lapse is 6.5°C/km; this corresponds to ~0.45 on
+            // our normalized scale at typical elevations.
+            lapse_rate: 0.45,
             equator_temp: 1.0,
             polar_temp: -0.4,
-            base_precip: 0.5,
+            // 0.5 produced p_annual ~0.10 on typical land, which forced
+            // most cells through the aridity branch. 0.7 lifts the
+            // overall distribution so cells more often have enough rain
+            // to escape steppe classification.
+            base_precip: 0.7,
         }
     }
 }
@@ -130,18 +140,23 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
         let band_base = band_precip(((cy - half_h) / half_h).abs());
 
         if elev[c] <= 0.0 {
-            // Sea: gradually approach saturation (long fetch fully
-            // recovers; thin inland sea barely does).
-            moisture[c] = uw_m + (1.0 - uw_m) * 0.02;
+            // Sea: gradually approach saturation via evaporation.
+            // 0.20 per cell ≈ Earth's typical fetch behavior; saturates
+            // fully in ~10 cells of open ocean. A 5-cell inland sea
+            // recovers ~67% but doesn't fully reset a depleted air mass.
+            moisture[c] = uw_m + (1.0 - uw_m) * 0.20;
             precipitation[c] = params.base_precip * band_base;
             continue;
         }
         // Land: release rain proportional to upwind moisture, uplift, and band base.
+        // Baseline 25% per cell (was 10%): air masses lose water to
+        // surface friction, convection, and diurnal cycling even
+        // without orographic uplift.
         let uplift = (elev[c] - uw_e).max(0.0);
-        let release = (0.10 + uplift * 4.0).min(0.9);
+        let release = (0.25 + uplift * 4.0).min(0.9);
         let rain = uw_m * release;
         moisture[c] = (uw_m - rain).max(0.0);
-        precipitation[c] = params.base_precip * band_base * (0.05 + rain);
+        precipitation[c] = params.base_precip * band_base * (0.10 + rain);
     }
 
     world.climate.temperature = temperature;

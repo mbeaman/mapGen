@@ -81,17 +81,22 @@ fn one_pass(
 
     // Temperature: base on effective_lat (so summer-side hemisphere is
     // warmer), lapse on elevation, plus coastal anomaly.
+    //
+    // The seasonal bonus must key off the cell's *real* hemisphere, not
+    // its effective latitude — the sun's apparent path north/south
+    // doesn't change the cell's actual hemisphere. Otherwise equatorial
+    // cells (real lat ≈ 0) get cooled in NH summer because the ITCZ
+    // shift pushes their effective lat across the equator boundary.
     let mut temperature = Vec::with_capacity(n);
     for i in 0..n {
-        let eff = effective_lat(sites[i][1]);
+        let lat_norm = (sites[i][1] - half_h) / half_h; // <0 = NH, >0 = SH
+        let eff = (lat_norm - itcz_shift).clamp(-1.0, 1.0);
         let lat_factor = fmath::cos(eff.abs() * std::f32::consts::FRAC_PI_2);
-        // Asymmetric: in summer that hemisphere gets warmer than annual mean;
-        // in winter it gets cooler. Boost by axial-tilt magnitude.
-        let seasonal_bonus = match (is_nh_summer, eff < 0.0) {
-            (true, true) => 0.25,   // NH summer, NH cell
-            (true, false) => -0.25, // NH summer, SH cell
-            (false, true) => -0.25, // NH winter, NH cell
-            (false, false) => 0.25, // NH winter, SH cell
+        let seasonal_bonus = match (is_nh_summer, lat_norm < 0.0) {
+            (true, true) => 0.25,   // NH summer, NH cell: warmer
+            (true, false) => -0.25, // NH summer, SH cell: cooler
+            (false, true) => -0.25, // NH winter, NH cell: cooler
+            (false, false) => 0.25, // NH winter, SH cell: warmer
         };
         let base = params.polar_temp
             + (params.equator_temp - params.polar_temp) * lat_factor
@@ -150,15 +155,15 @@ fn one_pass(
         let band_base = crate::climate::band_precip(eff_abs);
 
         if elev[c] <= 0.0 {
-            moisture[c] = uw_m + (1.0 - uw_m) * 0.02;
+            moisture[c] = uw_m + (1.0 - uw_m) * 0.20;
             precipitation[c] = params.base_precip * band_base;
             continue;
         }
         let uplift = (elev[c] - uw_e).max(0.0);
-        let release = (0.10 + uplift * 4.0).min(0.9);
+        let release = (0.25 + uplift * 4.0).min(0.9);
         let rain = uw_m * release;
         moisture[c] = (uw_m - rain).max(0.0);
-        precipitation[c] = params.base_precip * band_base * (0.05 + rain);
+        precipitation[c] = params.base_precip * band_base * (0.10 + rain);
     }
 
     (temperature, precipitation)
