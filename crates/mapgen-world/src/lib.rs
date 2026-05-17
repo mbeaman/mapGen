@@ -1,6 +1,10 @@
 //! Geography pipeline. Composes mesh, terrain, erosion, hydrology, climate,
 //! biomes, and society into a `WorldData`.
 
+pub mod biomes;
+pub mod climate;
+pub mod erosion;
+pub mod hydrology;
 pub mod plates;
 
 use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};

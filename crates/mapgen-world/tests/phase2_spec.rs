@@ -1,9 +1,12 @@
 //! Phase 2 spec — the executable definition of "Phase 2 done."
 //!
-//! Every test in this file is the contract for one Phase 2 invariant.
-//! Implementation lands when these are green. Tests start `#[ignore]`'d
-//! so CI stays green during the phase; remove the `ignore` attribute one
-//! at a time as features land.
+//! Strict TDD posture:
+//!   * Each test calls the real (future) API surface from `mapgen-world`.
+//!   * The implementation modules currently `todo!()` — tests panic with
+//!     descriptive messages until each stage is implemented.
+//!   * As each stage lands, its `todo!()` becomes real code and the
+//!     corresponding test goes green. No `#[ignore]` attributes — the
+//!     red set is honest.
 //!
 //! Phase 2 scope:
 //!   * Hydraulic erosion (droplet) + thermal erosion
@@ -15,8 +18,17 @@
 //!   * Latitude/lapse-rate temperature
 //!   * Whittaker biome assignment
 //!   * Coast detection (a cell is coast iff it touches both land and sea)
+//!   * Cross-platform byte-identical golden hash (Tier-A, pulled forward)
 
-use mapgen_world::{generate, GenerateParams};
+use mapgen_core::{Stage, StageRng};
+use mapgen_world::{
+    biomes::{self, UNASSIGNED},
+    climate::{self, ClimateParams},
+    erosion::{self, ErosionParams},
+    generate,
+    hydrology::{self},
+    GenerateParams,
+};
 
 fn fixed_params(seed: u64) -> GenerateParams {
     GenerateParams {
@@ -34,23 +46,15 @@ fn fixed_params(seed: u64) -> GenerateParams {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Phase 2: erosion not implemented"]
 fn erosion_conserves_mass_within_epsilon() {
-    // Hydraulic erosion moves sediment but doesn't create or destroy it,
-    // modulo the small fraction carried off the map at the coast. Total
-    // elevation must be conserved within a small tolerance.
-    let pre = generate(GenerateParams {
-        cell_count: 2000,
-        ..fixed_params(1)
-    });
-    let pre_sum: f64 = pre.terrain.elevation.iter().map(|&e| e as f64).sum();
+    let mut world = generate(fixed_params(1));
+    let pre_sum: f64 = world.terrain.elevation.iter().map(|&e| e as f64).sum();
 
-    // TODO Phase 2: invoke erosion stage. For now we just assert the API
-    // exists so this test compiles when erosion is added.
-    let post = pre.clone();
-    let post_sum: f64 = post.terrain.elevation.iter().map(|&e| e as f64).sum();
+    let mut rng = StageRng::new(world.meta.seed).stream(Stage::Erosion);
+    erosion::run(&mut world, ErosionParams::default(), &mut rng);
 
-    let n = pre.mesh.cell_count() as f64;
+    let post_sum: f64 = world.terrain.elevation.iter().map(|&e| e as f64).sum();
+    let n = world.mesh.cell_count() as f64;
     let tol = 1e-3 * n;
     assert!(
         (pre_sum - post_sum).abs() <= tol,
@@ -59,21 +63,17 @@ fn erosion_conserves_mass_within_epsilon() {
 }
 
 #[test]
-#[ignore = "Phase 2: erosion not implemented"]
 fn erosion_sharpens_local_features() {
-    // After erosion the heightmap should have *more* spatial variation in
-    // the slope distribution (valleys and ridges become more distinct).
-    // Crude proxy: mean absolute slope between neighbors strictly
-    // increases.
-    let pre = generate(fixed_params(7));
-    let pre_slope = mean_abs_slope(&pre.terrain.elevation, &pre.mesh.neighbors);
+    let mut world = generate(fixed_params(7));
+    let pre_slope = mean_abs_slope(&world.terrain.elevation, &world.mesh.neighbors);
 
-    let post = pre.clone(); // TODO Phase 2: run erosion
-    let post_slope = mean_abs_slope(&post.terrain.elevation, &post.mesh.neighbors);
+    let mut rng = StageRng::new(world.meta.seed).stream(Stage::Erosion);
+    erosion::run(&mut world, ErosionParams::default(), &mut rng);
 
+    let post_slope = mean_abs_slope(&world.terrain.elevation, &world.mesh.neighbors);
     assert!(
         post_slope > pre_slope,
-        "erosion should sharpen features, got pre={pre_slope:.4} post={post_slope:.4}"
+        "erosion should sharpen features: pre={pre_slope:.4} post={post_slope:.4}"
     );
 }
 
@@ -82,11 +82,10 @@ fn erosion_sharpens_local_features() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Phase 2: priority-flood depression fill not implemented"]
 fn no_internal_depressions_after_priority_flood() {
-    // After Priority-Flood, no land cell may have all of its neighbors
-    // strictly higher than itself (that would be an unfilled pit).
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    hydrology::fill_depressions(&mut world);
+
     let elev = &world.terrain.elevation;
     for i in 0..world.mesh.cell_count() {
         if elev[i] <= 0.0 {
@@ -106,16 +105,14 @@ fn no_internal_depressions_after_priority_flood() {
 }
 
 #[test]
-#[ignore = "Phase 2: flow direction not implemented"]
 fn flow_directions_strictly_descend() {
-    // Every land cell's flow_to neighbor (when one exists) must have a
-    // strictly lower elevation. Sea cells and lake outlets are exempt.
-    let world = generate(fixed_params(42));
-    let elev = &world.terrain.elevation;
-    // TODO Phase 2: read flow_direction off WorldData.hydrology when added.
-    let flow_direction: Vec<Option<u32>> = vec![None; world.mesh.cell_count()];
+    let mut world = generate(fixed_params(42));
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
 
-    for (i, &to) in flow_direction.iter().enumerate() {
+    let elev = &world.terrain.elevation;
+    assert_eq!(flow_dir.len(), world.mesh.cell_count());
+    for (i, &to) in flow_dir.iter().enumerate() {
         if let Some(j) = to {
             assert!(
                 elev[j as usize] < elev[i],
@@ -128,19 +125,18 @@ fn flow_directions_strictly_descend() {
 }
 
 #[test]
-#[ignore = "Phase 2: flow accumulation not implemented"]
 fn flow_accumulation_is_monotonic_downstream() {
-    // Downstream cells must have accumulation >= upstream cells along any
-    // flow path. (Mass conservation of water under rain.)
-    let world = generate(fixed_params(42));
-    let flow: &[f32] = &world.hydrology.flow;
-    let flow_direction: Vec<Option<u32>> = vec![None; world.mesh.cell_count()];
+    let mut world = generate(fixed_params(42));
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
+    hydrology::accumulate_flow(&mut world, &flow_dir);
 
-    for (i, &to) in flow_direction.iter().enumerate() {
+    let flow = &world.hydrology.flow;
+    for (i, &to) in flow_dir.iter().enumerate() {
         if let Some(j) = to {
             assert!(
                 flow[j as usize] >= flow[i] - 1e-4,
-                "flow accumulation non-monotonic: cell {i} flow={}, downstream cell {j} flow={}",
+                "flow accumulation non-monotonic: cell {i} flow={}, downstream {j} flow={}",
                 flow[i],
                 flow[j as usize]
             );
@@ -149,11 +145,14 @@ fn flow_accumulation_is_monotonic_downstream() {
 }
 
 #[test]
-#[ignore = "Phase 2: river extraction not implemented"]
 fn rivers_reach_sea_or_lake() {
-    // Every river's last cell must either be a coast (next cell is sea)
-    // or a lake cell. No river may end mid-land.
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    hydrology::detect_coast(&mut world);
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
+    hydrology::accumulate_flow(&mut world, &flow_dir);
+    hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
+
     for river in &world.hydrology.rivers {
         let last = *river.cells.last().expect("empty river");
         let last_elev = world.terrain.elevation[last as usize];
@@ -171,21 +170,28 @@ fn rivers_reach_sea_or_lake() {
 }
 
 #[test]
-#[ignore = "Phase 2: river extraction not implemented"]
 fn river_width_scales_with_sqrt_flow() {
-    // Per Amit Patel: river width should be proportional to sqrt(flow).
-    // We check the relative ordering, not exact constants.
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    hydrology::detect_coast(&mut world);
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
+    hydrology::accumulate_flow(&mut world, &flow_dir);
+    hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
+
     let mut rivers: Vec<_> = world.hydrology.rivers.iter().collect();
-    if rivers.len() < 2 {
-        return; // nothing to compare
-    }
+    assert!(
+        rivers.len() >= 2,
+        "expected ≥2 rivers from a 4000-cell world"
+    );
+
     rivers.sort_by(|a, b| a.width.partial_cmp(&b.width).unwrap());
     let small_flow = max_flow_along(&rivers[0].cells, &world.hydrology.flow);
     let big_flow = max_flow_along(&rivers[rivers.len() - 1].cells, &world.hydrology.flow);
     assert!(
         big_flow >= small_flow,
-        "wider river should drain at least as much water"
+        "wider river ({}) should drain at least as much water as narrower ({})",
+        rivers[rivers.len() - 1].width,
+        rivers[0].width
     );
 }
 
@@ -194,27 +200,28 @@ fn river_width_scales_with_sqrt_flow() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Phase 2: coast detection not implemented"]
 fn coast_cells_touch_both_land_and_sea() {
-    // Definition: a cell is coast iff it is land AND has at least one sea
-    // neighbor, OR it is sea AND has at least one land neighbor.
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    hydrology::detect_coast(&mut world);
+
     let elev = &world.terrain.elevation;
     let coast = &world.mesh.coast;
-
+    let mut any_coast = false;
     for i in 0..world.mesh.cell_count() {
         if !coast[i] {
             continue;
         }
+        any_coast = true;
         let self_is_land = elev[i] > 0.0;
         let has_opposite = world.mesh.neighbors[i]
             .iter()
             .any(|&j| (elev[j as usize] > 0.0) != self_is_land);
         assert!(
             has_opposite,
-            "cell {i} marked coast but neighbors are all same side"
+            "cell {i} marked coast but all neighbors are on the same side"
         );
     }
+    assert!(any_coast, "no coast cells found at all");
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -222,11 +229,10 @@ fn coast_cells_touch_both_land_and_sea() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Phase 2: temperature model not implemented"]
 fn temperature_decreases_with_elevation() {
-    // Lapse rate: at the same latitude, higher cells should be cooler.
-    // We bin cells by latitude band and check the trend within each band.
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    climate::run(&mut world, ClimateParams::default());
+
     let temp = &world.climate.temperature;
     let elev = &world.terrain.elevation;
     let h = world.mesh.height;
@@ -247,25 +253,20 @@ fn temperature_decreases_with_elevation() {
             continue;
         }
         samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let lowest_third = avg_temp(&samples[..samples.len() / 3]);
-        let highest_third = avg_temp(&samples[samples.len() * 2 / 3..]);
+        let low = avg_temp(&samples[..samples.len() / 3]);
+        let high = avg_temp(&samples[samples.len() * 2 / 3..]);
         assert!(
-            lowest_third > highest_third,
-            "latitude band {band}: low-elev avg temp {lowest_third} not warmer than high-elev avg {highest_third}"
+            low > high,
+            "latitude band {band}: low-elev avg temp {low} not warmer than high-elev avg {high}"
         );
     }
 }
 
 #[test]
-#[ignore = "Phase 2: orographic precipitation not implemented"]
 fn rain_shadow_dries_leeward_side() {
-    // Walk along the prevailing wind direction across a mountain range.
-    // Mean precipitation on the leeward side should be less than the
-    // windward side at the same elevation band.
-    let world = generate(fixed_params(42));
-    // Simple proxy: split the map down the middle on the wind axis (assume
-    // westerly for the test band) and compare averages on land cells of
-    // similar elevation.
+    let mut world = generate(fixed_params(42));
+    climate::run(&mut world, ClimateParams::default());
+
     let precip = &world.climate.precipitation;
     let elev = &world.terrain.elevation;
     let w = world.mesh.width;
@@ -281,10 +282,12 @@ fn rain_shadow_dries_leeward_side() {
             east.push(precip[i]);
         }
     }
-    // For the seed under test, prevailing wind is configured westerly,
-    // so east is leeward — strictly drier on average.
-    let west_avg: f32 = west.iter().sum::<f32>() / west.len().max(1) as f32;
-    let east_avg: f32 = east.iter().sum::<f32>() / east.len().max(1) as f32;
+    assert!(
+        west.len() > 50 && east.len() > 50,
+        "not enough samples each side"
+    );
+    let west_avg: f32 = west.iter().sum::<f32>() / west.len() as f32;
+    let east_avg: f32 = east.iter().sum::<f32>() / east.len() as f32;
     assert!(
         west_avg > east_avg,
         "no rain-shadow effect: west avg precip {west_avg} <= east avg {east_avg}"
@@ -296,29 +299,30 @@ fn rain_shadow_dries_leeward_side() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "Phase 2: biome assignment not implemented"]
 fn every_land_cell_has_a_biome() {
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    climate::run(&mut world, ClimateParams::default());
+    biomes::classify(&mut world);
+
     assert_eq!(world.climate.biome.len(), world.mesh.cell_count());
     for i in 0..world.mesh.cell_count() {
         if world.terrain.elevation[i] > 0.0 {
-            assert!(
-                world.climate.biome[i] != u8::MAX,
-                "cell {i} land but biome unassigned"
+            assert_ne!(
+                world.climate.biome[i], UNASSIGNED,
+                "land cell {i} biome unassigned"
             );
         }
     }
 }
 
 #[test]
-#[ignore = "Phase 2: biome assignment not implemented"]
 fn snow_biome_only_where_cold() {
-    // Whittaker invariant: snow/ice biomes only appear where mean
-    // temperature is below freezing (≤ 0 in our normalized scale).
-    const SNOW_BIOME: u8 = 0; // TODO Phase 2: pull from biomes::BiomeId
-    let world = generate(fixed_params(42));
+    let mut world = generate(fixed_params(42));
+    climate::run(&mut world, ClimateParams::default());
+    biomes::classify(&mut world);
+
     for i in 0..world.mesh.cell_count() {
-        if world.climate.biome[i] == SNOW_BIOME {
+        if world.climate.biome[i] == biomes::SNOW {
             assert!(
                 world.climate.temperature[i] <= 0.0,
                 "snow biome at warm cell {i}: temp={}",
@@ -331,30 +335,23 @@ fn snow_biome_only_where_cold() {
 // ──────────────────────────────────────────────────────────────────────────────
 // Cross-platform determinism (Tier A — pulled forward from Phase 5)
 // ──────────────────────────────────────────────────────────────────────────────
-//
-// This test only proves the native side here; the wasm32 counterpart goes
-// into crates/mapgen-wasm via wasm-bindgen-test and must produce the same
-// hash. Done when both targets agree.
 
 #[test]
-#[ignore = "Phase 2: golden-hash anchor pending erosion + hydrology"]
 fn golden_hash_native_matches_committed_value() {
-    use std::io::Write;
-    let world = generate(GenerateParams {
-        seed: 42,
-        width: 1024.0,
-        height: 640.0,
-        cell_count: 4000,
-        plate_count: 12,
-        nation_count: 6,
-    });
+    let mut world = generate(fixed_params(42));
+    hydrology::detect_coast(&mut world);
+    hydrology::fill_depressions(&mut world);
+    let flow_dir = hydrology::flow_directions(&world);
+    hydrology::accumulate_flow(&mut world, &flow_dir);
+    hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
+    climate::run(&mut world, ClimateParams::default());
+    biomes::classify(&mut world);
+
     let mut bytes = Vec::new();
     ciborium::into_writer(&world, &mut bytes).unwrap();
-    let hash = blake3_hex(&bytes);
-    // Replace with the committed hash once Phase 2 lands all the deterministic
-    // stages and we anchor a real value into tests/golden/.
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+
     let committed = include_str!("golden/seed42_phase2.blake3.txt").trim();
-    let _ = std::io::stderr().write_all(format!("hash = {hash}\n").as_bytes());
     assert_eq!(
         hash, committed,
         "Phase 2 output drifted from committed golden hash"
@@ -390,10 +387,4 @@ fn max_flow_along(cells: &[u32], flow: &[f32]) -> f32 {
 
 fn avg_temp(samples: &[(f32, f32)]) -> f32 {
     samples.iter().map(|(_, t)| *t).sum::<f32>() / samples.len().max(1) as f32
-}
-
-fn blake3_hex(_bytes: &[u8]) -> String {
-    // Phase 2 wires blake3 in as a dev-dependency. Until then this returns a
-    // sentinel that will never match the committed hash, keeping the test red.
-    String::from("PENDING_PHASE_2")
 }
