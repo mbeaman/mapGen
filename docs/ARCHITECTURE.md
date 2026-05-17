@@ -354,17 +354,14 @@ This is concretely cheaper than the Refinery, gets ~80% of its
 practical value (finding good defaults), and is implementable in half a
 day.
 
-### Deferred to Phase 6+ (post-ornate-render)
+### Deferred items
 
-- The full Refinery loop with SA acceptance and operation taxonomy.
-- The time-resolved epoch restructure with caching by knob-hash.
-- The composite-score audit CLI (`mapgen audit`).
-- Auto-Rule generation from caught bugs.
-
-If the first ornate render reveals classes of realism gap that property
-tests can't catch (e.g., spatial pattern correlations across the whole
-map), the Refinery design is on the shelf for revival. Until that
-signal exists, it stays shelved.
+All cut work moved to `docs/BACKLOG.md` with a "trigger for revival"
+condition per item. The Refinery, time-resolved epoch restructure, audit
+CLI, and auto-Rule generation all live there now under "Optimization &
+meta." If the first ornate render reveals classes of realism gap that
+property tests can't catch, those entries reactivate per their stated
+triggers.
 
 ---
 
