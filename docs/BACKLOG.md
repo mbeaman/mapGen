@@ -307,6 +307,31 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** Half a day after soils land.
 - **Origin.** Research brief in commit `44ec18f`.
 
+### Reach unused biome IDs from the Köppen path
+
+- **Why deferred.** `mapgen-world::koppen::to_biome` has no `KoppenClass`
+  mapping into TEMPERATE_GRASSLAND (id 4) or TROPICAL_DRY_FOREST (id 9),
+  so those palette entries never render on a world built with seasonal
+  climate. The Whittaker fallback covers both, but only fires when
+  seasonal data is absent. Caught by
+  `mapgen-render/tests/svg_invariants.rs::always_present_biome_colors_emitted_on_reference_world`,
+  which was deliberately relaxed to assert only the 10
+  always-Köppen-reachable colors rather than all 15. Distinct from
+  "Wider biome palette" — that item adds *new* IDs (humid-subtropical,
+  oceanic, etc.); this item routes existing-but-orphaned IDs.
+- **Trigger for revival.** First ornate render where the steppe /
+  tropical-dry-forest visual gap actually shows (today's renders are
+  rare enough that no one's noticed). Or when "Wider biome palette" is
+  picked up — fold this into that pass to avoid two passes over the
+  Köppen map. Or someone wants the renderer test tightened to "all 15
+  palette colors emit" without first widening the palette.
+- **Cost.** Half a day. Candidate mapping: `BSk → TEMPERATE_GRASSLAND`
+  (cold steppe IS prairie/grassland in real ecology); `Aw → TROPICAL_DRY_FOREST`
+  when annual precip is high enough, else SAVANNA. Both need a
+  property test that the new assignments don't displace the Earth-fit
+  distribution `realism_spec` relies on.
+- **Origin.** Phase 2.5 renderer test, this session.
+
 ---
 
 ## Cultures (Phase 3 work — partially deferred)

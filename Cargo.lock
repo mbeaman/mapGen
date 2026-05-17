@@ -525,6 +525,7 @@ version = "0.1.0"
 dependencies = [
  "libm",
  "mapgen-core",
+ "mapgen-world",
  "serde",
  "svg",
 ]

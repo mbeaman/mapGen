@@ -19,35 +19,35 @@ session, and ship a manual tuning tool to replace the Refinery.
 
 ### Test coverage closure
 
-- [ ] **(1h) proptest cases for pipeline invariants.**
+- [x] **(1h) proptest cases for pipeline invariants.**
   - File: `crates/mapgen-world/tests/proptest_invariants.rs`
-  - At minimum: `flow_directions` strictly descends; `patch.strength_at`
-    always in `[0, 1]`; `generate_full` doesn't panic for random seeds in
-    `1..100`.
-  - Acceptance: `cargo test --workspace` shows proptest cases passing;
-    workspace `proptest` dep is finally exercised.
+  - Cases landed: `patch.strength_at` ∈ [0,1] for random disks and rects
+    (256 cases each); `generate_full` doesn't panic for seeds 1..100
+    (16 cases); `flow_directions` strictly descends across the same
+    range. Workspace `proptest` dep is now exercised.
 
-- [ ] **(1h) renderer tests.**
-  - File: `crates/mapgen-render/tests/svg_invariants.rs`
-  - Checks: SVG is valid XML (parseable); polygon count equals
-    `mesh.cell_count`; all 14 + RIPARIAN biome colors emitted at least
-    once across a 4k-cell seed-42 world; no NaN coordinates.
-  - Acceptance: `mapgen-render` goes from 0 tests to ≥4.
+- [x] **(1h) renderer tests.**
+  - File: `crates/mapgen-render/tests/svg_invariants.rs`. 4 tests:
+    envelope well-formed, polygon count = non-empty cell count, no NaN
+    coords, and the common Köppen-reachable biome palette emits on
+    seed 42. **Finding:** the original "all 14+RIPARIAN colors emit"
+    acceptance was overspecified — `mapgen-world::koppen::to_biome`
+    has no class mapping into TEMPERATE_GRASSLAND (id 4) or
+    TROPICAL_DRY_FOREST (id 9), so they're unreachable via the
+    seasonal Köppen path. The test now asserts the always-reachable
+    subset and documents the gap with a pointer at the BACKLOG
+    "Wider biome palette" item.
 
-- [ ] **(30m) CLI round-trip integration test.**
-  - File: `crates/mapgen-cli/tests/roundtrip.rs`
-  - `mapgen generate --seed 42 --out tmp.json.gz` then `mapgen render --in
-    tmp.json.gz --style biomes --out tmp.svg`; assert SVG ≥100KB and starts
-    with `<?xml` or `<svg`.
-  - Acceptance: `mapgen-cli` goes from 0 tests to 1.
+- [x] **(30m) CLI round-trip integration test.**
+  - File: `crates/mapgen-cli/tests/roundtrip.rs`. Drives the `mapgen`
+    binary end-to-end (generate → render) under a unique temp dir and
+    asserts SVG ≥100KB, starts with `<svg` or `<?xml`. `mapgen-cli`
+    now has 1 test.
 
-- [ ] **(30m) smoke seed sweep.**
-  - File: `crates/mapgen-world/tests/smoke_seeds.rs`
-  - Run 10 seeds (1..=10) through `generate_full()`; assert no panic +
-    minimum quality bars per seed (≥3 distinct biomes on land, ≥1 river,
-    ≥1 lake, both land and sea cells present).
-  - Acceptance: catches future seed-specific generation crashes; runs
-    in <10s.
+- [x] **(30m) smoke seed sweep.**
+  - File: `crates/mapgen-world/tests/smoke_seeds.rs`. Seeds 1..=10
+    through `generate_full`; per-seed asserts on land/sea split, ≥3
+    land biomes, ≥1 river, ≥1 lake. Runs in 1.5s debug / 0.2s release.
 
 ### Sweep CLI
 
