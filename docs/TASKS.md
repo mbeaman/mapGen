@@ -138,9 +138,11 @@ failing tests.
 
 - [ ] (15m) Bump `SCHEMA_VERSION` (currently v2) when the next breaking
   WorldData change lands (likely with Phase 3a — cultures field).
-- [ ] (30m) Baseline performance — measure `generate_full` for 4k / 15k /
+- [x] (30m) Baseline performance — measure `generate_full` for 4k / 15k /
   30k cell counts, record in `docs/perf_baseline.md`. Set a regression
-  budget (e.g., "must stay under 1.5x of baseline").
+  budget. **Shipped:** 17/66/133 ms median (4k/15k/30k) on Ryzen 9 5950X,
+  budget 1.5× baseline. Harness at
+  `crates/mapgen-world/examples/perf_baseline.rs`, manual re-run.
 - [ ] (deferred — see BACKLOG.md "Cross-platform byte-identical golden
   hashes") `wasm-bindgen-test` for native↔wasm32 hash parity.
 
