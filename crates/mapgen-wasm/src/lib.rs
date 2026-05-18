@@ -15,5 +15,5 @@ pub fn generate_and_render(seed: u64, cells: usize, nations: usize) -> String {
         nation_count: nations,
         ..Default::default()
     });
-    mapgen_render::render(&world, Style::Greyscale)
+    mapgen_render::render(&world, Style::Greyscale).expect("greyscale style is implemented")
 }

@@ -4,11 +4,13 @@
 //! * `Biomes` — Phase 2 data visualization with biome-colored cells, a
 //!   traced coastline, and river polylines. Honest dev view of
 //!   everything Phase 2 produces.
-//! * `OrnateAntique` — Phase 3 "exotic map shop" hand-drawn aesthetic.
+//! * `OrnateAntique` — Phase 3e "exotic map shop" hand-drawn aesthetic.
+//!   Variant is reserved; calling [`crate::render`] with it returns
+//!   `Err` until the Phase 3e implementation lands. The submodule will
+//!   come back at that point.
 
 pub mod biomes;
 pub mod greyscale;
-pub mod ornate_antique;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Style {
@@ -17,7 +19,9 @@ pub enum Style {
     Greyscale,
     /// Phase 2 data visualization with biomes, coastlines, rivers.
     Biomes,
-    /// "Exotic map shop" hand-drawn antique aesthetic.
+    /// "Exotic map shop" hand-drawn antique aesthetic. **Not yet
+    /// implemented** — [`crate::render`] returns `Err` for this
+    /// variant. Reserved for Phase 3e.
     OrnateAntique,
 }
 

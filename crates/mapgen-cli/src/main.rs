@@ -101,7 +101,7 @@ fn main() -> Result<()> {
         Cmd::Render { r#in, style, out } => {
             let world = read_world(&r#in)?;
             let style: Style = style.parse().map_err(anyhow::Error::msg)?;
-            let svg = mapgen_render::render(&world, style);
+            let svg = mapgen_render::render(&world, style).map_err(anyhow::Error::msg)?;
             if let Some(parent) = out.parent() {
                 fs::create_dir_all(parent).ok();
             }

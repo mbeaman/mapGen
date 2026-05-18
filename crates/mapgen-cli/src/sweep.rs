@@ -117,7 +117,7 @@ pub fn run(
             ..Default::default()
         };
         let world = generate_full_with(params, ep, cp);
-        let svg = render(&world, style);
+        let svg = render(&world, style).map_err(|e| anyhow!("render: {e}"))?;
 
         let basename = format!("{}_{:.4}", knob.name(), value);
         let svg_path = out.join(format!("{basename}.svg"));

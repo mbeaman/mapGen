@@ -39,9 +39,10 @@ hand-drawn render, Claude-narrated chronicles, web frontend. All in
 
 ## Prerequisites
 
-- Rust toolchain via [rustup](https://rustup.rs). Version is pinned in
-  `rust-toolchain.toml` (currently 1.94) and `rustup` will install it
-  automatically on first `cargo` invocation.
+- Rust toolchain via [rustup](https://rustup.rs). Channel is pinned to
+  `stable` in `rust-toolchain.toml`; `rustup` will install it
+  automatically on first `cargo` invocation. (Developed against the
+  current stable; CI tracks the same channel.)
 - `wasm32-unknown-unknown` target is only required to build
   `mapgen-wasm`: `rustup target add wasm32-unknown-unknown`.
 

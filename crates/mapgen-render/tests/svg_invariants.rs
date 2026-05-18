@@ -30,7 +30,7 @@ fn ref_params() -> GenerateParams {
 
 fn render_ref_world() -> (mapgen_core::WorldData, String) {
     let world = generate_full(ref_params());
-    let svg = render(&world, Style::Biomes);
+    let svg = render(&world, Style::Biomes).expect("biomes style is implemented");
     (world, svg)
 }
 
@@ -152,5 +152,33 @@ fn always_present_biome_colors_emitted_on_reference_world() {
         !svg.contains("#a0a0a0"),
         "unassigned-biome fallback color (#a0a0a0) appeared in SVG — \
          a land cell escaped classification"
+    );
+}
+
+#[test]
+fn ornate_antique_is_an_explicit_err_until_phase_3e() {
+    // The `Style::OrnateAntique` variant is reserved but unimplemented;
+    // `render()` must reject it rather than silently emit a placeholder.
+    // The previous stub returned a 200-byte SVG saying "phase 3", which
+    // hid the unimplemented status from anyone who didn't read the docs.
+    // This test pins the contract: until the Phase 3e implementation
+    // lands, the public renderer returns `Err` and the error string
+    // says so. When the implementation arrives, this test changes to
+    // assert `Ok` (or is replaced by real ornate-style coverage).
+    let world = generate_full(ref_params());
+    let result = render(&world, Style::OrnateAntique);
+    assert!(
+        result.is_err(),
+        "ornate_antique unexpectedly returned Ok before Phase 3e implementation"
+    );
+    let msg = result.unwrap_err();
+    assert!(
+        msg.contains("ornate_antique"),
+        "error message should name the style: {msg:?}"
+    );
+    assert!(
+        msg.to_lowercase().contains("not yet implemented")
+            || msg.to_lowercase().contains("phase 3e"),
+        "error message should explain *why* (not-implemented / Phase 3e): {msg:?}"
     );
 }

@@ -440,6 +440,25 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** A day to wire `wasm-bindgen-test`; ongoing cost in CI time.
 - **Origin.** ARCHITECTURE.md §3; planned for Phase 5.
 
+### CLI argument-parser regression tests
+
+- **Why deferred.** `mapgen-cli` is covered end-to-end by
+  `tests/roundtrip.rs`, `tests/sweep_roundtrip.rs`, and
+  `tests/ornate_antique_stub.rs`, but the individual `generate` / `render`
+  / `sweep` flag definitions (defaults, type bounds, mutually-exclusive
+  combinations) have no unit-level coverage. A clap default change, a
+  rename of `--cells`, or a silent removal of a knob from `--knob` would
+  only surface when an end-to-end test happens to exercise the affected
+  path.
+- **Trigger for revival.** First time an arg-parser regression slips past
+  the integration tests and reaches a user, *or* the CLI grows a
+  fourth subcommand and the surface stops fitting in one head.
+- **Cost.** Half a day. Add a `parse_cli` helper that returns the parsed
+  `Cli` struct without running it, write table-driven cases per
+  subcommand covering: default values, every flag explicitly set,
+  malformed values, and `--help` rendering.
+- **Origin.** Pre-Phase-3a hygiene audit, 2026-05-17.
+
 ### Native sidecar `/narrate` endpoint
 
 - **Why deferred.** Part of Phase 5 (Claude integration). CLI works
