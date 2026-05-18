@@ -47,25 +47,67 @@ spread × measurement count) while still flagging any single stage that
 doubles or worse. Tighten to 1.3× once Phase 3 lands and the pipeline is
 stable again.
 
-This budget is **not** enforced by CI — the harness is run manually after
-work that touches the science pipeline. Wiring it into a release-mode
-`#[ignore]`d test or a Criterion bench is in `docs/BACKLOG.md` if the
-budget starts getting violated quietly.
+The budget is **not** in CI; the harness is run manually after work that
+touches the science pipeline. It is, however, self-checking — see
+"Re-running" below — so a stray `cargo run … -- --check` in a local
+gate or developer workflow is enough to catch a regression.
 
 ## Re-running
 
 ```sh
+# Print measurements only:
 cargo run --release -p mapgen-world --example perf_baseline
+
+# Self-check: also assert median ≤ budget, exit non-zero on violation:
+cargo run --release -p mapgen-world --example perf_baseline -- --check
 ```
 
-Prints a markdown table to stdout. Compare against the baseline above. If
-any size exceeds budget, identify which stage grew (`hyperfine` /
+Both modes print a markdown table to stdout with a `status` column
+showing `ok` / `OVER` per size. `--check` adds a stderr summary and exits
+1 on any violation. The baseline + budget constants live in
+`BASELINES` at the top of
+[`crates/mapgen-world/examples/perf_baseline.rs`](../crates/mapgen-world/examples/perf_baseline.rs)
+and must stay in sync with the table above.
+
+If any size exceeds budget, identify which stage grew (`hyperfine` /
 `cargo flamegraph` on the example binary), and either:
 
 1. Optimize the offending stage back under budget, or
-2. Update this baseline with a justification in the commit message
-   explaining why the new cost is intrinsic to the feature (e.g., Phase 3a
-   cultures adds a Voronoi-assignment pass — fine, but document it).
+2. Update both the `BASELINES` table in the harness *and* the numbers
+   in this doc, with a commit message explaining why the new cost is
+   intrinsic to the feature (e.g., Phase 3a cultures adds a Voronoi-
+   assignment pass — fine, but document it).
 
-The harness lives at `crates/mapgen-world/examples/perf_baseline.rs`; it
-imports nothing CI-relevant and never runs during `cargo test`.
+The harness imports nothing CI-relevant and never runs during `cargo
+test`.
+
+## WASM bundle size
+
+Browser distribution is the constraint here — `mapgen-wasm` ships as a
+single `.wasm` blob plus a JS shim. ARCHITECTURE.md set a 3 MB budget;
+this is the pre-Phase-3 baseline. Phase 3a adds a CSV plus new enums,
+which is the first time growth is structurally expected; tracking it now
+makes that growth visible instead of cumulative-and-silent.
+
+| artifact                                    | size      | budget | status |
+|---------------------------------------------|----------:|-------:|:------:|
+| `target/.../release/mapgen_wasm.wasm` (raw) | 152 KB    | 3 MB   | ok     |
+
+Captured 2026-05-17 on commit `43d4e4a`, target `wasm32-unknown-unknown`,
+profile `release` (workspace default — `opt-level = 3`, no `lto`, no
+`strip`). No `wasm-opt`, no `wasm-strip`, no `--no-default-features` pass
+applied; this is the raw `cargo build` artifact a CI pipeline would
+produce. We are at ~5 % of budget pre-Phase-3.
+
+### Re-measuring
+
+```sh
+cargo build -p mapgen-wasm --target wasm32-unknown-unknown --release
+ls -la target/wasm32-unknown-unknown/release/mapgen_wasm.wasm
+```
+
+If the artifact crosses 1 MB, set up `twiggy` to attribute bytes by
+function / crate, and consider enabling `lto = "fat"` + `wasm-opt -Oz`
+before re-anchoring the budget. The `twiggy` integration is tracked in
+session state as "WASM bundle size profiling" — not on BACKLOG yet
+because the trigger (size > 1 MB) hasn't fired.
