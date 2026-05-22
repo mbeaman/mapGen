@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entities::{Culture, EntityStore, Religion},
+    entities::{Culture, EntityStore, Religion, Settlement},
     event::{EventLog, Work},
     ids::PlateId,
 };
@@ -19,7 +19,10 @@ use crate::{
 ///   empty `CulturesData` (compatible — `#[serde(default)]`).
 /// * v4 — Phase 3b religions field added. Pre-v4 worlds deserialize with an
 ///   empty `ReligionsData` (compatible — `#[serde(default)]`).
-pub const SCHEMA_VERSION: u32 = 4;
+/// * v5 — Phase 3c polities field — `SocietyData::settlements` populated.
+///   Pre-v5 worlds load with an empty settlements vec (compatible —
+///   `#[serde(default)]` on the field).
+pub const SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -170,9 +173,17 @@ pub struct ClimateData {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct SocietyData {
+    /// Polity roster (the architecture's "polities"; type kept as
+    /// `Nation` for schema continuity). Each polity has a capital cell
+    /// and a display color.
     pub nations: Vec<Nation>,
+    /// Settlements (capitals + towns + villages) in Christaller-hierarchy
+    /// order. Filled by the Phase 3c polities stage. Empty on pre-v5
+    /// worlds via `#[serde(default)]`.
+    #[serde(default)]
+    pub settlements: Vec<Settlement>,
     pub roads: Vec<Road>,
-    /// Per cell, the controlling nation (`None` for unclaimed land/sea).
+    /// Per cell, the controlling polity (`None` for unclaimed land/sea).
     pub control: Vec<Option<u32>>,
 }
 
@@ -264,5 +275,7 @@ mod tests {
         // v4 forward-compat: religions field also defaults empty.
         assert!(world.religions.religions.is_empty());
         assert!(world.religions.religion_id.is_empty());
+        // v5 forward-compat: settlements vec also defaults empty.
+        assert!(world.society.settlements.is_empty());
     }
 }

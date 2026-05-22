@@ -12,6 +12,7 @@ pub mod noise;
 pub mod ocean;
 pub mod patch;
 pub mod plates;
+pub mod polities;
 pub mod religions;
 
 use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};

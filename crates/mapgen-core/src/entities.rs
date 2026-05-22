@@ -56,6 +56,36 @@ pub struct Site {
     pub tier: u8, // 0=capital, 1=town, 2=village
 }
 
+/// Settlement tier in the Christaller hierarchy. Capitals seed polities,
+/// towns are mid-tier subordinate centers, villages are the leaf nodes.
+/// Append-only — discriminants are part of the on-disk schema.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum SettlementTier {
+    #[default]
+    Capital = 0,
+    Town = 1,
+    Village = 2,
+}
+
+/// A placed settlement — capital / town / village — owned by exactly
+/// one polity, sitting on exactly one mesh cell. Created during the
+/// Phase 3c polities stage. Indexed by position in
+/// `WorldData.society.settlements`; population is derived per tier so
+/// the Zipf-ish rank-size distribution falls out of the assignment
+/// instead of being computed separately.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct Settlement {
+    pub name: String,
+    pub cell: u32,
+    pub tier: SettlementTier,
+    /// Index into `world.society.nations` (the polity roster).
+    pub polity_id: u16,
+    /// Normalized population proxy in `(0, 1]`. Capital = 1.0; lower
+    /// tiers scaled down per Zipf rank-size.
+    pub population: f32,
+}
+
 /// How a religion organizes its supernatural object — driven by the
 /// founder culture's `MagicStyle` and `TechEra` per ARCHITECTURE.md §4
 /// Phase 3b. Append only — discriminants are part of the on-disk schema.
