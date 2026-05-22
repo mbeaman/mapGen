@@ -56,19 +56,41 @@ primitives, embedded WOFF2 fonts, compass / cartouche / edge-burn,
 culture-driven glyph shapes). All tracked in `docs/ARCHITECTURE.md` +
 `docs/TASKS.md`.
 
-## Prerequisites
+## First-time setup
+
+On macOS / Linux, one command from a fresh clone:
+
+```sh
+./scripts/bootstrap.sh
+```
+
+The script installs rustup (if missing) → installs `just` via cargo
+→ adds the wasm32 target → runs the full validation gate. Idempotent;
+safe to rerun.
+
+If you'd rather do it by hand (or you're on Windows):
+
+1. Install [rustup](https://rustup.rs):
+   `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+2. Install [`just`](https://github.com/casey/just):
+   `cargo install just`
+3. Bootstrap the project:
+   `just setup`
+4. Verify with the full validation gate:
+   `just check`
+
+(`rust-toolchain.toml` pins the channel; the right Rust version
+auto-installs on first `cargo` invocation.)
+
+## Prerequisites (reference)
 
 - Rust toolchain via [rustup](https://rustup.rs). Channel is pinned to
-  `stable` in `rust-toolchain.toml`; `rustup` will install it
-  automatically on first `cargo` invocation. (Developed against the
-  current stable; CI tracks the same channel.)
-- `wasm32-unknown-unknown` target is only required to build
-  `mapgen-wasm`: `rustup target add wasm32-unknown-unknown`.
-- (Optional, recommended for multi-machine work) [`just`](https://github.com/casey/just)
-  for the project's one-command verbs. Install with `cargo install just`,
-  then `just setup` runs the wasm-target bootstrap and `just check`
-  runs the full validation gate. Everything else still works via
-  the direct `cargo` commands below.
+  `stable` in `rust-toolchain.toml`.
+- `wasm32-unknown-unknown` target — handled by `just setup`, or
+  manually via `rustup target add wasm32-unknown-unknown`.
+- [`just`](https://github.com/casey/just) for the project's
+  one-command dev verbs. Direct `cargo` invocations remain documented
+  below for users who don't want a new tool.
 
 ## Quick start
 
