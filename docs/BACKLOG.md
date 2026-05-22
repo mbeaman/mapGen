@@ -415,6 +415,188 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** Hours after `resvg` is wired for PNG.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
+### Imhof simulated-annealing label placement
+
+- **Why deferred.** Today's settlement / polity / sacred-site labels
+  use fixed offsets per tier. On dense maps with clustered polities
+  the labels can overlap each other and overlap glyphs, but the
+  output is still readable — settlement label group uses `paint-order
+  ="stroke"` with a thick parchment halo so overlaps degrade
+  gracefully. Full Imhof-style SA optimization (per-label position
+  energy minimization across N positions × M neighbors) is a day of
+  focused work with a payoff that's only visible on dense renders.
+- **Trigger for revival.** A render at the canonical 15k-cell scale
+  has ≥2 visibly overlapping settlement labels that obscure each
+  other, OR the polity count rises above 8 (today's seed-42 ceiling
+  is 4–5 polities post-culling).
+- **Cost.** ~1 day.
+- **Origin.** ARCHITECTURE.md §Phase 3e (post-MVP). Discussed in
+  `.local/sessionstate.md` Phase 3e polish list.
+
+### Curve-along-feature labels (rivers, mountain ranges)
+
+- **Why deferred.** Rivers and mountain ranges are unlabeled today.
+  Adding names along a polyline (river) or spanning a peak chain
+  (mountain) requires `<textPath>` with a constructed path element +
+  font-metric-aware breaking. Settlements, polities, and sacred sites
+  carry all the load-bearing labels; rivers/mountains are decorative.
+- **Trigger for revival.** Naming stage starts generating river /
+  mountain names (today it only names settlements, polities,
+  religions). Or user feedback that the map needs more named
+  features.
+- **Cost.** ~1 day for rivers (path-along-polyline is straightforward
+  SVG); mountain ranges harder because they're a discrete set of
+  cells, not a polyline — need a clustering pass first.
+- **Origin.** Session-state Phase 3e polish list.
+
+### Hand-authored `docs/target_aesthetic.svg`
+
+- **Why deferred.** ARCHITECTURE.md §Phase 3e recommends authoring a
+  reference SVG on Day 1 to anchor tuning decisions for the
+  generative renderer. We shipped the generative renderer first
+  (parchment + coastline ripples + mountains + forests + roads +
+  glyphs + typography + compass + cartouche + edge-burn) without
+  the reference. Authoring it retroactively would be busywork unless
+  we're starting a new variant.
+- **Trigger for revival.** Starting work on an alternative ornate
+  style (e.g., a "political map" or "physical map" variant) where
+  having a reference SVG up front would prevent the same drift
+  pattern. Or doing a major redesign of `ornate_antique` (e.g.,
+  swapping to a watercolor aesthetic).
+- **Cost.** ~2h of hand-drawing in Inkscape / Affinity / etc.
+- **Origin.** ARCHITECTURE.md §Phase 3e "Day 1" recommendation;
+  noted as never done in session-state.
+
+### Major-river + lake names
+
+- **Why deferred.** The Phase 3d naming stage generates settlements
+  + polities + religions, but rivers and lakes stay unnamed. Major
+  rivers / lakes are visually prominent and would carry naming well
+  (think "Anduin," "Mirrormere"). Adding them needs (a) a "major
+  river" / "major lake" filter (rank by length / area / drainage
+  basin), (b) per-feature name generation hooked into the existing
+  Language pools, and (c) curve-along-feature labels (see above).
+- **Trigger for revival.** Either curve-along-feature labels lands
+  (then river/lake names become useful), or a user export needs to
+  reference specific rivers/lakes by name.
+- **Cost.** ~half-day for naming + filter; full day combined with
+  curve labels.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Polity border lines
+
+- **Why deferred.** Today polity extent is shown only by `<rect>`
+  territorial fill via `world.society.control` (which the biomes /
+  cultures debug renders use). The ornate style relies on the
+  capital glyph + scattered town glyphs + the centroid polity name
+  label to suggest territory. Real antique maps draw thin dashed
+  border lines between adjacent polities — would clarify
+  spheres-of-control without dominating the aesthetic.
+- **Trigger for revival.** Multi-polity worlds where territorial
+  ambiguity is user-visible (e.g., "which polity owns this
+  peninsula?"). Or a "political map" alternative render style
+  (where borders are the focus).
+- **Cost.** ~half-day. Trace shared edges between cells with
+  different `control[]` values, draw as a dashed polyline group.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Ocean hatching / contour texture
+
+- **Why deferred.** Deep + shallow ocean today are flat fills with
+  the parchment radial-gradient bleeding through. Real antique maps
+  often have horizontal hatching, stippling, or fanning current
+  lines to give the ocean visual texture without making it dominant.
+  Adds rendering cost (more polylines), so deferring until aesthetic
+  payoff justifies the bytes.
+- **Trigger for revival.** Side-by-side with the target_aesthetic.svg
+  reference confirms ocean texture is the biggest missing element.
+  Or the rendered SVG starts feeling "empty" on large oceanic seeds.
+- **Cost.** ~half-day. Generate hatching lines parallel to coast,
+  spaced by `hash_offset()`-driven jitter for the hand-drawn feel.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Mountain depth shadow
+
+- **Why deferred.** Tolkien-style mountain triangles render flat
+  with optional snowcap. Adding a sub-triangle shadow under each
+  peak (offset down-right, semi-transparent) would give them
+  perceived 3D depth at modest visual cost.
+- **Trigger for revival.** Mountains read as "stickers on a map"
+  rather than "land features." Or the user wants more dramatic
+  topography emphasis.
+- **Cost.** ~1h. Per-mountain extra polygon offset 1–2 px down-right
+  in semi-transparent dark brown, drawn under the main triangle.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Town size variation by population
+
+- **Why deferred.** Today all town glyphs render at 0.75× the
+  capital scale regardless of `Settlement.population`. The Christaller
+  hierarchy in `polities.rs` already differentiates capital / town /
+  village; could push that further by scaling town glyphs by
+  population proxy (e.g., 0.6× – 0.9× linearly with population).
+- **Trigger for revival.** Multi-town polities where the ranking of
+  towns isn't visually obvious. Or a feature where the user can
+  inspect/click a town for population.
+- **Cost.** ~30m to wire `Settlement.population` into the glyph
+  scale.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Roads differentiated by trunk vs branch
+
+- **Why deferred.** `pick_towns` builds trunk-and-branch road
+  topology (the Dijkstra reuse discount makes overlapping segments
+  effectively a trunk), but the renderer draws all roads with the
+  same dashed russet stroke. Differentiating by traversal frequency
+  (count how many town→capital paths share each cell, scale stroke
+  by sqrt of count) would highlight the trunk roads.
+- **Trigger for revival.** Maps with ≥6 towns per polity start
+  feeling "all roads look the same." Or render needs to support a
+  "trade routes" view.
+- **Cost.** ~half-day. Add per-cell traversal count when building
+  roads, expose as `Road::weight: f32`, scale stroke width.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Sacred sites differentiated by pantheon
+
+- **Why deferred.** All sacred sites currently render as a gold
+  diamond regardless of religion. `PantheonPattern` already
+  distinguishes Mono / Poly / Dual / Animism / Ancestor /
+  CosmicOrder — could vary the sacred-site symbol per pantheon
+  (e.g., cross for Mono, multi-rayed sun for Poly, yin-yang for
+  Dual, leaf for Animism, ancestor-tablet for Ancestor, circle for
+  CosmicOrder).
+- **Trigger for revival.** Multi-religion worlds where the sacred-
+  site symbols don't visually distinguish faiths. Today's seed-42
+  has 1–2 religions so the distinction is minimal; matters more on
+  seeds that surface 3 religions.
+- **Cost.** ~half-day for 6 small SVG glyph functions + dispatch.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Irregular parchment edge burn
+
+- **Why deferred.** Current edge-burn vignette uses a smooth radial
+  gradient — clean but mathematically uniform. Real antique parchment
+  burns irregularly (some corners more than others, occasional dark
+  splotches mid-edge). Adding 4–6 hash-positioned dark stains along
+  the edge would humanize the gradient.
+- **Trigger for revival.** Vignette starts feeling "Photoshop filter"
+  rather than "real antique." Or alongside any aesthetic-pass
+  redesign.
+- **Cost.** ~1h. Stain SVG primitives positioned via hash_offset()
+  along the canvas perimeter.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
+### Lake labels
+
+- **Why deferred.** Lakes go through Priority-Flood extraction and
+  carry a `cells` + `level` field, but no names. Settlements /
+  polities / religions are the load-bearing labels today.
+- **Trigger for revival.** Naming stage extends to natural features
+  (paired with the major-river-names item above).
+- **Cost.** ~1h after naming stage extends.
+- **Origin.** Phase 3e polish brainstorm, current session.
+
 ---
 
 ## Infrastructure / tooling
