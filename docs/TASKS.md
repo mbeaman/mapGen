@@ -115,18 +115,30 @@ depending on whether you want visual payoff or world-shape depth next.
 
 ### Phase 3b — Religions
 
-- [ ] (4h) `Religion` entity + `PantheonPattern` enum
-  (Mono/Poly/Dual/Animism/Ancestor/CosmicOrder) in `mapgen-core`
-- [ ] (4h) `religions::found` — 1-3 religions per world, tied to founder
-  culture, spread by alignment compatibility
+- [x] (4h) `Religion` entity + `PantheonPattern` enum
+  (Mono/Poly/Dual/Animism/Ancestor/CosmicOrder) in `mapgen-core`.
+  **Shipped `bdfeeb7`** (skeleton).
+- [x] (4h) `religions::found` — 1-3 religions per world, tied to founder
+  culture, spread by alignment compatibility. **Shipped `c94e856`**
+  (after RED spec `b0ff362`). Founders picked by population; pantheon
+  derived from founder's `MagicStyle`; spread by 2D-alignment-distance
+  Voronoi with 1.5-radius soft cap; sacred sites at top-3 highest-
+  elevation adherent cells per religion. 10 spec tests green.
 
 ### Phase 3c — Polities
 
-- [ ] (1d) `polities_spec.rs` failing tests (every settlement reachable
-  from its capital; capital on suitable cell; Zipf rank-size)
-- [ ] (4h) Suitability-weighted Poisson capitals filtered by
-  `Culture.settlement` preference
-- [ ] (1d) Christaller k=4 hierarchy + A* roads with reuse discount
+- [x] (1d) `polities_spec.rs` failing tests (every settlement reachable
+  from its capital; capital on suitable cell; Zipf rank-size).
+  **Shipped `59e84bf`** as RED spec; greens with `48957b8`.
+- [x] (4h) Suitability-weighted capital placement filtered by
+  `Culture.settlement` preference (reified as habitat-fitness against
+  the founding culture's archetype + min-separation BFS).
+  **Shipped `48957b8`**.
+- [x] (1d) Christaller-style hierarchy (Capital + Towns; villages
+  deferred to follow-up) + Dijkstra roads with reuse discount.
+  **Shipped `48957b8`**. Min-separation enforces non-clumped towns;
+  road cost is `1` for cells in any existing road and `2` for fresh
+  cells — produces the trunk-and-branch shape the architecture wants.
 
 ### Phase 3d — Naming
 
@@ -137,21 +149,39 @@ depending on whether you want visual payoff or world-shape depth next.
 
 - [ ] (4h) Probe `roughr` 0.12 API — `Generator::new` is private; find
   the correct builder entry point. If unworkable, vendor ~600 LOC of
-  Rough.js bezier-perturbation algorithm.
-- [ ] (2h) Hand-author `docs/target_aesthetic.svg` as the visual reference
-  every render decision compares against (per the original Phase 3 day-1
-  recommendation).
-- [ ] (1d) Parchment background + perturbed coastline (4 offset ripples,
-  roughr-jittered)
-- [ ] (1d) Tolkien triangular mountain icons + biome-keyed scatter tree
-  forests
+  Rough.js bezier-perturbation algorithm. **Deferred** from the
+  `342f606` MVP — the per-edge wobble (hash-derived) gives a passable
+  hand-drawn feel without pulling in the dep.
+- [ ] (2h) Hand-author `docs/target_aesthetic.svg` as the visual
+  reference every render decision compares against. **Deferred** — the
+  MVP shipped without a target SVG; revisit before tuning glyph
+  shapes / palette.
+- [x] (1d) Parchment background + perturbed coastline (multi-offset
+  ripples). **Shipped `342f606`** — 3 ripples (faded outer +
+  middle + dark inner), per-edge wobble via deterministic hash.
+  `roughr` upgrade is the open item above.
+- [x] (1d) Tolkien triangular mountain icons + biome-keyed scatter tree
+  forests. **Shipped `342f606`**. Mountains on ALPINE/SNOW cells,
+  scaled by elevation, with snowcaps on SNOW + tall ALPINE. Trees on
+  TEMPERATE_FOREST (3), TEMPERATE_RAINFOREST (4), TAIGA (2),
+  TROPICAL_RAINFOREST (4) — deterministic per-cell positions.
 - [ ] (4h) Typography: bundle Cinzel + IM Fell English + EB Garamond
-  WOFF2 in SVG `<defs>`
-- [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn aging
+  WOFF2 in SVG `<defs>`. **Deferred**.
+- [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn
+  aging. **Partial** — vignette-lite is via the parchment radial
+  gradient; compass + cartouche + edge-burn deferred.
 - [ ] (1d) Settlement glyphs derived from
-  `Culture.settlement × Culture.architecture`
+  `Culture.settlement × Culture.architecture`. **Partial** —
+  glyphs are tier-driven (capitals = crown+square, towns = circle),
+  not yet culture/architecture-driven. The shapes vary by tier; the
+  full matrix lands later.
 - [ ] (4h) Imhof-style label placement (basic — full simulated-annealing
-  variant is post-MVP)
+  variant is post-MVP). **Deferred** — no label rendering yet.
+
+**Phase 3e MVP shipped in `342f606`**: parchment + ripples + mountains
++ forests + roads (dashed russet) + settlement icons + sacred-site
+diamonds. The screenshot exists; refinement items above are
+incremental polish.
 
 ---
 
