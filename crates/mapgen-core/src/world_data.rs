@@ -4,12 +4,20 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entities::EntityStore,
+    entities::{Culture, EntityStore},
     event::{EventLog, Work},
     ids::PlateId,
 };
 
-pub const SCHEMA_VERSION: u32 = 2;
+/// On-disk schema version. Bump on any breaking change to `WorldData` shape
+/// that older readers can't recover from via `#[serde(default)]`.
+///
+/// History:
+/// * v1 — Phase 1 baseline (mesh + terrain + entity store + events).
+/// * v2 — Phase 2 climate/hydrology/biome fields landed via `#[serde(default)]`.
+/// * v3 — Phase 3a cultures field added. Pre-v3 worlds deserialize with an
+///   empty `CulturesData` (compatible — `#[serde(default)]`).
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -22,6 +30,10 @@ pub struct WorldData {
     pub climate: ClimateData,
     #[serde(default)]
     pub society: SocietyData,
+    /// Phase 3a — cultures stage output. Empty on pre-Phase-3a worlds and
+    /// on worlds where the cultures stage hasn't run yet.
+    #[serde(default)]
+    pub cultures: CulturesData,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -168,4 +180,22 @@ pub struct Nation {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Road {
     pub cells: Vec<u32>,
+}
+
+/// Output of the Phase 3a cultures stage.
+///
+/// `cultures` holds the per-world roster; `culture_id` is the per-cell
+/// assignment. A cell's index into `culture_id` matches its mesh cell index.
+/// `None` means "unassigned" — sea cells, or land cells the cultures stage
+/// couldn't place under habitat-fitness rules.
+///
+/// Indices into `cultures` are `u16` so a culture id fits alongside a cell id
+/// pair in the Voronoi-assignment scratch space. 65 535 cultures per world is
+/// far above the realistic ceiling (architecture targets 4-8 in MVP).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CulturesData {
+    pub cultures: Vec<Culture>,
+    /// Per cell, `Some(index)` into `cultures` or `None` for unassigned.
+    /// Empty when the cultures stage hasn't run.
+    pub culture_id: Vec<Option<u16>>,
 }

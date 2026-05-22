@@ -4,6 +4,7 @@
 pub mod biomes;
 pub mod climate;
 pub mod climate_seasonal;
+pub mod cultures;
 pub mod erosion;
 pub mod hydrology;
 pub mod koppen;

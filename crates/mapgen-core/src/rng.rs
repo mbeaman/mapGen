@@ -21,6 +21,9 @@ pub enum Stage {
     Names = 10,
     History = 11,
     Render = 12,
+    /// Phase 3a — cultures stage. Conceptually runs between Climate and
+    /// Capitals; appended here to keep discriminants stable.
+    Cultures = 13,
 }
 
 /// Lightweight RNG factory. Hold the master seed; mint a fresh

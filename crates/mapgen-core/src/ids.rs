@@ -41,6 +41,7 @@ macro_rules! id_newtype {
 }
 
 id_newtype!(CellId);
+id_newtype!(CultureId);
 id_newtype!(EntityId);
 id_newtype!(EventId);
 id_newtype!(PlateId);
