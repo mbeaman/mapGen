@@ -83,14 +83,25 @@ failing tests.
 
 ### Phase 3a — Cultures stage
 
-- [ ] (1d) `cultures_spec.rs` failing-test contract
-- [ ] (1d) `Race`, `Culture`, `Alignment`, `TechProfile`, `MagicStyle`,
+- [x] (1d) `Race`, `Culture`, `Alignment`, `TechProfile`, `MagicStyle`,
   `SettlementIcon`, `Architecture`, `DiplomaticPattern` enums in
-  `mapgen-core/src/entities.rs`
+  `mapgen-core/src/entities.rs`. **Shipped `98c7422`** as the skeleton
+  half: types + module stub + `WorldData::cultures` field + schema
+  v2→v3 + `Stage::Cultures = 13` (appended). `populate` is `todo!()`.
+- [x] (1d) `cultures_spec.rs` failing-test contract. **Shipped** —
+  8 tests covering structural invariants (`culture_id` length matches
+  cell count, indices in range, sea cells `None`) and ARCHITECTURE.md
+  §4 Phase 3a exit criteria (every land cell has a culture, ≥2
+  distinct cultures, every roster entry has cells, determinism for
+  fixed seed). All RED via `populate()`'s `todo!()` — the contract.
 - [ ] (1d) `cultures::populate` — habitat scoring + weighted Voronoi
-  assignment writes `culture_id` per cell
+  assignment writes `culture_id` per cell. Makes the 8 spec tests
+  green; will also surface the habitat-fitness ≥ 0.3 invariant via a
+  shared scoring helper the test imports.
 - [ ] (4h) `crates/mapgen-world/data/race_archetypes.csv` with 4-5 MVP
-  archetypes (1 human variant + 1 elf + 1 dwarf + 1 orc + 1 halfling)
+  archetypes (1 human variant + 1 elf + 1 dwarf + 1 orc + 1 halfling).
+  Drives `populate`'s archetype roster — likely lands paired with the
+  populate implementation, not before.
 
 ### Phase 3b — Religions
 
