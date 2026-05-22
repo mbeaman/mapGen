@@ -272,12 +272,172 @@ fn ornate_antique_emits_a_phase_3e_render() {
         "ornate SVG has no polygon tags — mountains + cell fills + \
          tree tufts all use polygons"
     );
+    // Settlement glyphs use a mix of <rect>, <polygon>, and <circle>
+    // primitives depending on the culture's SettlementIcon — see the
+    // exhaustive matrix test `ornate_antique_dispatches_glyph_for_
+    // every_icon_arch_tier_combination` below. At least one rect
+    // appears because most icon families (Castle, Tower, Hall, Gate,
+    // Longhouse) draw rects, and the seed-42 roster always contains
+    // at least one of those plus the village ornaments.
     assert!(
         svg.contains("<rect"),
-        "ornate SVG has no rect — capitals draw filled squares"
+        "ornate SVG has no rect — every settlement icon family emits at \
+         least one rectangular primitive (walls, body, or village mark)"
     );
+}
+
+/// Synthetic-world helper for the glyph-dispatch matrix test. Builds
+/// 96 cells laid out on a regular grid, 32 cultures (one per icon ×
+/// architecture pair), 32 polities, and 96 settlements — three per
+/// polity covering each `SettlementTier`. Used by the exhaustive
+/// dispatch test to assert the renderer emits a distinct class marker
+/// for every (icon, architecture, tier) combination.
+///
+/// The mesh has empty `cell_vertices` so `render_land_fill` and the
+/// coastline ripples don't draw polygons; biomes are uniform
+/// `TEMPERATE_FOREST` so forest scatter runs (proving cell iteration
+/// happens) but mountains don't fire. All cells are land (`elevation
+/// = 0.5`), so the coastline-ripple layer finds no land/sea edges.
+fn synthetic_world_for_glyph_matrix() -> mapgen_core::WorldData {
+    use mapgen_core::entities::{
+        Architecture, Culture, Settlement, SettlementIcon, SettlementTier,
+    };
+    use mapgen_core::world_data::Nation;
+
+    const ICONS: [SettlementIcon; 8] = [
+        SettlementIcon::Castle,
+        SettlementIcon::Tower,
+        SettlementIcon::Hall,
+        SettlementIcon::Spire,
+        SettlementIcon::Longhouse,
+        SettlementIcon::Treehouse,
+        SettlementIcon::Gate,
+        SettlementIcon::Yurt,
+    ];
+    const ARCHS: [Architecture; 4] = [
+        Architecture::Classical,
+        Architecture::Gothic,
+        Architecture::Organic,
+        Architecture::Megalithic,
+    ];
+    const TIERS: [SettlementTier; 3] = [
+        SettlementTier::Capital,
+        SettlementTier::Town,
+        SettlementTier::Village,
+    ];
+
+    let n_cells: usize = ICONS.len() * ARCHS.len() * TIERS.len(); // 96
+
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 1280.0;
+    world.mesh.height = 720.0;
+    world.mesh.sites = (0..n_cells)
+        .map(|i| {
+            let col = (i % 32) as f32;
+            let row = (i / 32) as f32;
+            [40.0 + col * 38.0, 80.0 + row * 200.0]
+        })
+        .collect();
+    world.mesh.cell_vertices = vec![vec![]; n_cells];
+    world.mesh.neighbors = vec![vec![]; n_cells];
+    world.mesh.coast = vec![false; n_cells];
+
+    world.terrain.elevation = vec![0.5; n_cells];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); n_cells];
+    world.terrain.plates = vec![];
+
+    world.climate.biome = vec![3; n_cells]; // TEMPERATE_FOREST
+    world.climate.temperature = vec![0.5; n_cells];
+    world.climate.precipitation = vec![0.5; n_cells];
+
+    for (icon_idx, &icon) in ICONS.iter().enumerate() {
+        for (arch_idx, &arch) in ARCHS.iter().enumerate() {
+            let polity_idx = icon_idx * ARCHS.len() + arch_idx;
+            world.cultures.cultures.push(Culture {
+                name: format!("Culture{polity_idx}"),
+                settlement: icon,
+                architecture: arch,
+                ..Default::default()
+            });
+            let capital_cell = (polity_idx * TIERS.len()) as u32;
+            world.society.nations.push(Nation {
+                name: format!("Polity{polity_idx}"),
+                capital_cell,
+                color: [
+                    80 + (polity_idx as u8 * 5),
+                    50 + (polity_idx as u8 * 3),
+                    40 + (polity_idx as u8 * 2),
+                ],
+            });
+            for (tier_idx, &tier) in TIERS.iter().enumerate() {
+                let cell = (polity_idx * TIERS.len() + tier_idx) as u32;
+                world.society.settlements.push(Settlement {
+                    name: format!("S{cell}"),
+                    cell,
+                    tier,
+                    polity_id: polity_idx as u16,
+                    population: 1.0 - (tier_idx as f32) * 0.3,
+                });
+            }
+        }
+    }
+
+    world.cultures.culture_id = (0..n_cells)
+        .map(|i| Some((i / TIERS.len()) as u16))
+        .collect();
+    world.society.control = vec![None; n_cells];
+    world.society.roads = vec![];
+
+    world
+}
+
+#[test]
+fn ornate_antique_dispatches_glyph_for_every_icon_arch_tier_combination() {
+    // The Phase 3e ornate render is contracted to derive settlement
+    // glyphs from `Culture.settlement × Culture.architecture × tier`
+    // (see ARCHITECTURE.md §Context). This test pins the dispatch
+    // surface — every 8 icons × 4 architectures × 3 tiers = 96 combos
+    // must emit a class-marked group, so a future regression that
+    // silently falls back to "Castle for everything" or "tier-only"
+    // fires here.
+    //
+    // The class attribute is the test affordance; usvg/resvg ignore
+    // it during PNG rendering, so it costs nothing visually. A
+    // production-side reader can rely on these markers if they ever
+    // need to introspect glyph dispatch from the SVG.
+    let world = synthetic_world_for_glyph_matrix();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    const ICON_NAMES: &[&str] = &[
+        "castle",
+        "tower",
+        "hall",
+        "spire",
+        "longhouse",
+        "treehouse",
+        "gate",
+        "yurt",
+    ];
+    const ARCH_NAMES: &[&str] = &["classical", "gothic", "organic", "megalithic"];
+    const TIER_NAMES: &[&str] = &["capital", "town", "village"];
+
+    let mut missing: Vec<String> = Vec::new();
+    for icon in ICON_NAMES {
+        for arch in ARCH_NAMES {
+            for tier in TIER_NAMES {
+                let marker = format!("settlement icon-{icon} arch-{arch} tier-{tier}");
+                if !svg.contains(&marker) {
+                    missing.push(marker);
+                }
+            }
+        }
+    }
+
     assert!(
-        svg.contains("<circle"),
-        "ornate SVG has no circle — towns draw filled circles"
+        missing.is_empty(),
+        "{} of 96 glyph dispatch markers missing from ornate render \
+         (first 8 shown): {:?}",
+        missing.len(),
+        &missing[..missing.len().min(8)]
     );
 }

@@ -177,11 +177,24 @@ depending on whether you want visual payoff or world-shape depth next.
 - [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn
   aging. **Partial** — vignette-lite is via the parchment radial
   gradient; compass + cartouche + edge-burn deferred.
-- [ ] (1d) Settlement glyphs derived from
-  `Culture.settlement × Culture.architecture`. **Partial** —
-  glyphs are tier-driven (capitals = crown+square, towns = circle),
-  not yet culture/architecture-driven. The shapes vary by tier; the
-  full matrix lands later.
+- [x] (1d) Settlement glyphs derived from
+  `Culture.settlement × Culture.architecture × SettlementTier`.
+  **Shipped** — 8 icon silhouettes (Castle/Tower/Hall/Spire/
+  Longhouse/Treehouse/Gate/Yurt) × 4 architecture style modifiers
+  (stroke / fill darkening / corner radius / Gothic vertical accent)
+  × 3 tier behaviors (Capital adds pennant above; Town uses base
+  silhouette at 0.75 scale; Village collapses to polity-tinted dot).
+  Lookup is `Settlement.polity_id → Nation.capital_cell →
+  culture_id[cell] → cultures.cultures[idx]`, cached per polity at
+  the start of `render_settlements` so frontier towns inherit their
+  founder culture's glyph regardless of which cell they sit on.
+  Dispatch is class-marked (`class="settlement icon-X arch-Y
+  tier-Z"`) and pinned by an exhaustive 96-combo test in
+  `svg_invariants::ornate_antique_dispatches_glyph_for_every_
+  icon_arch_tier_combination`. Seed 42 at 4k cells shows
+  Riverfolk=Hall+Classical, Wildwood=Treehouse+Organic, Iron Hold
+  =Gate+Megalithic, Burning Horde=Longhouse+Megalithic — Greendale
+  drops per the known Halfling-fitness issue.
 - [x] (4h) Imhof-style label placement (basic — full simulated-annealing
   variant is post-MVP). **Shipped** in the labels follow-up commit —
   settlements, polities, and religion sacred sites all carry SVG text

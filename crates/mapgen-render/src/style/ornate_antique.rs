@@ -10,8 +10,11 @@
 //! * Forest scatter: small tree-tuft triangles on TEMPERATE_FOREST /
 //!   TEMPERATE_RAINFOREST / TAIGA / TROPICAL_RAINFOREST cells,
 //!   positioned deterministically inside each cell polygon.
-//! * Settlement glyphs: capitals are larger filled-square-with-crown
-//!   marks colored by polity; towns are smaller circles.
+//! * Settlement glyphs: derived from
+//!   `Culture.settlement × Culture.architecture × SettlementTier`. Each
+//!   icon family has its own silhouette (8 base shapes); architecture
+//!   tweaks stroke / fill / corner-radius. Capital adds a pennant
+//!   above; village collapses to a tinted dot.
 //! * Roads: thin russet polylines along road-cell sequences.
 //! * Sacred sites: small radiant marks layered above settlements.
 //!
@@ -21,8 +24,8 @@
 //! * `<defs>`-embedded Cinzel / IM Fell English / EB Garamond fonts.
 //! * Compass rose, corner cartouche, vignette, edge burn.
 //! * Imhof-style label placement (settlement & polity labels).
-//! * `Culture.settlement × Culture.architecture` glyph-shape derivation
-//!   (today the same tier-based shapes apply to every culture).
+//! * (deferred) `roughr` Bezier perturbation for true pen-jitter — the
+//!   per-vertex wobble only approximates the look.
 //!
 //! All randomness is derived from cell IDs and vertex indices — no RNG
 //! is threaded through this module, so the output is byte-identical
@@ -30,7 +33,7 @@
 
 use std::fmt::Write;
 
-use mapgen_core::entities::SettlementTier;
+use mapgen_core::entities::{Architecture, SettlementIcon, SettlementTier};
 use mapgen_core::WorldData;
 
 pub fn render(world: &WorldData) -> String {
@@ -301,63 +304,500 @@ fn render_roads(world: &WorldData, out: &mut String) {
     out.push_str("</g>");
 }
 
-/// Settlement glyphs: capitals get a square-with-crown (filled by
-/// polity color + dark border + small crown above), towns get a circle.
-/// Sized by tier.
+/// Settlement glyphs derived from
+/// `Culture.settlement × Culture.architecture × SettlementTier`. Each
+/// settlement is wrapped in a `<g class="settlement icon-X arch-Y
+/// tier-Z">` group — the class attribute lets tests pin the dispatch
+/// without coupling to exact path geometry, and usvg/resvg silently
+/// ignore unrecognized attributes during PNG rasterization.
+///
+/// Lookup chain per polity: `Nation.capital_cell → cultures.culture_id
+/// [cell] → cultures.cultures[idx]`. Computed once and cached so a
+/// polity's frontier town carries the *founding* culture's glyph (the
+/// natural reading of "settlement × architecture") even if the cell
+/// the town sits on happens to belong to a neighbor's culture. Falls
+/// back to `(Castle, Classical)` if any link is missing.
 fn render_settlements(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+
+    // Per polity, the founding culture's (icon, architecture) — looked
+    // up once so a polity's settlements share their founder's
+    // silhouette regardless of which cell each one sits on.
+    let polity_glyph: Vec<(SettlementIcon, Architecture)> = world
+        .society
+        .nations
+        .iter()
+        .map(|n| {
+            world
+                .cultures
+                .culture_id
+                .get(n.capital_cell as usize)
+                .copied()
+                .flatten()
+                .and_then(|idx| world.cultures.cultures.get(idx as usize))
+                .map(|c| (c.settlement, c.architecture))
+                .unwrap_or((SettlementIcon::Castle, Architecture::Classical))
+        })
+        .collect();
+
     for s in &world.society.settlements {
         let site = mesh.sites[s.cell as usize];
-        let color = world
+        let (icon, arch) = polity_glyph
+            .get(s.polity_id as usize)
+            .copied()
+            .unwrap_or((SettlementIcon::Castle, Architecture::Classical));
+        let polity_color = world
             .society
             .nations
             .get(s.polity_id as usize)
-            .map(|n| format!("#{:02x}{:02x}{:02x}", n.color[0], n.color[1], n.color[2]))
-            .unwrap_or_else(|| "#5a3a25".to_string());
-        match s.tier {
-            SettlementTier::Capital => {
-                // 8×8 filled square + crown notch above.
-                let cx = site[0];
-                let cy = site[1];
-                write!(
-                    out,
-                    r##"<rect x="{:.1}" y="{:.1}" width="8" height="8" fill="{color}" stroke="#1a140e" stroke-width="0.9"/>"##,
-                    cx - 4.0,
-                    cy - 4.0
-                )
-                .unwrap();
-                // Three-tooth crown.
-                write!(
-                    out,
-                    r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{color}" stroke="#1a140e" stroke-width="0.7"/>"##,
-                    cx - 4.0, cy - 4.0,
-                    cx - 4.0, cy - 7.0,
-                    cx - 1.5, cy - 4.5,
-                    cx,       cy - 8.0,
-                    cx + 1.5, cy - 4.5,
-                    cx + 4.0, cy - 7.0,
-                    cx + 4.0, cy - 4.0,
-                )
-                .unwrap();
-            }
-            SettlementTier::Town => {
-                write!(
-                    out,
-                    r##"<circle cx="{:.1}" cy="{:.1}" r="3.5" fill="{color}" stroke="#1a140e" stroke-width="0.7"/>"##,
-                    site[0], site[1]
-                )
-                .unwrap();
-            }
-            SettlementTier::Village => {
-                write!(
-                    out,
-                    r##"<circle cx="{:.1}" cy="{:.1}" r="2" fill="{color}" stroke="#1a140e" stroke-width="0.5"/>"##,
-                    site[0], site[1]
-                )
-                .unwrap();
+            .map(|n| n.color)
+            .unwrap_or([90, 58, 37]);
+        let style = arch_style(arch);
+        let fill = darken_color(polity_color, style.fill_darken);
+
+        write!(
+            out,
+            r##"<g class="settlement icon-{icon} arch-{arch} tier-{tier}">"##,
+            icon = icon_class(icon),
+            arch = arch_class(arch),
+            tier = tier_class(s.tier),
+        )
+        .unwrap();
+
+        let scale = match s.tier {
+            SettlementTier::Capital => 1.0,
+            SettlementTier::Town => 0.75,
+            SettlementTier::Village => 0.0, // village uses a uniform tinted dot
+        };
+
+        if s.tier == SettlementTier::Village {
+            // Per advisor: villages collapse to a small icon-family-
+            // tinted square. At 4-pixel scale, distinguishing 8 icon
+            // silhouettes is wasted detail — the polity color carries
+            // the identity instead.
+            write!(
+                out,
+                r##"<rect x="{x:.1}" y="{y:.1}" width="3" height="3" fill="{fill}" stroke="#1a140e" stroke-width="0.5"/>"##,
+                x = site[0] - 1.5,
+                y = site[1] - 1.5,
+            )
+            .unwrap();
+        } else {
+            draw_glyph(icon, site[0], site[1], scale, &fill, &style, out);
+            if s.tier == SettlementTier::Capital {
+                draw_capital_pennant(site[0], site[1], scale, &fill, out);
             }
         }
+
+        out.push_str("</g>");
     }
+}
+
+/// Architecture-driven styling axis: stroke weight, fill darkening,
+/// rect corner-radius. Classical is the clean baseline; Gothic adds
+/// stroke + slight darkening; Organic rounds corners + slightly fades;
+/// Megalithic uses heavy stroke + darker fill to read as "carved
+/// stone."
+#[derive(Copy, Clone)]
+struct ArchStyle {
+    stroke_width: f32,
+    fill_darken: f32,
+    rx: f32,
+    /// Gothic adds a thin vertical accent line up the middle of body-
+    /// based silhouettes (Castle, Tower, Hall, Gate, Longhouse, Yurt).
+    /// Triangle-based silhouettes (Spire, Treehouse) ignore it.
+    accent: bool,
+}
+
+fn arch_style(arch: Architecture) -> ArchStyle {
+    match arch {
+        Architecture::Classical => ArchStyle {
+            stroke_width: 0.8,
+            fill_darken: 1.0,
+            rx: 0.0,
+            accent: false,
+        },
+        Architecture::Gothic => ArchStyle {
+            stroke_width: 0.9,
+            fill_darken: 0.88,
+            rx: 0.0,
+            accent: true,
+        },
+        Architecture::Organic => ArchStyle {
+            stroke_width: 0.7,
+            fill_darken: 0.95,
+            rx: 2.0,
+            accent: false,
+        },
+        Architecture::Megalithic => ArchStyle {
+            stroke_width: 1.5,
+            fill_darken: 0.75,
+            rx: 0.0,
+            accent: false,
+        },
+    }
+}
+
+fn icon_class(icon: SettlementIcon) -> &'static str {
+    match icon {
+        SettlementIcon::Castle => "castle",
+        SettlementIcon::Tower => "tower",
+        SettlementIcon::Hall => "hall",
+        SettlementIcon::Spire => "spire",
+        SettlementIcon::Longhouse => "longhouse",
+        SettlementIcon::Treehouse => "treehouse",
+        SettlementIcon::Gate => "gate",
+        SettlementIcon::Yurt => "yurt",
+    }
+}
+
+fn arch_class(arch: Architecture) -> &'static str {
+    match arch {
+        Architecture::Classical => "classical",
+        Architecture::Gothic => "gothic",
+        Architecture::Organic => "organic",
+        Architecture::Megalithic => "megalithic",
+    }
+}
+
+fn tier_class(tier: SettlementTier) -> &'static str {
+    match tier {
+        SettlementTier::Capital => "capital",
+        SettlementTier::Town => "town",
+        SettlementTier::Village => "village",
+    }
+}
+
+fn darken_color(color: [u8; 3], factor: f32) -> String {
+    let r = ((color[0] as f32) * factor) as u8;
+    let g = ((color[1] as f32) * factor) as u8;
+    let b = ((color[2] as f32) * factor) as u8;
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+fn draw_glyph(
+    icon: SettlementIcon,
+    cx: f32,
+    cy: f32,
+    s: f32,
+    fill: &str,
+    st: &ArchStyle,
+    out: &mut String,
+) {
+    match icon {
+        SettlementIcon::Castle => draw_castle(cx, cy, s, fill, st, out),
+        SettlementIcon::Tower => draw_tower(cx, cy, s, fill, st, out),
+        SettlementIcon::Hall => draw_hall(cx, cy, s, fill, st, out),
+        SettlementIcon::Spire => draw_spire(cx, cy, s, fill, st, out),
+        SettlementIcon::Longhouse => draw_longhouse(cx, cy, s, fill, st, out),
+        SettlementIcon::Treehouse => draw_treehouse(cx, cy, s, fill, st, out),
+        SettlementIcon::Gate => draw_gate(cx, cy, s, fill, st, out),
+        SettlementIcon::Yurt => draw_yurt(cx, cy, s, fill, st, out),
+    }
+}
+
+/// Castle: square body with three merlons on the top edge —
+/// the existing capital glyph generalized so every Castle-family
+/// settlement reads as "fortified."
+fn draw_castle(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 8.0 * s;
+    let h = 8.0 * s;
+    let merlon_w = w * 0.22;
+    let merlon_h = h * 0.22;
+    let x0 = cx - w * 0.5;
+    let y0 = cy - h * 0.5;
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{w:.1}" height="{h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        rx = st.rx,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    for col in [0.0_f32, 0.4, 0.8] {
+        let mx = x0 + w * col + (w - merlon_w * 3.0) * 0.05;
+        let my = y0 - merlon_h;
+        write!(
+            out,
+            r##"<rect x="{mx:.1}" y="{my:.1}" width="{merlon_w:.1}" height="{merlon_h:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+            sw = st.stroke_width,
+        )
+        .unwrap();
+    }
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = y0 + h * 0.15,
+            y2 = y0 + h * 0.95,
+        )
+        .unwrap();
+    }
+}
+
+/// Tower: narrow tall body with a conical (triangular) roof.
+fn draw_tower(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 4.0 * s;
+    let body_h = 9.0 * s;
+    let roof_h = 4.0 * s;
+    let body_top = cy - body_h * 0.4;
+    write!(
+        out,
+        r##"<rect x="{x:.1}" y="{y:.1}" width="{w:.1}" height="{body_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        x = cx - w * 0.5,
+        y = body_top,
+        rx = st.rx,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        cx - w * 0.65,
+        body_top,
+        cx + w * 0.65,
+        body_top,
+        cx,
+        body_top - roof_h,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = body_top + body_h * 0.15,
+            y2 = body_top + body_h * 0.9,
+        )
+        .unwrap();
+    }
+}
+
+/// Hall: wide low body with a peaked gable roof. Reads as
+/// "community building" — the Riverfolk / Greendale glyph.
+fn draw_hall(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 10.0 * s;
+    let body_h = 5.0 * s;
+    let roof_h = 3.5 * s;
+    let body_top = cy - body_h * 0.2;
+    write!(
+        out,
+        r##"<rect x="{x:.1}" y="{y:.1}" width="{w:.1}" height="{body_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        x = cx - w * 0.5,
+        y = body_top,
+        rx = st.rx,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        cx - w * 0.55,
+        body_top,
+        cx + w * 0.55,
+        body_top,
+        cx,
+        body_top - roof_h,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = body_top - roof_h * 0.4,
+            y2 = body_top + body_h * 0.9,
+        )
+        .unwrap();
+    }
+}
+
+/// Spire: tall sharp triangle — wizard's pinnacle / temple peak.
+fn draw_spire(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 5.0 * s;
+    let h = 12.0 * s;
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        cx - w * 0.5,
+        cy + h * 0.4,
+        cx + w * 0.5,
+        cy + h * 0.4,
+        cx,
+        cy - h * 0.6,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+}
+
+/// Longhouse: very wide low rectangle with a ridge line down the
+/// center — the Orc / Burning Horde glyph.
+fn draw_longhouse(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 12.0 * s;
+    let body_h = 4.5 * s;
+    let x0 = cx - w * 0.5;
+    let y0 = cy - body_h * 0.5;
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{w:.1}" height="{body_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        rx = st.rx,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<line x1="{x1:.1}" y1="{cy:.1}" x2="{x2:.1}" y2="{cy:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+        x1 = x0 + w * 0.1,
+        x2 = x0 + w * 0.9,
+    )
+    .unwrap();
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = y0 + body_h * 0.1,
+            y2 = y0 + body_h * 0.9,
+        )
+        .unwrap();
+    }
+}
+
+/// Treehouse: leaf-canopy circle with two short trunks below — the
+/// Wood-Elf / Wildwood Kin glyph.
+fn draw_treehouse(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let canopy_r = 4.0 * s;
+    let trunk_h = 4.0 * s;
+    let canopy_cy = cy - trunk_h * 0.2;
+    write!(
+        out,
+        r##"<circle cx="{cx:.1}" cy="{canopy_cy:.1}" r="{canopy_r:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    for &dx in &[-1.2_f32, 1.2] {
+        write!(
+            out,
+            r##"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+            x1 = cx + dx * s,
+            y1 = canopy_cy + canopy_r * 0.6,
+            x2 = cx + dx * s,
+            y2 = canopy_cy + canopy_r + trunk_h,
+            sw = st.stroke_width,
+        )
+        .unwrap();
+    }
+}
+
+/// Gate: stocky square body with a notched arch cutout in the lower
+/// half — the Dwarven / Iron Hold mountain-hold glyph.
+fn draw_gate(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let w = 9.0 * s;
+    let h = 9.0 * s;
+    let x0 = cx - w * 0.5;
+    let y0 = cy - h * 0.5;
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{w:.1}" height="{h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        rx = st.rx,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    // Arch cutout: a darker trapezoid taking up the lower middle.
+    let arch_w = w * 0.4;
+    let arch_h = h * 0.55;
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="#1a140e" stroke="none"/>"##,
+        cx - arch_w * 0.5,
+        y0 + h,
+        cx + arch_w * 0.5,
+        y0 + h,
+        cx + arch_w * 0.35,
+        y0 + h - arch_h,
+        cx - arch_w * 0.35,
+        y0 + h - arch_h,
+    )
+    .unwrap();
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = y0 + h * 0.1,
+            y2 = y0 + h * 0.4,
+        )
+        .unwrap();
+    }
+}
+
+/// Yurt: trapezoid base with a peaked-dome top — the steppe-nomad
+/// glyph reserved for the Halfling-Pastoral archetype's likely
+/// future cousin.
+fn draw_yurt(cx: f32, cy: f32, s: f32, fill: &str, st: &ArchStyle, out: &mut String) {
+    let base_w = 9.0 * s;
+    let top_w = 5.0 * s;
+    let body_h = 5.0 * s;
+    let dome_h = 3.0 * s;
+    let y_bottom = cy + body_h * 0.4;
+    let y_top = y_bottom - body_h;
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        cx - base_w * 0.5,
+        y_bottom,
+        cx + base_w * 0.5,
+        y_bottom,
+        cx + top_w * 0.5,
+        y_top,
+        cx - top_w * 0.5,
+        y_top,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="{sw:.2}"/>"##,
+        cx - top_w * 0.5,
+        y_top,
+        cx + top_w * 0.5,
+        y_top,
+        cx,
+        y_top - dome_h,
+        sw = st.stroke_width,
+    )
+    .unwrap();
+    if st.accent {
+        write!(
+            out,
+            r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.5"/>"##,
+            y1 = y_top + body_h * 0.1,
+            y2 = y_top + body_h * 0.9,
+        )
+        .unwrap();
+    }
+}
+
+/// Capital ornament — a small polity-colored pennant on a pole above
+/// the glyph. Same shape across all icons so capitals read as
+/// "important" regardless of culture.
+fn draw_capital_pennant(cx: f32, cy: f32, s: f32, fill: &str, out: &mut String) {
+    let pole_top = cy - 6.0 * s - 9.0 * s;
+    write!(
+        out,
+        r##"<line x1="{cx:.1}" y1="{y1:.1}" x2="{cx:.1}" y2="{y2:.1}" stroke="#1a140e" stroke-width="0.7"/>"##,
+        y1 = cy - 6.0 * s,
+        y2 = pole_top,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="0.6"/>"##,
+        cx,
+        pole_top,
+        cx + 5.0 * s,
+        pole_top + 1.5 * s,
+        cx,
+        pole_top + 3.0 * s,
+    )
+    .unwrap();
 }
 
 /// Settlement name labels. Capitals get large serif text above-right of
