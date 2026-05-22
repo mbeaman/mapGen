@@ -199,3 +199,43 @@ pub struct CulturesData {
     /// Empty when the cultures stage hasn't run.
     pub culture_id: Vec<Option<u16>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_v3_worlds_deserialize_with_empty_cultures() {
+        // A worst-case "v2-shaped" payload: every documented field except
+        // the new `cultures` slot. `#[serde(default)]` on the field is the
+        // forward-compat contract that lets v2 archives load through v3
+        // code without a migration; this test fails the moment that
+        // contract breaks (typo in `default`, accidental
+        // `deny_unknown_fields`, etc.).
+        let v2_json = r#"{
+            "meta": { "seed": 0, "schema_version": 2 },
+            "mesh": {
+                "width": 0.0, "height": 0.0,
+                "sites": [], "vertices": [],
+                "cell_vertices": [], "neighbors": []
+            },
+            "terrain": { "elevation": [], "plate_id": [], "plates": [] }
+        }"#;
+
+        let world: WorldData =
+            serde_json::from_str(v2_json).expect("v2-shaped JSON must deserialize under v3 schema");
+
+        assert!(
+            world.cultures.cultures.is_empty(),
+            "pre-v3 world loaded with non-empty cultures roster"
+        );
+        assert!(
+            world.cultures.culture_id.is_empty(),
+            "pre-v3 world loaded with non-empty culture_id vec"
+        );
+        // Sanity: every other `#[serde(default)]` field also takes its default.
+        assert_eq!(world.meta.schema_version, 2, "schema_version preserved");
+        assert!(world.hydrology.rivers.is_empty());
+        assert!(world.climate.temperature.is_empty());
+    }
+}

@@ -1,7 +1,19 @@
 //! Phase 3a cultures spec — failing-red until `cultures::populate` is
-//! implemented. Each test calls `populate` directly (not via
-//! `generate_full`) so the skeleton stays decoupled from the existing
-//! pipeline until implementation lands.
+//! implemented.
+//!
+//! Two kinds of tests live here:
+//!
+//! * **`when_*_populates`** — call `cultures::populate` on a real world
+//!   and run the contract. Every one of these panics today (the impl is
+//!   `todo!()`), and every one greens when the implementation commit
+//!   lands. Same pattern as `cc2ba06` (Phase 2 spec red against todo!()).
+//!
+//! * **`synthetic_world_satisfies_contract`** — builds a hand-filled
+//!   `WorldData` whose `cultures` field manually satisfies every
+//!   invariant, then runs the same `check_*` helpers. **This test is
+//!   green today.** Its job is to prove that the assertion code itself
+//!   is well-formed — the populate-based tests can't tell you that
+//!   while they panic upstream of the assertions.
 //!
 //! Source of truth: `docs/ARCHITECTURE.md` §4 Phase 3a exit criteria —
 //!
@@ -10,18 +22,13 @@
 //!
 //! Plus structural invariants the schema implies (`culture_id` length
 //! matches mesh cells; indices are valid; sea cells are `None`). The
-//! habitat-fitness floor test is out of scope for this spec because it
-//! needs an oracle function the impl owns; it lands with the impl
-//! commit so the test can call into the same fitness routine the
-//! assignment uses.
-//!
-//! Discipline note: this file is in tree *after* the cultures module
-//! stub (`98c7422`) and *before* its implementation. Until the impl
-//! lands, every test below panics from the `todo!()` in `populate`.
-//! That is the contract — first commit of a phase is the spec; last
-//! commit makes it green.
+//! habitat-fitness floor test is out of scope here because it needs an
+//! oracle function the impl owns; it lands with the impl commit so the
+//! test can call into the same fitness routine the assignment uses.
 
-use mapgen_core::{Stage, StageRng};
+use mapgen_core::{
+    entities::Culture, MeshData, Stage, StageRng, TerrainData, WorldData, WorldMeta,
+};
 use mapgen_world::{
     cultures::{self, CulturesParams},
     generate_full, GenerateParams,
@@ -38,7 +45,7 @@ fn params(seed: u64) -> GenerateParams {
     }
 }
 
-fn world_with_cultures(seed: u64) -> mapgen_core::WorldData {
+fn world_with_cultures(seed: u64) -> WorldData {
     let mut world = generate_full(params(seed));
     let mut rng = StageRng::new(seed).stream(Stage::Cultures);
     cultures::populate(&mut world, CulturesParams::default(), &mut rng);
@@ -46,12 +53,13 @@ fn world_with_cultures(seed: u64) -> mapgen_core::WorldData {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Structural invariants — the schema implies these even before behavior.
+// Contract helpers — each invariant is a free function on `&WorldData`.
+// Both the populate-based tests below AND `synthetic_world_satisfies_
+// contract` call these, so the assertion bodies run in *some* test
+// today (synthetic) and in *all* tests once impl lands (populate-based).
 // ──────────────────────────────────────────────────────────────────────
 
-#[test]
-fn culture_id_vector_length_matches_cell_count() {
-    let world = world_with_cultures(42);
+fn check_culture_id_vector_length(world: &WorldData) {
     assert_eq!(
         world.cultures.culture_id.len(),
         world.mesh.cell_count(),
@@ -59,23 +67,15 @@ fn culture_id_vector_length_matches_cell_count() {
     );
 }
 
-#[test]
-fn roster_is_non_empty_after_populate() {
-    let world = world_with_cultures(42);
+fn check_roster_is_non_empty(world: &WorldData) {
     assert!(
         !world.cultures.cultures.is_empty(),
-        "at least one culture must be placed; empty roster means no land was \
-         habitable enough for any archetype — possible on degenerate worlds, \
-         but seed 42 is not one of them"
+        "at least one culture must be placed; an empty roster means no \
+         land was habitable enough for any archetype"
     );
 }
 
-#[test]
-fn every_assigned_culture_id_is_a_valid_index() {
-    // ARCHITECTURE.md §4 Phase 3a implicit invariant: `culture_id` values
-    // index into `cultures`. Stale references (a u16 past the end of the
-    // roster) would crash the renderer + lore engine downstream.
-    let world = world_with_cultures(42);
+fn check_every_assigned_index_is_valid(world: &WorldData) {
     let roster_size = world.cultures.cultures.len();
     for (cell, &slot) in world.cultures.culture_id.iter().enumerate() {
         if let Some(id) = slot {
@@ -88,15 +88,8 @@ fn every_assigned_culture_id_is_a_valid_index() {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Behavioral invariants — ARCHITECTURE.md §4 Phase 3a exit criteria.
-// ──────────────────────────────────────────────────────────────────────
-
-#[test]
-fn every_land_cell_has_a_culture_assignment() {
+fn check_every_land_cell_is_assigned(world: &WorldData) {
     // ARCHITECTURE.md §4 Phase 3a: "every land cell has a culture."
-    // Sea cells stay `None`; land cells (elevation >= 0) must be `Some`.
-    let world = world_with_cultures(42);
     let mut land_total = 0usize;
     let mut land_unassigned = Vec::new();
     for (cell, &elev) in world.terrain.elevation.iter().enumerate() {
@@ -116,11 +109,9 @@ fn every_land_cell_has_a_culture_assignment() {
     );
 }
 
-#[test]
-fn sea_cells_have_no_culture_assignment() {
-    // Implicit corollary of "every land cell has a culture" — sea cells
-    // are not "unassigned land," they are explicitly excluded.
-    let world = world_with_cultures(42);
+fn check_every_sea_cell_is_unassigned(world: &WorldData) {
+    // Implicit corollary — sea cells are explicitly excluded, not
+    // "unassigned land."
     for (cell, &elev) in world.terrain.elevation.iter().enumerate() {
         if elev < 0.0 {
             assert!(
@@ -133,15 +124,11 @@ fn sea_cells_have_no_culture_assignment() {
     }
 }
 
-#[test]
-fn culture_distribution_is_non_trivial() {
-    // ARCHITECTURE.md §4 Phase 3a: "distribution is non-trivial."
-    // Interpretation: at least two distinct cultures must be present in
-    // the per-cell assignment. A world with one mega-culture covering
-    // every land cell would technically satisfy "every land cell has a
-    // culture" but defeat the point — Mearsheimer-loop tension needs at
-    // least two actors.
-    let world = world_with_cultures(42);
+fn check_distribution_is_non_trivial(world: &WorldData) {
+    // ARCHITECTURE.md §4 Phase 3a: "distribution is non-trivial." A
+    // one-culture world technically satisfies "every land cell has a
+    // culture" but defeats the Mearsheimer-loop tension that needs ≥ 2
+    // actors.
     let mut seen = std::collections::HashSet::new();
     for id in world.cultures.culture_id.iter().flatten() {
         seen.insert(*id);
@@ -153,12 +140,10 @@ fn culture_distribution_is_non_trivial() {
     );
 }
 
-#[test]
-fn roster_cultures_all_have_at_least_one_assigned_cell() {
-    // An entry in `cultures` with no cells in `culture_id` is dead data —
-    // either the assignment under-filled the roster, or a discard pass
-    // forgot to shrink the roster after removing a low-fitness culture.
-    let world = world_with_cultures(42);
+fn check_no_orphan_roster_entries(world: &WorldData) {
+    // An entry in `cultures` with no cells in `culture_id` is dead data
+    // (assignment under-filled the roster, or a discard pass forgot to
+    // shrink the roster after removing a low-fitness culture).
     let roster_size = world.cultures.cultures.len();
     let mut cells_per_culture = vec![0usize; roster_size];
     for id in world.cultures.culture_id.iter().flatten() {
@@ -176,12 +161,105 @@ fn roster_cultures_all_have_at_least_one_assigned_cell() {
     );
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Synthetic-world test — green today; proves the helpers above are
+// well-formed independently of `cultures::populate`.
+// ──────────────────────────────────────────────────────────────────────
+
+/// A minimal `WorldData` with 4 cells (2 land, 2 sea) and a hand-filled
+/// `cultures` field whose values satisfy every contract invariant. No
+/// climate / hydrology — the helpers don't touch them.
+fn synthetic_contract_conforming_world() -> WorldData {
+    let mut world = WorldData {
+        meta: WorldMeta::new(0),
+        mesh: MeshData::default(),
+        terrain: TerrainData::default(),
+        ..Default::default()
+    };
+    // 4 sites; the actual coordinates don't matter for contract checks,
+    // only that `mesh.cell_count()` returns 4 and aligns with the other
+    // per-cell vectors.
+    world.mesh.sites = vec![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
+    world.terrain.elevation = vec![0.5, -0.5, 0.3, -0.2];
+    world.cultures.cultures = vec![
+        Culture {
+            name: "Synth-A".into(),
+            ..Default::default()
+        },
+        Culture {
+            name: "Synth-B".into(),
+            ..Default::default()
+        },
+    ];
+    // Land cells (idx 0, 2) get cultures; sea cells (idx 1, 3) stay None.
+    // Both roster entries get at least one cell → no orphans, ≥ 2 distinct.
+    world.cultures.culture_id = vec![Some(0), None, Some(1), None];
+    world
+}
+
 #[test]
-fn populate_is_deterministic_for_a_fixed_seed() {
-    // Determinism is foundational; the seed-42 golden hash (extended
-    // to Phase 3a in a later commit) will keep this honest, but pinning
-    // it explicitly at the spec level catches a class of bug where
-    // implementation reaches for `rand::thread_rng()` by accident.
+fn synthetic_world_satisfies_contract() {
+    let world = synthetic_contract_conforming_world();
+    check_culture_id_vector_length(&world);
+    check_roster_is_non_empty(&world);
+    check_every_assigned_index_is_valid(&world);
+    check_every_land_cell_is_assigned(&world);
+    check_every_sea_cell_is_unassigned(&world);
+    check_distribution_is_non_trivial(&world);
+    check_no_orphan_roster_entries(&world);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Populate-based tests — RED today (panic from `todo!()` in populate).
+// ──────────────────────────────────────────────────────────────────────
+
+#[test]
+fn when_populate_runs_culture_id_vector_matches_cell_count() {
+    let world = world_with_cultures(42);
+    check_culture_id_vector_length(&world);
+}
+
+#[test]
+fn when_populate_runs_roster_is_non_empty() {
+    let world = world_with_cultures(42);
+    check_roster_is_non_empty(&world);
+}
+
+#[test]
+fn when_populate_runs_every_assigned_index_is_valid() {
+    let world = world_with_cultures(42);
+    check_every_assigned_index_is_valid(&world);
+}
+
+#[test]
+fn when_populate_runs_every_land_cell_has_a_culture() {
+    let world = world_with_cultures(42);
+    check_every_land_cell_is_assigned(&world);
+}
+
+#[test]
+fn when_populate_runs_sea_cells_stay_unassigned() {
+    let world = world_with_cultures(42);
+    check_every_sea_cell_is_unassigned(&world);
+}
+
+#[test]
+fn when_populate_runs_distribution_is_non_trivial() {
+    let world = world_with_cultures(42);
+    check_distribution_is_non_trivial(&world);
+}
+
+#[test]
+fn when_populate_runs_roster_entries_all_have_cells() {
+    let world = world_with_cultures(42);
+    check_no_orphan_roster_entries(&world);
+}
+
+#[test]
+fn when_populate_runs_output_is_deterministic_for_a_fixed_seed() {
+    // Two runs with the same seed produce byte-identical output.
+    // Catches an accidental `thread_rng()`; the seed-42 golden hash
+    // extends this when the impl commit re-anchors it.
     let a = world_with_cultures(42);
     let b = world_with_cultures(42);
     assert_eq!(

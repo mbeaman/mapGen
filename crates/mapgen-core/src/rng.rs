@@ -74,6 +74,39 @@ mod tests {
     }
 
     #[test]
+    fn cultures_stage_has_an_independent_stream() {
+        // Phase 3a added `Stage::Cultures = 13` (discriminant appended per
+        // the determinism contract). Pin that it actually produces
+        // an independent stream from every other stage at the same master
+        // seed — a copy-paste discriminant collision (e.g., Cultures = 12)
+        // would break determinism silently. Comparing the first u64 is
+        // enough: SplitMix64 of distinct discriminants returns distinct
+        // seeds with overwhelming probability.
+        let h = StageRng::new(42);
+        let cultures_first = h.stream(Stage::Cultures).next_u64();
+        for other in [
+            Stage::Mesh,
+            Stage::Plates,
+            Stage::Noise,
+            Stage::Erosion,
+            Stage::Hydro,
+            Stage::Climate,
+            Stage::Capitals,
+            Stage::Hierarchy,
+            Stage::Roads,
+            Stage::Names,
+            Stage::History,
+            Stage::Render,
+        ] {
+            let other_first = h.stream(other).next_u64();
+            assert_ne!(
+                cultures_first, other_first,
+                "Stage::Cultures stream collides with Stage::{other:?} at seed 42"
+            );
+        }
+    }
+
+    #[test]
     fn same_stage_same_master_same_stream() {
         let h = StageRng::new(42);
         let mut a = h.stream(Stage::Mesh);

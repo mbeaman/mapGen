@@ -107,7 +107,7 @@ pub enum Race {
 /// `good_evil` from good (-1) to evil (+1). Continuous (not discrete LE/NE/CE
 /// buckets) so cultures can sit anywhere in the plane and history-sim
 /// alignment shifts produce smooth drift, not categorical jumps.
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Alignment {
     pub law_chaos: f32,
     pub good_evil: f32,
@@ -132,7 +132,7 @@ pub enum TechEra {
 /// scores that can deviate from era (a Renaissance culture with weak naval).
 /// Axes per `docs/ARCHITECTURE.md` §Context — "metallurgy / agriculture /
 /// naval / military / arcane."
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct TechProfile {
     pub era: TechEra,
     pub metallurgy: u8,
@@ -225,7 +225,7 @@ pub enum DiplomaticPattern {
 /// `language_id` and `religion_id` are forward-declared; they're written when
 /// Phase 3b (religions) and Phase 3d (naming/language) land. Until then they
 /// stay at their default (0 / None).
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Culture {
     pub name: String,
     pub race: Race,
@@ -263,5 +263,65 @@ impl EntityStore {
         self.next_id += 1;
         self.by_id.insert(id, entity);
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a `Culture` whose every field is *non-default* — that way a
+    /// derive bug that silently drops or misnames a field shows up as a
+    /// round-trip mismatch instead of being masked by `T::default()`
+    /// values on both sides.
+    fn fully_populated_culture() -> Culture {
+        Culture {
+            name: "Riverfolk".to_string(),
+            race: Race::Halfling,
+            archetype_id: 3,
+            language_id: 7,
+            religion_id: Some(2),
+            alignment: Alignment {
+                law_chaos: 0.4,
+                good_evil: -0.2,
+            },
+            tech: TechProfile {
+                era: TechEra::Iron,
+                metallurgy: 45,
+                agriculture: 80,
+                naval: 30,
+                military: 35,
+                arcane: 10,
+            },
+            magic: MagicStyle::LowMagic,
+            settlement: SettlementIcon::Hall,
+            architecture: Architecture::Organic,
+            diplomatic: DiplomaticPattern::Mercantile,
+        }
+    }
+
+    #[test]
+    fn culture_round_trips_through_serde_json() {
+        let original = fully_populated_culture();
+        let json = serde_json::to_string(&original).expect("serialize Culture");
+        let decoded: Culture = serde_json::from_str(&json).expect("deserialize Culture");
+        assert_eq!(
+            original, decoded,
+            "Culture lost data through JSON round-trip; JSON shape was: {json}"
+        );
+    }
+
+    #[test]
+    fn culture_inside_entity_round_trips() {
+        // Validate the `Entity::Culture(Culture)` wrapper variant still
+        // works after the Culture expansion — serde's enum-tag handling
+        // for `#[serde(tag = "kind")]` must agree with the new struct.
+        let original = Entity::Culture(fully_populated_culture());
+        let json = serde_json::to_string(&original).expect("serialize Entity::Culture");
+        let decoded: Entity = serde_json::from_str(&json).expect("deserialize Entity::Culture");
+        match (&original, &decoded) {
+            (Entity::Culture(a), Entity::Culture(b)) => assert_eq!(a, b),
+            _ => panic!("Entity variant changed across round-trip: {decoded:?}"),
+        }
     }
 }
