@@ -272,3 +272,35 @@ fn when_populate_runs_output_is_deterministic_for_a_fixed_seed() {
         "two runs with seed 42 produced different roster sizes"
     );
 }
+
+#[test]
+fn when_populate_runs_mean_habitat_fitness_meets_the_floor() {
+    // ARCHITECTURE.md §4 Phase 3a exit criterion: "no culture's average
+    // habitat-score below 0.3." Calls into the same scoring function
+    // (`cultures::habitat_fitness`) the assignment uses — so this test
+    // can't drift from the algorithm. The culling pass in `populate`
+    // discards sub-threshold cultures and reassigns their cells until
+    // the survivors meet the bar (or until only 2 remain, the
+    // distribution-non-trivial floor).
+    //
+    // If this test fails on seed 42, either the world is too uniform
+    // for any 2 archetypes to clear 0.3, or the culling-reassignment
+    // step is leaving cells in the wrong culture. The error message
+    // names which culture and at what mean so the diagnosis path is
+    // direct.
+    let world = world_with_cultures(42);
+    let floor = mapgen_world::cultures::CulturesParams::default().min_habitat_fitness;
+    let n_cultures = world.cultures.cultures.len();
+    for culture_idx in 0..n_cultures {
+        let mean = mapgen_world::cultures::mean_habitat_fitness(&world, culture_idx as u16);
+        assert!(
+            mean >= floor,
+            "culture {} ({:?}, archetype_id {}) has mean habitat-fitness {:.3}, \
+             below the {floor:.2} floor",
+            culture_idx,
+            world.cultures.cultures[culture_idx].name,
+            world.cultures.cultures[culture_idx].archetype_id,
+            mean
+        );
+    }
+}

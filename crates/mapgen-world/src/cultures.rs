@@ -280,6 +280,160 @@ fn parse_u8(s: &str) -> Result<u8, String> {
     s.parse::<u8>().map_err(|e| format!("bad u8 {s:?}: {e}"))
 }
 
+/// Habitat-fitness score in `[0, 1]` for placing `archetype` at `cell` in
+/// `world`. Sea cells score 0. Geometric mean across four axes:
+///
+/// * **Biome match** — 1.0 if cell's biome appears in
+///   `archetype.preferred_biomes`, else a floor of 0.2 (some scoring lets
+///   cultures bleed into non-preferred biomes when other axes are strong).
+/// * **Temperature tent** — 1.0 inside `archetype.temp_range`, linear
+///   falloff to 0 over a 0.2-wide buffer outside.
+/// * **Elevation tent** — same shape, against `archetype.elev_range`.
+/// * **Water proximity** — 1.0 if the cell is on a coast / river / lake;
+///   else `1.0 - 0.6 × archetype.water_weight` (a culture that doesn't care
+///   about water pays no penalty; a river-valley culture pays heavily for
+///   inland placement).
+///
+/// Geometric mean is the architecturally-relevant call: arithmetic mean
+/// rewards generalists scoring (0.5, 0.5, 0.5, 0.5) the same as a specialist
+/// scoring (1.0, 1.0, 0.2, 0.2). Phase 3a's "earned worlds" want specialists
+/// winning their niche.
+pub fn habitat_fitness(world: &WorldData, cell: usize, archetype: &RaceArchetype) -> f32 {
+    // Public entry recomputes near-water on the fly (O(rivers + lakes)). Hot
+    // paths inside `populate` use the cached variant `habitat_fitness_with`.
+    let near_water = cell_is_near_water(world, cell);
+    habitat_fitness_with(world, cell, archetype, near_water)
+}
+
+fn habitat_fitness_with(
+    world: &WorldData,
+    cell: usize,
+    archetype: &RaceArchetype,
+    near_water: bool,
+) -> f32 {
+    if world.terrain.elevation[cell] < 0.0 {
+        return 0.0;
+    }
+    let biome = world.climate.biome[cell];
+    let biome_score = if archetype.preferred_biomes.contains(&biome) {
+        1.0
+    } else {
+        0.2
+    };
+
+    let temp_score = tent(
+        world.climate.temperature[cell],
+        archetype.temp_range.0,
+        archetype.temp_range.1,
+    );
+    let elev_score = tent(
+        world.terrain.elevation[cell],
+        archetype.elev_range.0,
+        archetype.elev_range.1,
+    );
+    let water_score = if near_water {
+        1.0
+    } else {
+        1.0 - 0.6 * archetype.water_weight
+    };
+
+    let product = biome_score * temp_score * elev_score * water_score;
+    product.powf(0.25).clamp(0.0, 1.0)
+}
+
+fn tent(value: f32, lo: f32, hi: f32) -> f32 {
+    const FALLOFF: f32 = 0.2;
+    if value >= lo && value <= hi {
+        1.0
+    } else if value < lo {
+        (1.0 - (lo - value) / FALLOFF).max(0.0)
+    } else {
+        (1.0 - (value - hi) / FALLOFF).max(0.0)
+    }
+}
+
+fn cell_is_near_water(world: &WorldData, cell: usize) -> bool {
+    if cell < world.mesh.coast.len() && world.mesh.coast[cell] {
+        return true;
+    }
+    let cell_u32 = cell as u32;
+    for river in &world.hydrology.rivers {
+        if river.cells.contains(&cell_u32) {
+            return true;
+        }
+    }
+    for lake in &world.hydrology.lakes {
+        if lake.cells.contains(&cell_u32) {
+            return true;
+        }
+    }
+    false
+}
+
+fn precompute_near_water(world: &WorldData) -> Vec<bool> {
+    let n = world.mesh.cell_count();
+    let mut near_water = vec![false; n];
+    for (i, &is_coast) in world.mesh.coast.iter().enumerate().take(n) {
+        if is_coast {
+            near_water[i] = true;
+        }
+    }
+    for river in &world.hydrology.rivers {
+        for &cell in &river.cells {
+            let idx = cell as usize;
+            if idx < n {
+                near_water[idx] = true;
+            }
+        }
+    }
+    for lake in &world.hydrology.lakes {
+        for &cell in &lake.cells {
+            let idx = cell as usize;
+            if idx < n {
+                near_water[idx] = true;
+            }
+        }
+    }
+    near_water
+}
+
+/// Mean habitat-fitness across all land cells currently assigned to
+/// `culture_idx` (an index into `world.cultures.cultures`). Returns 0.0 if
+/// the culture has no assigned cells or if `culture_idx` is out of bounds.
+///
+/// The archetype lookup goes through `load_archetypes()` so the returned
+/// value matches what `populate` would compute. Public for use by spec
+/// tests (the deferred ARCHITECTURE.md §4 Phase 3a "no culture's average
+/// habitat-score below 0.3" assertion).
+pub fn mean_habitat_fitness(world: &WorldData, culture_idx: u16) -> f32 {
+    let culture = match world.cultures.cultures.get(culture_idx as usize) {
+        Some(c) => c,
+        None => return 0.0,
+    };
+    let archetypes = load_archetypes();
+    let archetype = match archetypes.get(culture.archetype_id as usize) {
+        Some(a) => a,
+        None => return 0.0,
+    };
+    let near_water = precompute_near_water(world);
+
+    let mut sum = 0.0_f32;
+    let mut count = 0usize;
+    for (cell, slot) in world.cultures.culture_id.iter().enumerate() {
+        if let Some(id) = slot {
+            if *id == culture_idx {
+                sum += habitat_fitness_with(world, cell, archetype, near_water[cell]);
+                count += 1;
+            }
+        }
+    }
+    if count == 0 {
+        0.0
+    } else {
+        sum / count as f32
+    }
+}
+
 /// Populate `world.cultures` — roster + per-cell assignment.
 ///
 /// Writes `world.cultures.cultures` (the roster) and
@@ -289,8 +443,272 @@ fn parse_u8(s: &str) -> Result<u8, String> {
 /// Preconditions: `world.mesh`, `world.terrain`, `world.climate`, and
 /// `world.hydrology` must be populated. Biome classification (`world.climate
 /// .biome`) is required since archetype habitat scores key off biome.
-pub fn populate(_world: &mut WorldData, _params: CulturesParams, _rng: &mut ChaCha8Rng) {
-    todo!("Phase 3a: cultures::populate not yet implemented — see cultures_spec.rs")
+///
+/// The `rng` parameter is reserved for future tie-breaking and per-world
+/// archetype-trait jitter; today's algorithm is fully deterministic from
+/// world state alone.
+pub fn populate(world: &mut WorldData, params: CulturesParams, _rng: &mut ChaCha8Rng) {
+    let n = world.mesh.cell_count();
+    if n == 0 {
+        return;
+    }
+    let archetypes = load_archetypes();
+    if archetypes.is_empty() {
+        return;
+    }
+
+    let near_water = precompute_near_water(world);
+
+    // 1. Pick a seed cell for each archetype: the unclaimed land cell where
+    //    that archetype's fitness is highest. Processed in CSV order — first
+    //    archetype grabs the globally best fit for itself, subsequent
+    //    archetypes pick from what remains. Ties broken by lower cell index.
+    let seeds = pick_seed_cells(world, &archetypes, &near_water);
+
+    // 2. Multi-source BFS Voronoi fill. Each newly-frontier cell adopts the
+    //    culture of the already-assigned neighbor whose archetype scores
+    //    highest *at this cell*. Produces contiguous territories that
+    //    respect per-cell fitness — the architectural shape from
+    //    ARCHITECTURE.md §3.
+    let assignment = voronoi_fill(world, &archetypes, &seeds, &near_water);
+
+    // 3. Cull cultures whose mean habitat-fitness falls below the floor
+    //    (ARCHITECTURE.md §4 Phase 3a: "no culture's average habitat-score
+    //    below 0.3"). Iterates to fixed point or 5 passes, whichever
+    //    comes first. Always keeps ≥ 2 survivors (distribution-non-trivial
+    //    invariant).
+    let (final_assignment, survives) =
+        cull_to_threshold(world, &archetypes, assignment, &near_water, &params);
+
+    // 4. Build the final roster — only surviving archetypes get a Culture.
+    let mut final_cultures = Vec::new();
+    for (i, archetype) in archetypes.iter().enumerate() {
+        if survives[i] {
+            let new_id = final_cultures.len() as u16;
+            final_cultures.push(archetype.to_culture(i as u16));
+            debug_assert!((new_id as usize) < final_cultures.len());
+        }
+    }
+
+    world.cultures.cultures = final_cultures;
+    world.cultures.culture_id = final_assignment;
+}
+
+fn pick_seed_cells(
+    world: &WorldData,
+    archetypes: &[RaceArchetype],
+    near_water: &[bool],
+) -> Vec<usize> {
+    let n = world.mesh.cell_count();
+    let mut seeds = Vec::with_capacity(archetypes.len());
+    let mut taken = vec![false; n];
+    for archetype in archetypes {
+        let mut best_cell = 0usize;
+        let mut best_fit = f32::NEG_INFINITY;
+        let mut found = false;
+        for cell in 0..n {
+            if taken[cell] {
+                continue;
+            }
+            if world.terrain.elevation[cell] < 0.0 {
+                continue;
+            }
+            let f = habitat_fitness_with(world, cell, archetype, near_water[cell]);
+            if f > best_fit {
+                best_fit = f;
+                best_cell = cell;
+                found = true;
+            }
+        }
+        if found {
+            taken[best_cell] = true;
+            seeds.push(best_cell);
+        }
+    }
+    seeds
+}
+
+fn voronoi_fill(
+    world: &WorldData,
+    archetypes: &[RaceArchetype],
+    seeds: &[usize],
+    near_water: &[bool],
+) -> Vec<Option<u16>> {
+    let n = world.mesh.cell_count();
+    let mut assignment: Vec<Option<u16>> = vec![None; n];
+
+    // Seed each starting cell with its culture.
+    for (culture_idx, &seed) in seeds.iter().enumerate() {
+        assignment[seed] = Some(culture_idx as u16);
+    }
+
+    // Multi-source BFS. `frontier` holds cells added in the previous round
+    // (sorted by cell index for deterministic neighbor-visit order).
+    let mut frontier: Vec<u32> = seeds.iter().map(|s| *s as u32).collect();
+    frontier.sort();
+
+    while !frontier.is_empty() {
+        let mut next: Vec<u32> = Vec::new();
+        for &cell_u32 in &frontier {
+            let cell = cell_u32 as usize;
+            for &neighbor in &world.mesh.neighbors[cell] {
+                let neighbor = neighbor as usize;
+                if assignment[neighbor].is_some() {
+                    continue;
+                }
+                if world.terrain.elevation[neighbor] < 0.0 {
+                    continue;
+                }
+                // Among already-assigned neighbors, pick the culture whose
+                // archetype scores highest on *this* cell. First seen wins
+                // on tie (neighbors are mesh-deterministic).
+                let mut best_culture: Option<u16> = None;
+                let mut best_fit = f32::NEG_INFINITY;
+                for &nn in &world.mesh.neighbors[neighbor] {
+                    let nn = nn as usize;
+                    if let Some(c) = assignment[nn] {
+                        let f = habitat_fitness_with(
+                            world,
+                            neighbor,
+                            &archetypes[c as usize],
+                            near_water[neighbor],
+                        );
+                        if f > best_fit {
+                            best_fit = f;
+                            best_culture = Some(c);
+                        }
+                    }
+                }
+                if let Some(c) = best_culture {
+                    assignment[neighbor] = Some(c);
+                    next.push(neighbor as u32);
+                }
+            }
+        }
+        next.sort();
+        next.dedup();
+        frontier = next;
+    }
+
+    // Pickup pass: land cells that were unreachable through neighbor BFS
+    // (e.g., surrounded only by sea cells in a degenerate mesh) get the
+    // global argmax across all archetypes. Guarantees every land cell ends
+    // up assigned per the contract.
+    for cell in 0..n {
+        if assignment[cell].is_none() && world.terrain.elevation[cell] >= 0.0 {
+            let mut best_idx = 0u16;
+            let mut best_fit = f32::NEG_INFINITY;
+            for (i, archetype) in archetypes.iter().enumerate() {
+                let f = habitat_fitness_with(world, cell, archetype, near_water[cell]);
+                if f > best_fit {
+                    best_fit = f;
+                    best_idx = i as u16;
+                }
+            }
+            assignment[cell] = Some(best_idx);
+        }
+    }
+
+    assignment
+}
+
+fn cull_to_threshold(
+    world: &WorldData,
+    archetypes: &[RaceArchetype],
+    mut assignment: Vec<Option<u16>>,
+    near_water: &[bool],
+    params: &CulturesParams,
+) -> (Vec<Option<u16>>, Vec<bool>) {
+    let roster_size = archetypes.len();
+    let mut survives = vec![true; roster_size];
+    let n = world.mesh.cell_count();
+
+    // Cap iterations at 5 — convergence in practice happens in 1-2 passes;
+    // 5 is a defensive bound against pathological cycles I haven't anticipated.
+    for _pass in 0..5 {
+        // Per-culture means over the current assignment.
+        let mut counts = vec![0usize; roster_size];
+        let mut sums = vec![0.0_f32; roster_size];
+        for cell in 0..n {
+            if let Some(id) = assignment[cell] {
+                let id = id as usize;
+                if survives[id] {
+                    counts[id] += 1;
+                    sums[id] +=
+                        habitat_fitness_with(world, cell, &archetypes[id], near_water[cell]);
+                }
+            }
+        }
+        let means: Vec<f32> = (0..roster_size)
+            .map(|i| {
+                if counts[i] == 0 {
+                    0.0
+                } else {
+                    sums[i] / counts[i] as f32
+                }
+            })
+            .collect();
+
+        // Cull candidates: surviving cultures below the threshold, sorted
+        // worst-first.
+        let mut cullable: Vec<usize> = (0..roster_size)
+            .filter(|&i| survives[i] && means[i] < params.min_habitat_fitness)
+            .collect();
+        cullable.sort_by(|&a, &b| {
+            means[a]
+                .partial_cmp(&means[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Refuse to drop below 2 survivors (distribution-non-trivial floor).
+        let n_surviving = survives.iter().filter(|&&s| s).count();
+        let max_cull = n_surviving.saturating_sub(2);
+        let n_to_cull = cullable.len().min(max_cull);
+        if n_to_cull == 0 {
+            break;
+        }
+
+        for &i in &cullable[..n_to_cull] {
+            survives[i] = false;
+        }
+
+        // Reassign cells of just-culled cultures to the highest-fit survivor.
+        for cell in 0..n {
+            if let Some(id) = assignment[cell] {
+                if !survives[id as usize] {
+                    let mut best_idx = 0u16;
+                    let mut best_fit = f32::NEG_INFINITY;
+                    for (j, archetype) in archetypes.iter().enumerate() {
+                        if !survives[j] {
+                            continue;
+                        }
+                        let f = habitat_fitness_with(world, cell, archetype, near_water[cell]);
+                        if f > best_fit {
+                            best_fit = f;
+                            best_idx = j as u16;
+                        }
+                    }
+                    assignment[cell] = Some(best_idx);
+                }
+            }
+        }
+    }
+
+    // Remap surviving archetype indices to contiguous culture_ids.
+    let mut remap = vec![0u16; roster_size];
+    let mut new_id = 0u16;
+    for i in 0..roster_size {
+        if survives[i] {
+            remap[i] = new_id;
+            new_id += 1;
+        }
+    }
+    let remapped: Vec<Option<u16>> = assignment
+        .iter()
+        .map(|s| s.map(|id| remap[id as usize]))
+        .collect();
+
+    (remapped, survives)
 }
 
 // ──────────────────────────────────────────────────────────────────────
