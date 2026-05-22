@@ -6,6 +6,29 @@ pub mod style;
 use mapgen_core::WorldData;
 use style::Style;
 
+/// Vendored display typography for the Phase 3e ornate style. Single
+/// source of truth — the renderer base64-embeds these bytes in the
+/// SVG `<defs>` via `@font-face` so browsers render with the right
+/// font; the CLI's PNG path (`mapgen-cli::sweep::svg_to_png`)
+/// registers the same bytes in `usvg::Options::fontdb` so rasterized
+/// PNGs see the same typography.
+///
+/// Static single-weight TTFs from Google Fonts (licensed SIL OFL 1.1
+/// — see `crates/mapgen-render/fonts/OFL-*.txt`). Variable-font
+/// upstreams were 851 KB for EB Garamond alone; subset-static via
+/// Google webfonts-helper cuts each to <120 KB.
+pub const FONTS_TTF: &[(&str, &[u8])] = &[
+    ("Cinzel", include_bytes!("../fonts/Cinzel-Regular.ttf")),
+    (
+        "EB Garamond",
+        include_bytes!("../fonts/EBGaramond-Regular.ttf"),
+    ),
+    (
+        "IM Fell English",
+        include_bytes!("../fonts/IMFellEnglish-Italic.ttf"),
+    ),
+];
+
 /// Render a world to an SVG string in the requested style.
 ///
 /// Every style currently in the enum is implemented; the `Result`

@@ -38,6 +38,8 @@ ciborium = "0.2"
 
 # Rendering
 svg = "0.17"
+# base64 — used to embed @font-face TTF data: URLs in ornate SVG output.
+base64 = "0.22"
 # PNG export (native-only — used by mapgen-cli for the sweep grid).
 # Arch §1 originally pinned 0.43; bumped to current stable after API verification.
 resvg = "0.47"

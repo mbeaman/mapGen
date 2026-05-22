@@ -286,6 +286,71 @@ fn ornate_antique_emits_a_phase_3e_render() {
     );
 }
 
+#[test]
+fn ornate_antique_embeds_vendored_typography_via_at_font_face() {
+    // Phase 3e polish item #2 (per session-state): bundle Cinzel +
+    // IM Fell English + EB Garamond as base64 TTF in <defs> so the
+    // SVG carries its own typography and renders identically through
+    // both browsers (CSS @font-face) and the CLI's PNG path (the same
+    // bytes are loaded into usvg's fontdb — see
+    // `mapgen-cli/src/sweep.rs::svg_to_png`).
+    //
+    // What this test pins:
+    //   * A <style> block exists inside <defs>.
+    //   * Each of the three font-family names appears in an @font-face rule.
+    //   * Each @font-face's src= line carries a base64 TTF data URL.
+    //
+    // What this test does not verify:
+    //   * Whether the embedded bytes parse as valid TTF (would need a
+    //     real TrueType parser; usvg's fontdb registration covers this
+    //     path implicitly).
+    //   * Whether the rendered text actually uses Cinzel vs falls back
+    //     to system Georgia (would require pixel diffing — out of
+    //     scope; eyeball the seed-42 PNG instead).
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    assert!(
+        svg.contains("<style>"),
+        "ornate SVG missing <style> block in <defs> — @font-face embedding regressed"
+    );
+    assert!(
+        svg.contains("@font-face"),
+        "ornate SVG <style> block missing @font-face rules"
+    );
+    for family in ["Cinzel", "EB Garamond", "IM Fell English"] {
+        assert!(
+            svg.contains(&format!(r#"font-family:"{family}""#)),
+            "ornate SVG missing @font-face rule for {family:?}"
+        );
+    }
+    assert!(
+        svg.contains("data:font/ttf;base64,"),
+        "ornate SVG @font-face missing base64 data: URL — font bytes \
+         not actually embedded"
+    );
+    assert!(
+        svg.contains(r#"format("truetype")"#),
+        "ornate SVG @font-face missing TrueType format hint — usvg / \
+         browser may pick the wrong loader"
+    );
+
+    // Label groups must reference the embedded family names with a
+    // system-Georgia fallback (lets the SVG still degrade gracefully
+    // if the data URLs ever fail to load).
+    for needle in [
+        r##"'"Cinzel", Georgia, serif'"##,
+        r##"'"EB Garamond", Georgia, serif'"##,
+        r##"'"IM Fell English", Georgia, serif'"##,
+    ] {
+        assert!(
+            svg.contains(needle),
+            "ornate SVG missing font-family attribute referencing the \
+             embedded typography: expected {needle:?}"
+        );
+    }
+}
+
 /// Synthetic-world helper for the glyph-dispatch matrix test. Builds
 /// 96 cells laid out on a regular grid, 32 cultures (one per icon ×
 /// architecture pair), 32 polities, and 96 settlements — three per

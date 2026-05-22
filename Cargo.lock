@@ -650,6 +650,7 @@ dependencies = [
 name = "mapgen-render"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "libm",
  "mapgen-core",
  "mapgen-world",

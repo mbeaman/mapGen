@@ -11,6 +11,7 @@ mapgen-core = { path = "../mapgen-core" }
 svg = { workspace = true }
 serde = { workspace = true }
 libm = { workspace = true }
+base64 = { workspace = true }
 
 [dev-dependencies]
 mapgen-world = { path = "../mapgen-world" }

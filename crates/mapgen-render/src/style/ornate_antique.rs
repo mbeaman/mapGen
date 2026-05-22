@@ -32,9 +32,35 @@
 //! across two runs of the same world.
 
 use std::fmt::Write;
+use std::sync::LazyLock;
 
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
 use mapgen_core::entities::{Architecture, SettlementIcon, SettlementTier};
 use mapgen_core::WorldData;
+
+use crate::FONTS_TTF;
+
+/// Pre-encoded `<style>` block carrying base64 `@font-face` rules for
+/// each vendored font. Computed once per process — encoding ~200 KB
+/// of TTF bytes is ~milliseconds, but we pay it lazily so the cost
+/// only lands on processes that actually render ornate maps.
+static FONT_FACE_BLOCK: LazyLock<String> = LazyLock::new(|| {
+    let mut s = String::from("<style>");
+    for (name, bytes) in FONTS_TTF {
+        let b64 = STANDARD.encode(bytes);
+        // `format("truetype")` keeps the browser hint consistent with
+        // what usvg's fontdb sees on the CLI side — both render paths
+        // load identical typography.
+        write!(
+            s,
+            r#"@font-face{{font-family:"{name}";src:url(data:font/ttf;base64,{b64}) format("truetype");}}"#,
+        )
+        .unwrap();
+    }
+    s.push_str("</style>");
+    s
+});
 
 pub fn render(world: &WorldData) -> String {
     let mesh = &world.mesh;
@@ -48,10 +74,14 @@ pub fn render(world: &WorldData) -> String {
     )
     .unwrap();
 
-    // Aged parchment with a subtle radial gradient for vignette-lite.
+    // Aged parchment + vendored display typography. Fonts are embedded
+    // as base64 TTFs in an `@font-face` block so browser-rendered SVGs
+    // carry the same typography the CLI sees through usvg's fontdb
+    // (single source of truth: `mapgen_render::FONTS_TTF`).
+    out.push_str(r##"<defs>"##);
+    out.push_str(&FONT_FACE_BLOCK);
     out.push_str(
-        r##"<defs>
-<radialGradient id="parchment" cx="50%" cy="50%" r="75%">
+        r##"<radialGradient id="parchment" cx="50%" cy="50%" r="75%">
 <stop offset="0%" stop-color="#f0e3bf"/>
 <stop offset="70%" stop-color="#dfca96"/>
 <stop offset="100%" stop-color="#a88550"/>
@@ -807,18 +837,40 @@ fn draw_capital_pennant(cx: f32, cy: f32, s: f32, fill: &str, out: &mut String) 
 /// labels; the reader can usually disambiguate from glyph proximity.
 fn render_settlement_labels(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+    // Capitals use Cinzel (display caps) so they read as monumental;
+    // towns/villages use EB Garamond for a softer body-text feel.
+    // System Georgia falls back if a render path can't resolve the
+    // embedded fonts.
     out.push_str(
-        r##"<g font-family="Georgia, 'Times New Roman', serif" fill="#1a140e" stroke="#f0e3bf" paint-order="stroke" stroke-width="2.0" stroke-linejoin="round">"##,
+        r##"<g fill="#1a140e" stroke="#f0e3bf" paint-order="stroke" stroke-width="2.0" stroke-linejoin="round">"##,
     );
     for s in &world.society.settlements {
         if s.name.is_empty() {
             continue;
         }
         let site = mesh.sites[s.cell as usize];
-        let (dx, dy, size, weight) = match s.tier {
-            SettlementTier::Capital => (8.0_f32, -10.0_f32, 15.0_f32, "bold"),
-            SettlementTier::Town => (0.0, 14.0, 10.0, "normal"),
-            SettlementTier::Village => (0.0, 11.0, 8.0, "normal"),
+        let (dx, dy, size, weight, family) = match s.tier {
+            SettlementTier::Capital => (
+                8.0_f32,
+                -10.0_f32,
+                15.0_f32,
+                "bold",
+                r##""Cinzel", Georgia, serif"##,
+            ),
+            SettlementTier::Town => (
+                0.0,
+                14.0,
+                10.0,
+                "normal",
+                r##""EB Garamond", Georgia, serif"##,
+            ),
+            SettlementTier::Village => (
+                0.0,
+                11.0,
+                8.0,
+                "normal",
+                r##""EB Garamond", Georgia, serif"##,
+            ),
         };
         let anchor = match s.tier {
             SettlementTier::Capital => "start",
@@ -826,7 +878,7 @@ fn render_settlement_labels(world: &WorldData, out: &mut String) {
         };
         write!(
             out,
-            r##"<text x="{:.1}" y="{:.1}" font-size="{size:.1}" font-weight="{weight}" text-anchor="{anchor}">{}</text>"##,
+            r##"<text x="{:.1}" y="{:.1}" font-family='{family}' font-size="{size:.1}" font-weight="{weight}" text-anchor="{anchor}">{}</text>"##,
             site[0] + dx,
             site[1] + dy,
             xml_escape(&s.name),
@@ -843,8 +895,12 @@ fn render_settlement_labels(world: &WorldData, out: &mut String) {
 /// region belongs to this polity."
 fn render_polity_labels(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+    // Polity names use Cinzel (display) for monumental territorial
+    // labels — fits the "ancient cartographer" voice better than a
+    // generic serif. Italic styling is synthesized when the loaded
+    // face has no native italic.
     out.push_str(
-        r##"<g font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="bold" text-anchor="middle" fill-opacity="0.85" stroke="#f0e3bf" paint-order="stroke" stroke-width="3.0" stroke-linejoin="round">"##,
+        r##"<g font-family='"Cinzel", Georgia, serif' font-style="italic" font-weight="bold" text-anchor="middle" fill-opacity="0.85" stroke="#f0e3bf" paint-order="stroke" stroke-width="3.0" stroke-linejoin="round">"##,
     );
     for (p, polity) in world.society.nations.iter().enumerate() {
         if polity.name.is_empty() {
@@ -886,8 +942,11 @@ fn render_polity_labels(world: &WorldData, out: &mut String) {
 /// labels are the load-bearing readability layer.
 fn render_sacred_site_labels(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+    // Sacred sites use IM Fell English (italic) — an early-modern
+    // typeface with hand-pressed irregularities that reads "old
+    // religious manuscript" without being intrusive at small size.
     out.push_str(
-        r##"<g font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="9" text-anchor="middle" fill="#7a5a25" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.6" stroke-linejoin="round">"##,
+        r##"<g font-family='"IM Fell English", Georgia, serif' font-style="italic" font-size="9" text-anchor="middle" fill="#7a5a25" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.6" stroke-linejoin="round">"##,
     );
     for religion in &world.religions.religions {
         if religion.name.is_empty() {

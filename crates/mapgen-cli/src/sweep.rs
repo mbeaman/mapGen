@@ -147,7 +147,15 @@ pub fn run(
 }
 
 fn svg_to_png(svg: &str, width: u32, height: u32) -> Result<Vec<u8>> {
-    let opts = usvg::Options::default();
+    // Register the same TTF bytes the renderer base64-embeds, so the
+    // PNG path sees identical typography to a browser rendering the
+    // SVG directly. usvg ignores embedded @font-face data URLs in SVG
+    // (no CSS font-loading), so fontdb is the path that makes Cinzel /
+    // EB Garamond / IM Fell English actually rasterize on the CLI.
+    let mut opts = usvg::Options::default();
+    for (_, bytes) in mapgen_render::FONTS_TTF {
+        opts.fontdb_mut().load_font_data(bytes.to_vec());
+    }
     let tree = usvg::Tree::from_str(svg, &opts).map_err(|e| anyhow!("usvg parse error: {e}"))?;
     let mut pixmap = tiny_skia::Pixmap::new(width.max(1), height.max(1))
         .ok_or_else(|| anyhow!("pixmap size {width}x{height} rejected by tiny-skia"))?;

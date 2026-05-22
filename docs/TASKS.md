@@ -172,8 +172,19 @@ depending on whether you want visual payoff or world-shape depth next.
   scaled by elevation, with snowcaps on SNOW + tall ALPINE. Trees on
   TEMPERATE_FOREST (3), TEMPERATE_RAINFOREST (4), TAIGA (2),
   TROPICAL_RAINFOREST (4) — deterministic per-cell positions.
-- [ ] (4h) Typography: bundle Cinzel + IM Fell English + EB Garamond
-  WOFF2 in SVG `<defs>`. **Deferred**.
+- [x] (4h actual: ~3h) Typography: bundle Cinzel + IM Fell English +
+  EB Garamond static TTFs in SVG `<defs>` via base64 `@font-face`.
+  **Shipped** — `mapgen_render::FONTS_TTF` is the single source of
+  truth; the renderer base64-embeds the bytes in a `<style>` block,
+  and `mapgen-cli::sweep::svg_to_png` registers the same bytes in
+  `usvg::Options::fontdb_mut()` so browsers and the PNG path see
+  identical typography. WOFF2 was rejected (usvg can't decompress
+  brotli for fontdb); subset-static TTFs from Google webfonts-helper
+  keep total binary < 200 KB (was 851 KB for EB Garamond variable
+  alone). Capital labels use Cinzel, town/village labels use EB
+  Garamond, sacred-site labels use IM Fell English Italic — all with
+  Georgia / serif fallback. Pinned by `svg_invariants::
+  ornate_antique_embeds_vendored_typography_via_at_font_face`.
 - [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn
   aging. **Partial** — vignette-lite is via the parchment radial
   gradient; compass + cartouche + edge-burn deferred.
