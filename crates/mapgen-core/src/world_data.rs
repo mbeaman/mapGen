@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entities::{Culture, EntityStore},
+    entities::{Culture, EntityStore, Religion},
     event::{EventLog, Work},
     ids::PlateId,
 };
@@ -17,7 +17,9 @@ use crate::{
 /// * v2 — Phase 2 climate/hydrology/biome fields landed via `#[serde(default)]`.
 /// * v3 — Phase 3a cultures field added. Pre-v3 worlds deserialize with an
 ///   empty `CulturesData` (compatible — `#[serde(default)]`).
-pub const SCHEMA_VERSION: u32 = 3;
+/// * v4 — Phase 3b religions field added. Pre-v4 worlds deserialize with an
+///   empty `ReligionsData` (compatible — `#[serde(default)]`).
+pub const SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -34,6 +36,10 @@ pub struct WorldData {
     /// on worlds where the cultures stage hasn't run yet.
     #[serde(default)]
     pub cultures: CulturesData,
+    /// Phase 3b — religions stage output. Empty on pre-Phase-3b worlds and
+    /// on worlds where the religions stage hasn't run yet.
+    #[serde(default)]
+    pub religions: ReligionsData,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -200,6 +206,24 @@ pub struct CulturesData {
     pub culture_id: Vec<Option<u16>>,
 }
 
+/// Output of the Phase 3b religions stage.
+///
+/// `religions` is the per-world roster of founded religions (1-3 per
+/// world); `religion_id` is the per-cell back-reference, `Some(index)`
+/// for cells with a religion or `None` for sea / unconverted land.
+///
+/// Religions attach to cultures (not to polities) and can spread across
+/// cultural borders by alignment compatibility — per ARCHITECTURE.md §4
+/// Phase 3b. Indices into `religions` are `u16` for symmetry with
+/// `CulturesData::culture_id`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ReligionsData {
+    pub religions: Vec<Religion>,
+    /// Per cell, `Some(index)` into `religions` or `None` for sea /
+    /// unconverted. Empty when the religions stage hasn't run.
+    pub religion_id: Vec<Option<u16>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,5 +261,8 @@ mod tests {
         assert_eq!(world.meta.schema_version, 2, "schema_version preserved");
         assert!(world.hydrology.rivers.is_empty());
         assert!(world.climate.temperature.is_empty());
+        // v4 forward-compat: religions field also defaults empty.
+        assert!(world.religions.religions.is_empty());
+        assert!(world.religions.religion_id.is_empty());
     }
 }

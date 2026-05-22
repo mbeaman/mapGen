@@ -24,6 +24,8 @@ pub enum Stage {
     /// Phase 3a — cultures stage. Conceptually runs between Climate and
     /// Capitals; appended here to keep discriminants stable.
     Cultures = 13,
+    /// Phase 3b — religions stage. Runs after Cultures, before Capitals.
+    Religions = 14,
 }
 
 /// Lightweight RNG factory. Hold the master seed; mint a fresh
@@ -97,6 +99,7 @@ mod tests {
             Stage::Names,
             Stage::History,
             Stage::Render,
+            Stage::Religions,
         ] {
             let other_first = h.stream(other).next_u64();
             assert_ne!(

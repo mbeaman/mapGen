@@ -56,9 +56,49 @@ pub struct Site {
     pub tier: u8, // 0=capital, 1=town, 2=village
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// How a religion organizes its supernatural object — driven by the
+/// founder culture's `MagicStyle` and `TechEra` per ARCHITECTURE.md §4
+/// Phase 3b. Append only — discriminants are part of the on-disk schema.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum PantheonPattern {
+    /// Single deity, monotheistic (Christian / Muslim / Sikh).
+    #[default]
+    Mono = 0,
+    /// Multiple deities, polytheistic (Greek / Hindu / Norse).
+    Poly = 1,
+    /// Two opposed principles (Zoroastrian / Manichaean).
+    Dual = 2,
+    /// Spirits in nature, no deity-roster (Shinto / animistic folk).
+    Animism = 3,
+    /// Veneration of forebears (Chinese ancestral / Confucian).
+    Ancestor = 4,
+    /// Abstract universal principle (Daoist / Buddhist).
+    CosmicOrder = 5,
+}
+
+/// A religion: founded by one culture, spreads to others by alignment
+/// compatibility, anchored to specific cells via sacred sites. Created
+/// during Phase 3b's religions stage; persists for the lifetime of the
+/// world. Indexed by position in `WorldData.religions.religions`.
+///
+/// Per ARCHITECTURE.md §4 Phase 3b: "1-3 religions per world; each tied
+/// to a culture; spread by alignment compatibility. Pantheon pattern
+/// picked by founder culture's tech tier and magic style."
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Religion {
     pub name: String,
+    pub pantheon: PantheonPattern,
+    /// Index into `WorldData.cultures.cultures` — the culture that
+    /// founded this religion.
+    pub founder_culture_id: u16,
+    /// Alignment inherited from the founder culture. Spread tolerance
+    /// to neighboring cultures keys off similarity to this value.
+    pub alignment: Alignment,
+    /// Mesh cell indices where this religion has its physical anchors
+    /// (temples, holy mountains, sacred groves). 0..3 sites per religion
+    /// in the MVP. Empty until the religions stage runs.
+    pub sacred_sites: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
