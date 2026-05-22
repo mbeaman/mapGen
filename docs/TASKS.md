@@ -185,9 +185,16 @@ depending on whether you want visual payoff or world-shape depth next.
   Garamond, sacred-site labels use IM Fell English Italic — all with
   Georgia / serif fallback. Pinned by `svg_invariants::
   ornate_antique_embeds_vendored_typography_via_at_font_face`.
-- [ ] (4h) Compass rose + corner cartouche + vignette + edge-burn
-  aging. **Partial** — vignette-lite is via the parchment radial
-  gradient; compass + cartouche + edge-burn deferred.
+- [x] (4h actual: ~2h) Compass rose + corner cartouche + vignette +
+  edge-burn aging. **Shipped** — 8-point compass rose in the NW
+  corner (4 long cardinal spikes + 4 inter-cardinal + medallion + N
+  marker in Cinzel); double-bordered cartouche in the SE corner
+  with "A MAP OF THE KNOWN WORLD" title; second radial gradient
+  (`url(#edge-burn)`) painted on top of map content darkens the
+  periphery into aged-paper shadow. All three layers sit above
+  labels (edge-burn intentionally fades edge labels into the
+  vignette). Pinned by `svg_invariants::
+  ornate_antique_renders_compass_cartouche_and_edge_burn`.
 - [x] (1d) Settlement glyphs derived from
   `Culture.settlement × Culture.architecture × SettlementTier`.
   **Shipped** — 8 icon silhouettes (Castle/Tower/Hall/Spire/

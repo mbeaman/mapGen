@@ -287,6 +287,55 @@ fn ornate_antique_emits_a_phase_3e_render() {
 }
 
 #[test]
+fn ornate_antique_renders_compass_cartouche_and_edge_burn() {
+    // ARCHITECTURE.md §Phase 3e requires: compass rose, corner
+    // cartouche, vignette + edge burn. This test pins the contract
+    // that all three overlay layers render on the ornate style.
+    //
+    // What we assert (structural, not visual):
+    //   * `<g class="compass">` is emitted with an N marker letter
+    //   * `<g class="cartouche">` is emitted with the title text
+    //   * `<g class="edge-burn">` is emitted referencing the
+    //     edge-burn radial gradient
+    //   * The edge-burn radial gradient is defined in <defs>
+    //
+    // What this does not verify:
+    //   * Whether the visual placement looks good (corner positions
+    //     scale with canvas — verify by eyeballing the seed-42 PNG).
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    assert!(
+        svg.contains(r#"<g class="compass""#),
+        "ornate SVG missing compass rose layer"
+    );
+    assert!(
+        svg.contains(">N</text>"),
+        "ornate SVG compass rose missing the N-marker label"
+    );
+    assert!(
+        svg.contains(r#"<g class="cartouche">"#),
+        "ornate SVG missing cartouche layer"
+    );
+    assert!(
+        svg.contains("A MAP OF THE KNOWN WORLD"),
+        "ornate SVG cartouche missing the title text"
+    );
+    assert!(
+        svg.contains(r#"<g class="edge-burn">"#),
+        "ornate SVG missing edge-burn overlay layer"
+    );
+    assert!(
+        svg.contains(r##"id="edge-burn""##),
+        "ornate SVG <defs> missing the edge-burn radial gradient"
+    );
+    assert!(
+        svg.contains(r##"fill="url(#edge-burn)""##),
+        "ornate SVG edge-burn rect not referencing the gradient"
+    );
+}
+
+#[test]
 fn ornate_antique_embeds_vendored_typography_via_at_font_face() {
     // Phase 3e polish item #2 (per session-state): bundle Cinzel +
     // IM Fell English + EB Garamond as base64 TTF in <defs> so the

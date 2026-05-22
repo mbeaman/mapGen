@@ -86,6 +86,11 @@ pub fn render(world: &WorldData) -> String {
 <stop offset="70%" stop-color="#dfca96"/>
 <stop offset="100%" stop-color="#a88550"/>
 </radialGradient>
+<radialGradient id="edge-burn" cx="50%" cy="50%" r="78%">
+<stop offset="40%" stop-color="#2a1c0d" stop-opacity="0"/>
+<stop offset="78%" stop-color="#2a1c0d" stop-opacity="0.30"/>
+<stop offset="100%" stop-color="#1a1208" stop-opacity="0.72"/>
+</radialGradient>
 </defs>"##,
     );
     out.push_str(r##"<rect width="100%" height="100%" fill="url(#parchment)"/>"##);
@@ -101,6 +106,13 @@ pub fn render(world: &WorldData) -> String {
     render_polity_labels(world, &mut out);
     render_settlement_labels(world, &mut out);
     render_sacred_site_labels(world, &mut out);
+
+    // Decorative top-of-stack overlays. The edge-burn overlay darkens
+    // the periphery (intentionally fading edge labels into "aged"
+    // shadow); compass + cartouche sit on top, untouched.
+    render_edge_burn(&mut out);
+    render_compass(w, h, &mut out);
+    render_cartouche(w, h, &mut out);
 
     out.push_str("</svg>");
     out
@@ -977,6 +989,130 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+/// Edge-burn vignette — radial-gradient overlay painted on top of the
+/// map content so the periphery fades into aged-paper shadow. Stronger
+/// than the parchment gradient underneath (which tints the background);
+/// this one darkens labels and glyphs that sit near the canvas edge,
+/// matching the look of a real burnt-edge antique map.
+fn render_edge_burn(out: &mut String) {
+    out.push_str(
+        r##"<g class="edge-burn"><rect width="100%" height="100%" fill="url(#edge-burn)" pointer-events="none"/></g>"##,
+    );
+}
+
+/// Compass rose in the NW corner — an 8-point star with 4 long
+/// cardinal spikes and 4 shorter inter-cardinal spikes, centered
+/// medallion, and "N" letter above. Sized for legibility across
+/// 1024–2048 px canvas widths.
+fn render_compass(w: f32, h: f32, out: &mut String) {
+    // Place a comfortable inset from the NW corner. Scale modestly
+    // with canvas size so the rose stays readable on wider exports.
+    let scale = (w.min(h) / 1280.0).clamp(0.7, 1.4);
+    let cx = 90.0 * scale;
+    let cy = 90.0 * scale;
+    let r_long = 42.0 * scale;
+    let r_short = 18.0 * scale;
+    let r_inner = 4.5 * scale;
+
+    write!(
+        out,
+        r##"<g class="compass" transform="translate({cx:.1} {cy:.1})">"##,
+    )
+    .unwrap();
+
+    // Cardinal star: 4 long spikes meeting at center. Polygon traces
+    // each spike out-and-back with a small inset between spikes so the
+    // outline reads as a star rather than a plus sign.
+    write!(
+        out,
+        r##"<polygon points="{rl:.1},0 {ri:.1},{ri:.1} 0,{rl:.1} -{ri:.1},{ri:.1} -{rl:.1},0 -{ri:.1},-{ri:.1} 0,-{rl:.1} {ri:.1},-{ri:.1}" fill="#2a2418" stroke="#1a140e" stroke-width="0.8"/>"##,
+        rl = r_long,
+        ri = r_inner,
+    )
+    .unwrap();
+
+    // Inter-cardinal star, rotated 45°. Shorter spikes layered on top
+    // give the recognizable compass-rose silhouette.
+    let r_off = r_short / std::f32::consts::SQRT_2;
+    let i_off = r_inner / std::f32::consts::SQRT_2;
+    write!(
+        out,
+        r##"<polygon points="{r1:.1},{r1:.1} {i:.1},0 {r1:.1},-{r1:.1} 0,-{i:.1} -{r1:.1},-{r1:.1} -{i:.1},0 -{r1:.1},{r1:.1} 0,{i:.1}" fill="#5a3a25" stroke="#1a140e" stroke-width="0.6"/>"##,
+        r1 = r_off,
+        i = i_off,
+    )
+    .unwrap();
+
+    // Centered medallion.
+    write!(
+        out,
+        r##"<circle cx="0" cy="0" r="{rm:.1}" fill="#dfca96" stroke="#1a140e" stroke-width="0.9"/>"##,
+        rm = r_inner * 1.4,
+    )
+    .unwrap();
+
+    // North marker letter above the rose, in Cinzel.
+    let n_y = -(r_long + 14.0 * scale);
+    write!(
+        out,
+        r##"<text x="0" y="{n_y:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" text-anchor="middle" font-weight="bold" fill="#2a2418">N</text>"##,
+        fs = 13.0 * scale,
+    )
+    .unwrap();
+
+    out.push_str("</g>");
+}
+
+/// Decorative cartouche in the SE corner — title block in a scroll-
+/// like frame. Today carries a generic "A Map of the Known World"
+/// title; future work may parameterize the title text on world
+/// metadata (oldest polity name, hemisphere, etc.).
+fn render_cartouche(w: f32, h: f32, out: &mut String) {
+    let scale = (w.min(h) / 1280.0).clamp(0.7, 1.6);
+    let box_w = 360.0 * scale;
+    let box_h = 78.0 * scale;
+    let x0 = w - box_w - 50.0 * scale;
+    let y0 = h - box_h - 50.0 * scale;
+    let cx = x0 + box_w * 0.5;
+    let cy = y0 + box_h * 0.5;
+
+    write!(out, r##"<g class="cartouche">"##).unwrap();
+
+    // Outer scroll: rounded plaque shape with a slightly darker
+    // parchment fill so it reads as separate from the map background.
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="#e8d8a8" stroke="#2a2418" stroke-width="{sw:.1}" fill-opacity="0.92"/>"##,
+        rx = 6.0 * scale,
+        sw = 1.4 * scale,
+    )
+    .unwrap();
+
+    // Inner border line — adds the engraved double-line look.
+    let inset = 5.0 * scale;
+    write!(
+        out,
+        r##"<rect x="{x:.1}" y="{y:.1}" width="{ww:.1}" height="{hh:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="none" stroke="#2a2418" stroke-width="{sw:.1}" stroke-opacity="0.55"/>"##,
+        x = x0 + inset,
+        y = y0 + inset,
+        ww = box_w - inset * 2.0,
+        hh = box_h - inset * 2.0,
+        rx = 4.0 * scale,
+        sw = 0.7 * scale,
+    )
+    .unwrap();
+
+    // Title text — Cinzel small-caps for the antique typeset feel.
+    write!(
+        out,
+        r##"<text x="{cx:.1}" y="{cy:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#2a2418">A MAP OF THE KNOWN WORLD</text>"##,
+        fs = 18.0 * scale,
+    )
+    .unwrap();
+
+    out.push_str("</g>");
 }
 
 /// Sacred sites — small 4-point radiant markers above their cell.
