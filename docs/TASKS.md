@@ -142,7 +142,14 @@ depending on whether you want visual payoff or world-shape depth next.
 
 ### Phase 3d — Naming
 
-- [ ] (1d) Phonotactic generator + Markov fallback, per `Language`
+- [x] (1d) Phonotactic generator + Markov fallback, per `Language`.
+  **Shipped `c74089f`** (after skeleton `9aedddb` + RED spec `6ba0ff6`).
+  Phonotactic-only — per-Race language profiles for the 5 MVP races
+  (Lalrian / Eldarin / Khuzdic / Grimsh / Greenfolk) + 4 reserve
+  languages. Generated names land on settlements, polities, and
+  religions, replacing the `"{culture} Capital"` / `"{culture} Realm"` /
+  `"{culture} Faith"` templates. Markov fallback **deferred** — see
+  BACKLOG.md "Sound-change rules across language families."
 - [ ] (deferred — see BACKLOG.md "Sound-change rules across language families")
 
 ### Phase 3e — Ornate render (the screenshot)

@@ -6,11 +6,15 @@ lore engine (planned).
 
 ## Status
 
-**Phase 2 + 2.5 + 3a shipped.** The geography pipeline runs end-to-end on any
-seed and produces deterministic, Earth-faithful worlds; a parameter-sweep CLI
-supports manual tuning; the cultures stage assigns a race-archetype culture
-to every land cell via weighted-Voronoi habitat fitness. Phase 3b/c/d/e
-(religions, polities, naming, ornate render) is next. See
+**Phase 2 + 2.5 + 3a/b/c/d + 3e (MVP) shipped.** The full geography +
+society + naming pipeline runs end-to-end on any seed and produces
+deterministic worlds with cultures, religions, polities, settlements,
+roads, and phonotactic in-world names. The ornate-antique render style
+ships an MVP-scope screenshot (parchment, perturbed coastlines, Tolkien
+mountains, forest scatter, settlement icons, sacred sites). Phase 3e
+polish items (`roughr` pen-jitter, embedded fonts, compass / cartouche,
+Imhof label placement, culture×architecture glyph derivation) and Phase
+4 (history sim) come next. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the locked plan,
 [`docs/TASKS.md`](docs/TASKS.md) for active work, and
 [`docs/BACKLOG.md`](docs/BACKLOG.md) for deferred items with revival triggers.
@@ -46,9 +50,10 @@ to every land cell via weighted-Voronoi habitat fitness. Phase 3b/c/d/e
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 
-**Not yet:** religions, polities, names, history simulation, ornate
-hand-drawn render, Claude-narrated chronicles, web frontend. All in
-`docs/ARCHITECTURE.md` as later phases.
+**Not yet:** history simulation, Claude-narrated chronicles, web frontend,
+the Phase-3e ornate-render polish items (roughr-perturbed primitives,
+embedded fonts, compass / cartouche, labels, culture-driven glyph
+shapes). All tracked in `docs/ARCHITECTURE.md` + `docs/TASKS.md`.
 
 ## Prerequisites
 
@@ -114,7 +119,7 @@ test suite runs in seconds.
 | ---------------- | -------------------------------------------------------------- |
 | `mapgen-core`    | Entity schema, event log types, RNG harness, libm shim, LorePatch |
 | `mapgen-geom`    | Voronoi mesh, Poisson-disk sampling, Lloyd relaxation          |
-| `mapgen-world`   | Geography pipeline: plates → erosion → hydrology → climate → biomes |
+| `mapgen-world`   | Full pipeline: plates → erosion → hydrology → climate → biomes → cultures → religions → polities → naming |
 | `mapgen-history` | Agent-based history simulation + append-only event log (stub)  |
 | `mapgen-render`  | SVG renderer with pluggable style modules                      |
 | `mapgen-lore`    | Claude integration, native only (stub)                         |
@@ -139,6 +144,9 @@ seed
  ├─► 3-cell seasonal climate                       [implemented]
  ├─► Köppen-Geiger → biome (+ RIPARIAN override)   [implemented]
  ├─► cultures (race archetype × habitat fitness)   [implemented]
+ ├─► religions (founder culture × alignment spread) [implemented]
+ ├─► polities (capital + towns + Dijkstra roads)   [implemented]
+ ├─► naming (phonotactic per-language generator)   [implemented]
  ├─► religions (founder culture × spread)          [planned: Phase 3b]
  ├─► polities (Christaller k=4 hierarchy + roads)  [planned: Phase 3c]
  ├─► naming (phonotactic + Markov)                 [planned: Phase 3d]
