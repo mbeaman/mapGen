@@ -192,6 +192,53 @@ fn cultures_style_emits_the_five_mvp_race_colors_on_reference_world() {
 }
 
 #[test]
+fn ornate_antique_emits_settlement_labels_with_phonotactic_names() {
+    // Labels are the Phase-3e polish item that makes the generated
+    // Phase-3d names actually visible on the rendered map. Sample
+    // every settlement's name from the world; every one must appear
+    // in the SVG output as a `<text>` element value. If even one is
+    // missing, the labeling layer regressed (skipped, overlapped-
+    // away, or got truncated).
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    assert!(
+        svg.contains("<text "),
+        "ornate render emitted no <text> elements — labels regressed"
+    );
+    assert!(
+        svg.contains("font-family"),
+        "ornate render's labels lost their font-family attribute"
+    );
+
+    // Every settlement's phonotactic name should appear in the SVG.
+    // Names are deterministic — we don't need to know which strings
+    // seed 42 produces, just that the strings the world carries land
+    // in the rendered output.
+    let mut missing: Vec<&str> = Vec::new();
+    for s in &world.society.settlements {
+        if !svg.contains(s.name.as_str()) {
+            missing.push(s.name.as_str());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "{} settlement label(s) missing from ornate render: {:?}",
+        missing.len(),
+        &missing[..missing.len().min(5)]
+    );
+
+    // Same for polity names.
+    for n in &world.society.nations {
+        assert!(
+            svg.contains(n.name.as_str()),
+            "polity {:?} missing from ornate render labels",
+            n.name
+        );
+    }
+}
+
+#[test]
 fn ornate_antique_emits_a_phase_3e_render() {
     // Phase 3e — the marquee aesthetic style. Was an explicit `Err`
     // before commit landing the impl; now must succeed and emit an SVG

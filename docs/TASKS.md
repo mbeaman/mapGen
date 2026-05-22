@@ -182,8 +182,15 @@ depending on whether you want visual payoff or world-shape depth next.
   glyphs are tier-driven (capitals = crown+square, towns = circle),
   not yet culture/architecture-driven. The shapes vary by tier; the
   full matrix lands later.
-- [ ] (4h) Imhof-style label placement (basic — full simulated-annealing
-  variant is post-MVP). **Deferred** — no label rendering yet.
+- [x] (4h) Imhof-style label placement (basic — full simulated-annealing
+  variant is post-MVP). **Shipped** in the labels follow-up commit —
+  settlements, polities, and religion sacred sites all carry SVG text
+  labels. Polity labels at territorial centroid; settlement labels
+  offset by tier; sacred-site labels small italic. No SA optimization,
+  no curve-along-feature; basic positioning. White stroke + dark fill
+  via `paint-order="stroke"` gives readability against the parchment +
+  forest scatter. Test pinned by `svg_invariants::
+  ornate_antique_emits_settlement_labels_with_phonotactic_names`.
 
 **Phase 3e MVP shipped in `342f606`**: parchment + ripples + mountains
 + forests + roads (dashed russet) + settlement icons + sacred-site

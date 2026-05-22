@@ -65,6 +65,9 @@ pub fn render(world: &WorldData) -> String {
     render_roads(world, &mut out);
     render_settlements(world, &mut out);
     render_sacred_sites(world, &mut out);
+    render_polity_labels(world, &mut out);
+    render_settlement_labels(world, &mut out);
+    render_sacred_site_labels(world, &mut out);
 
     out.push_str("</svg>");
     out
@@ -355,6 +358,126 @@ fn render_settlements(world: &WorldData, out: &mut String) {
             }
         }
     }
+}
+
+/// Settlement name labels. Capitals get large serif text above-right of
+/// the glyph; towns get smaller text below. Basic positioning — no
+/// Imhof simulated-annealing optimization (architecture defers full SA
+/// to post-MVP). Accepts label overlap rather than silently dropping
+/// labels; the reader can usually disambiguate from glyph proximity.
+fn render_settlement_labels(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    out.push_str(
+        r##"<g font-family="Georgia, 'Times New Roman', serif" fill="#1a140e" stroke="#f0e3bf" paint-order="stroke" stroke-width="2.0" stroke-linejoin="round">"##,
+    );
+    for s in &world.society.settlements {
+        if s.name.is_empty() {
+            continue;
+        }
+        let site = mesh.sites[s.cell as usize];
+        let (dx, dy, size, weight) = match s.tier {
+            SettlementTier::Capital => (8.0_f32, -10.0_f32, 15.0_f32, "bold"),
+            SettlementTier::Town => (0.0, 14.0, 10.0, "normal"),
+            SettlementTier::Village => (0.0, 11.0, 8.0, "normal"),
+        };
+        let anchor = match s.tier {
+            SettlementTier::Capital => "start",
+            _ => "middle",
+        };
+        write!(
+            out,
+            r##"<text x="{:.1}" y="{:.1}" font-size="{size:.1}" font-weight="{weight}" text-anchor="{anchor}">{}</text>"##,
+            site[0] + dx,
+            site[1] + dy,
+            xml_escape(&s.name),
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+/// Polity-name labels at the territorial centroid (computed from
+/// `world.society.control` — the per-cell polity_id) so the name lands
+/// in the middle of the realm rather than at the capital. Large
+/// italicized serif, tinted by polity color so it reads as "this
+/// region belongs to this polity."
+fn render_polity_labels(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    out.push_str(
+        r##"<g font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-weight="bold" text-anchor="middle" fill-opacity="0.85" stroke="#f0e3bf" paint-order="stroke" stroke-width="3.0" stroke-linejoin="round">"##,
+    );
+    for (p, polity) in world.society.nations.iter().enumerate() {
+        if polity.name.is_empty() {
+            continue;
+        }
+        // Compute centroid of cells controlled by this polity.
+        let mut sum = [0.0_f32, 0.0_f32];
+        let mut count = 0u32;
+        for (cell, &slot) in world.society.control.iter().enumerate() {
+            if slot == Some(p as u32) {
+                let site = mesh.sites[cell];
+                sum[0] += site[0];
+                sum[1] += site[1];
+                count += 1;
+            }
+        }
+        if count == 0 {
+            continue;
+        }
+        let cx = sum[0] / count as f32;
+        let cy = sum[1] / count as f32;
+        // Darken the polity color slightly for legibility against the
+        // softer territorial fill underneath.
+        let r = ((polity.color[0] as u16 * 7) / 10) as u8;
+        let g = ((polity.color[1] as u16 * 7) / 10) as u8;
+        let b = ((polity.color[2] as u16 * 7) / 10) as u8;
+        write!(
+            out,
+            r##"<text x="{cx:.1}" y="{cy:.1}" font-size="22" fill="#{r:02x}{g:02x}{b:02x}">{}</text>"##,
+            xml_escape(&polity.name)
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+/// Religion-name labels — tiny italic text above each sacred site
+/// diamond. Stays decorative rather than dominant; capital and polity
+/// labels are the load-bearing readability layer.
+fn render_sacred_site_labels(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    out.push_str(
+        r##"<g font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="9" text-anchor="middle" fill="#7a5a25" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.6" stroke-linejoin="round">"##,
+    );
+    for religion in &world.religions.religions {
+        if religion.name.is_empty() {
+            continue;
+        }
+        // Place above the first sacred site (deterministic — sacred
+        // sites are stored highest-elevation-first by the religions
+        // stage).
+        let Some(&first_cell) = religion.sacred_sites.first() else {
+            continue;
+        };
+        let site = mesh.sites[first_cell as usize];
+        write!(
+            out,
+            r##"<text x="{:.1}" y="{:.1}">{}</text>"##,
+            site[0],
+            site[1] - 8.0,
+            xml_escape(&religion.name),
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Sacred sites — small 4-point radiant markers above their cell.

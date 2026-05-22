@@ -51,9 +51,10 @@ Imhof label placement, culture×architecture glyph derivation) and Phase
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 
 **Not yet:** history simulation, Claude-narrated chronicles, web frontend,
-the Phase-3e ornate-render polish items (roughr-perturbed primitives,
-embedded fonts, compass / cartouche, labels, culture-driven glyph
-shapes). All tracked in `docs/ARCHITECTURE.md` + `docs/TASKS.md`.
+the remaining Phase-3e ornate-render polish items (roughr-perturbed
+primitives, embedded WOFF2 fonts, compass / cartouche / edge-burn,
+culture-driven glyph shapes). All tracked in `docs/ARCHITECTURE.md` +
+`docs/TASKS.md`.
 
 ## Prerequisites
 
