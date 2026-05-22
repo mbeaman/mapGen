@@ -315,9 +315,32 @@ pub struct Culture {
     pub diplomatic: DiplomaticPattern,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+/// Per-language phonotactic profile. Drives the Phase 3d naming engine —
+/// names for settlements, polities, religions, and (where wanted) cultures
+/// are built by stitching syllable patterns from this struct's vowel /
+/// consonant pools.
+///
+/// Profiles are per-race in the MVP (one race == one language) but the
+/// type is structured so multiple languages can be assigned to a single
+/// race in the future (e.g., dialect splits driven by `BACKLOG.md`'s
+/// sound-change-rules entry). All fields serialize as plain data — no
+/// behavior baked into the type.
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct Language {
+    /// Display name of the language (e.g., "Eldarin", "Khuzdic").
     pub name: String,
+    /// Vowel pool. Each character is a single grapheme.
+    pub vowels: Vec<char>,
+    /// Consonant pool.
+    pub consonants: Vec<char>,
+    /// Syllable templates. `C` = consonant, `V` = vowel. Any other
+    /// character is appended literally (apostrophes, hyphens). Typical
+    /// patterns: `"CV"`, `"CVC"`, `"V"`, `"CCV"`.
+    pub syllable_patterns: Vec<String>,
+    /// Lower bound on syllables per generated word, inclusive.
+    pub min_syllables: u8,
+    /// Upper bound on syllables per generated word, inclusive.
+    pub max_syllables: u8,
 }
 
 /// Append-only registry. `IndexMap` guarantees deterministic iteration order.

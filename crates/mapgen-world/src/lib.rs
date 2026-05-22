@@ -8,6 +8,7 @@ pub mod cultures;
 pub mod erosion;
 pub mod hydrology;
 pub mod koppen;
+pub mod naming;
 pub mod noise;
 pub mod ocean;
 pub mod patch;

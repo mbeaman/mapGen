@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    entities::{Culture, EntityStore, Religion, Settlement},
+    entities::{Culture, EntityStore, Language, Religion, Settlement},
     event::{EventLog, Work},
     ids::PlateId,
 };
@@ -22,7 +22,9 @@ use crate::{
 /// * v5 — Phase 3c polities field — `SocietyData::settlements` populated.
 ///   Pre-v5 worlds load with an empty settlements vec (compatible —
 ///   `#[serde(default)]` on the field).
-pub const SCHEMA_VERSION: u32 = 5;
+/// * v6 — Phase 3d languages field — `WorldData::languages` populated.
+///   Pre-v6 worlds load with an empty languages vec.
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -43,6 +45,10 @@ pub struct WorldData {
     /// on worlds where the religions stage hasn't run yet.
     #[serde(default)]
     pub religions: ReligionsData,
+    /// Phase 3d — generated per-culture languages. Indexed by
+    /// `Culture::language_id`. Empty until the naming stage runs.
+    #[serde(default)]
+    pub languages: Vec<Language>,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -277,5 +283,7 @@ mod tests {
         assert!(world.religions.religion_id.is_empty());
         // v5 forward-compat: settlements vec also defaults empty.
         assert!(world.society.settlements.is_empty());
+        // v6 forward-compat: languages vec also defaults empty.
+        assert!(world.languages.is_empty());
     }
 }
