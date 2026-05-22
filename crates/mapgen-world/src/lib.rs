@@ -95,6 +95,11 @@ pub fn generate_full_with(
         polities::PolitiesParams::default(),
         &mut rng.stream(mapgen_core::Stage::Capitals),
     );
+    naming::name_world(
+        &mut world,
+        naming::NamingParams::default(),
+        &mut rng.stream(mapgen_core::Stage::Names),
+    );
     world
 }
 

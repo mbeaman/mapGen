@@ -18,7 +18,9 @@
 //! generator + Markov fallback, per `Language`." The Markov fallback
 //! is BACKLOGGED; MVP uses pure phonotactic.
 
+use mapgen_core::entities::{Language, Race};
 use mapgen_core::WorldData;
+use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha8Rng;
 
 /// Tunables for the naming stage. Calibrated values land in
@@ -46,6 +48,176 @@ impl Default for NamingParams {
 /// .settlements` and `world.society.nations` populated (Phase 3c must
 /// have run), `world.religions.religions` populated (Phase 3b must
 /// have run).
-pub fn name_world(_world: &mut WorldData, _params: NamingParams, _rng: &mut ChaCha8Rng) {
-    todo!("Phase 3d: naming::name_world not yet implemented — see naming_spec.rs")
+pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha8Rng) {
+    if world.cultures.cultures.is_empty() {
+        return;
+    }
+
+    // 1. Build per-culture languages (template-driven by Race; deterministic
+    //    from world state alone — no RNG yet at this step).
+    let languages: Vec<Language> = world
+        .cultures
+        .cultures
+        .iter()
+        .map(|c| language_for_race(c.race))
+        .collect();
+
+    // 2. Wire each culture to its language index.
+    for (i, culture) in world.cultures.cultures.iter_mut().enumerate() {
+        culture.language_id = i as u16;
+    }
+
+    // 3. Rename settlements. Iterate in `settlements` order for
+    //    determinism. Each settlement's name uses the language of the
+    //    culture that owns the polity (looked up via polity's capital
+    //    cell — since 1 polity == 1 culture in MVP, this resolves
+    //    uniquely).
+    for settlement in world.society.settlements.iter_mut() {
+        let polity = &world.society.nations[settlement.polity_id as usize];
+        let culture_id = world
+            .cultures
+            .culture_id
+            .get(polity.capital_cell as usize)
+            .and_then(|x| *x);
+        let language_idx = culture_id.map(|c| c as usize).unwrap_or(0);
+        let lang = &languages[language_idx.min(languages.len() - 1)];
+        settlement.name = generate_name(lang, rng);
+    }
+
+    // 4. Rename polities. Same language lookup as settlements.
+    for polity in world.society.nations.iter_mut() {
+        let culture_id = world
+            .cultures
+            .culture_id
+            .get(polity.capital_cell as usize)
+            .and_then(|x| *x);
+        let language_idx = culture_id.map(|c| c as usize).unwrap_or(0);
+        let lang = &languages[language_idx.min(languages.len() - 1)];
+        polity.name = generate_name(lang, rng);
+    }
+
+    // 5. Rename religions. Founder culture's language.
+    for religion in world.religions.religions.iter_mut() {
+        let founder = religion.founder_culture_id as usize;
+        let lang = &languages[founder.min(languages.len() - 1)];
+        religion.name = generate_name(lang, rng);
+    }
+
+    world.languages = languages;
+}
+
+/// Hardcoded per-race phonotactic profile. Each profile leans toward a
+/// recognizable Tolkienesque register (soft vowel-y Elven; hard
+/// consonant-y Dwarven; harsh-cluster Orcish; etc.) so a glance at the
+/// rendered map identifies the culture before reading the label.
+///
+/// Future enhancement: load profiles from CSV per race-archetype so
+/// world-by-world variation is possible without recompiling.
+fn language_for_race(race: Race) -> Language {
+    match race {
+        Race::Human => Language {
+            name: "Lalrian".into(),
+            vowels: "aeiou".chars().collect(),
+            consonants: "kgtdpbsnrlmh".chars().collect(),
+            syllable_patterns: vec!["CV".into(), "CVC".into(), "V".into()],
+            min_syllables: 2,
+            max_syllables: 4,
+        },
+        Race::Elf => Language {
+            name: "Eldarin".into(),
+            vowels: "aeio".chars().collect(),
+            consonants: "lrnsvfmh".chars().collect(),
+            syllable_patterns: vec!["V".into(), "CV".into(), "CVl".into()],
+            min_syllables: 3,
+            max_syllables: 5,
+        },
+        Race::Dwarf => Language {
+            name: "Khuzdic".into(),
+            vowels: "aiu".chars().collect(),
+            consonants: "kgbdrmnt".chars().collect(),
+            syllable_patterns: vec!["CVC".into(), "CV".into(), "CCV".into()],
+            min_syllables: 1,
+            max_syllables: 3,
+        },
+        Race::Orc => Language {
+            name: "Grimsh".into(),
+            vowels: "auo".chars().collect(),
+            consonants: "krgzjbdvft".chars().collect(),
+            syllable_patterns: vec!["CVC".into(), "CCVC".into(), "CV".into()],
+            min_syllables: 1,
+            max_syllables: 3,
+        },
+        Race::Halfling => Language {
+            name: "Greenfolk".into(),
+            vowels: "aeio".chars().collect(),
+            consonants: "lmnsrbdh".chars().collect(),
+            syllable_patterns: vec!["CV".into(), "CVC".into(), "V".into()],
+            min_syllables: 2,
+            max_syllables: 3,
+        },
+        // Reserve races — placeholder profiles so the spec's
+        // language-pool invariants pass even if a later CSV swaps in
+        // one of these archetypes.
+        Race::Lizardfolk => Language {
+            name: "Sszaar".into(),
+            vowels: "aei".chars().collect(),
+            consonants: "szrkht".chars().collect(),
+            syllable_patterns: vec!["CV".into(), "CVCC".into()],
+            min_syllables: 1,
+            max_syllables: 3,
+        },
+        Race::SeaFolk => Language {
+            name: "Maral".into(),
+            vowels: "aeiou".chars().collect(),
+            consonants: "mlrnvw".chars().collect(),
+            syllable_patterns: vec!["CV".into(), "VCV".into()],
+            min_syllables: 2,
+            max_syllables: 4,
+        },
+        Race::Underdark => Language {
+            name: "Drath".into(),
+            vowels: "auo".chars().collect(),
+            consonants: "drthzkv".chars().collect(),
+            syllable_patterns: vec!["CVC".into(), "CCV".into()],
+            min_syllables: 1,
+            max_syllables: 3,
+        },
+        Race::Giant => Language {
+            name: "Joten".into(),
+            vowels: "aou".chars().collect(),
+            consonants: "jbthrmg".chars().collect(),
+            syllable_patterns: vec!["CV".into(), "CVC".into()],
+            min_syllables: 1,
+            max_syllables: 3,
+        },
+    }
+}
+
+/// Generate a single phonotactic name from `lang`. The RNG must be
+/// advanced consistently to preserve determinism across runs of the
+/// same seed.
+pub fn generate_name(lang: &Language, rng: &mut ChaCha8Rng) -> String {
+    let span = lang.max_syllables - lang.min_syllables + 1;
+    let n_syllables = lang.min_syllables + (rng.next_u32() % span as u32) as u8;
+    let mut out = String::new();
+    for _ in 0..n_syllables {
+        let pat = &lang.syllable_patterns[(rng.next_u32() as usize) % lang.syllable_patterns.len()];
+        for ch in pat.chars() {
+            let picked = match ch {
+                'C' => lang.consonants[(rng.next_u32() as usize) % lang.consonants.len()],
+                'V' => lang.vowels[(rng.next_u32() as usize) % lang.vowels.len()],
+                literal => literal,
+            };
+            out.push(picked);
+        }
+    }
+    capitalize(&out)
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
