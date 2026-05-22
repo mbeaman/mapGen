@@ -64,6 +64,11 @@ culture-driven glyph shapes). All tracked in `docs/ARCHITECTURE.md` +
   current stable; CI tracks the same channel.)
 - `wasm32-unknown-unknown` target is only required to build
   `mapgen-wasm`: `rustup target add wasm32-unknown-unknown`.
+- (Optional, recommended for multi-machine work) [`just`](https://github.com/casey/just)
+  for the project's one-command verbs. Install with `cargo install just`,
+  then `just setup` runs the wasm-target bootstrap and `just check`
+  runs the full validation gate. Everything else still works via
+  the direct `cargo` commands below.
 
 ## Quick start
 
@@ -102,7 +107,13 @@ each knob's default, typical range, and units.
 
 ## Run tests
 
-The full local gate (matches CI):
+The full local gate (matches CI). One command via the justfile:
+
+```sh
+just check
+```
+
+Or run the four steps directly:
 
 ```sh
 cargo fmt --all -- --check
@@ -112,7 +123,8 @@ cargo build -p mapgen-wasm --target wasm32-unknown-unknown --release
 ```
 
 All four steps should be silent / green on a clean checkout; the full
-test suite runs in seconds.
+test suite runs in seconds. `just test` runs only the workspace tests
+when fmt / clippy / wasm aren't relevant.
 
 ## Crate layout
 
