@@ -89,6 +89,11 @@ pub fn generate_full_with(
         religions::ReligionsParams::default(),
         &mut rng.stream(mapgen_core::Stage::Religions),
     );
+    polities::lay_out(
+        &mut world,
+        polities::PolitiesParams::default(),
+        &mut rng.stream(mapgen_core::Stage::Capitals),
+    );
     world
 }
 
