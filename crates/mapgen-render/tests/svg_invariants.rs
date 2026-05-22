@@ -156,6 +156,42 @@ fn always_present_biome_colors_emitted_on_reference_world() {
 }
 
 #[test]
+fn cultures_style_emits_the_five_mvp_race_colors_on_reference_world() {
+    // The cultures debug render colors cells by Race. Seed 42 at 4 000
+    // cells places all 5 MVP archetypes (Riverfolk / Wildwood Kin /
+    // Iron Hold / Burning Horde / Greendale) — verified empirically in
+    // commit `aca2fed`'s sample-render output. Each one's race hue must
+    // appear in the SVG.
+    //
+    // What this catches: a future renderer change that collapses two
+    // race hues, a culling-pass regression that drops one of the five
+    // expected races from seed-42's roster, or a race→color mapping
+    // typo in `style::cultures::race_color`.
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::Cultures).expect("cultures style is implemented");
+
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.trim_end().ends_with("</svg>"));
+
+    let must_emit: &[(&str, &str)] = &[
+        ("#6b8bb5", "Human (slate blue)"),
+        ("#6b8e23", "Elf (olive)"),
+        ("#a0522d", "Dwarf (sienna)"),
+        ("#b04a4a", "Orc (dusty red)"),
+        ("#daa520", "Halfling (goldenrod)"),
+    ];
+    let missing: Vec<&str> = must_emit
+        .iter()
+        .filter(|(hex, _)| !svg.contains(hex))
+        .map(|(_, name)| *name)
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "seed-42 cultures render missing race color(s): {missing:?}"
+    );
+}
+
+#[test]
 fn ornate_antique_is_an_explicit_err_until_phase_3e() {
     // The `Style::OrnateAntique` variant is reserved but unimplemented;
     // `render()` must reject it rather than silently emit a placeholder.

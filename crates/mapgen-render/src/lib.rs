@@ -16,6 +16,7 @@ pub fn render(world: &WorldData, style: Style) -> Result<String, String> {
     match style {
         Style::Greyscale => Ok(style::greyscale::render(world)),
         Style::Biomes => Ok(style::biomes::render(world)),
+        Style::Cultures => Ok(style::cultures::render(world)),
         Style::OrnateAntique => {
             Err("ornate_antique: not yet implemented — reserved for Phase 3e".into())
         }
