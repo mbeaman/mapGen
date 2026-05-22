@@ -9,13 +9,17 @@
 //!   seeds), with the same coastline + river overlays as the biomes
 //!   style. Honest dev view of what `cultures::populate` produced.
 //! * `OrnateAntique` — Phase 3e "exotic map shop" hand-drawn aesthetic.
-//!   Variant is reserved; calling [`crate::render`] with it returns
-//!   `Err` until the Phase 3e implementation lands. The submodule will
-//!   come back at that point.
+//!   Parchment background, multi-offset coastline ripples, Tolkien
+//!   triangular mountain glyphs, biome-keyed tree scatter, settlement
+//!   icons keyed by polity color and tier, road polylines, sacred-site
+//!   diamonds. MVP scope — `roughr` pen jitter, embedded typography,
+//!   compass / cartouche, and Imhof label placement land in follow-up
+//!   commits.
 
 pub mod biomes;
 pub mod cultures;
 pub mod greyscale;
+pub mod ornate_antique;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Style {
@@ -27,9 +31,9 @@ pub enum Style {
     /// Phase 3a data visualization — cells colored by `Race` of the
     /// assigned culture; sea + coastlines + rivers as in `Biomes`.
     Cultures,
-    /// "Exotic map shop" hand-drawn antique aesthetic. **Not yet
-    /// implemented** — [`crate::render`] returns `Err` for this
-    /// variant. Reserved for Phase 3e.
+    /// Phase 3e "exotic map shop" hand-drawn antique aesthetic. MVP
+    /// scope; see [`crate::style::ornate_antique`] for what's included
+    /// and what's deferred.
     OrnateAntique,
 }
 

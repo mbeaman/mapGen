@@ -8,17 +8,15 @@ use style::Style;
 
 /// Render a world to an SVG string in the requested style.
 ///
-/// Returns `Err` for styles whose implementation has not landed yet
-/// (currently only [`Style::OrnateAntique`], which is reserved for Phase
-/// 3e). Implemented styles always succeed; callers that hardcode an
-/// implemented variant can `.expect("style implemented")`.
+/// Every style currently in the enum is implemented; the `Result`
+/// return shape is retained for future styles whose implementation may
+/// not have landed yet. Callers hardcoding an implemented variant can
+/// `.expect("style implemented")`.
 pub fn render(world: &WorldData, style: Style) -> Result<String, String> {
     match style {
         Style::Greyscale => Ok(style::greyscale::render(world)),
         Style::Biomes => Ok(style::biomes::render(world)),
         Style::Cultures => Ok(style::cultures::render(world)),
-        Style::OrnateAntique => {
-            Err("ornate_antique: not yet implemented — reserved for Phase 3e".into())
-        }
+        Style::OrnateAntique => Ok(style::ornate_antique::render(world)),
     }
 }

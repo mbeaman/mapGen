@@ -192,29 +192,45 @@ fn cultures_style_emits_the_five_mvp_race_colors_on_reference_world() {
 }
 
 #[test]
-fn ornate_antique_is_an_explicit_err_until_phase_3e() {
-    // The `Style::OrnateAntique` variant is reserved but unimplemented;
-    // `render()` must reject it rather than silently emit a placeholder.
-    // The previous stub returned a 200-byte SVG saying "phase 3", which
-    // hid the unimplemented status from anyone who didn't read the docs.
-    // This test pins the contract: until the Phase 3e implementation
-    // lands, the public renderer returns `Err` and the error string
-    // says so. When the implementation arrives, this test changes to
-    // assert `Ok` (or is replaced by real ornate-style coverage).
+fn ornate_antique_emits_a_phase_3e_render() {
+    // Phase 3e — the marquee aesthetic style. Was an explicit `Err`
+    // before commit landing the impl; now must succeed and emit an SVG
+    // with the recognizable Phase-3e element shapes (parchment
+    // gradient, mountain glyphs, settlement markers, sacred-site
+    // diamonds).
     let world = generate_full(ref_params());
-    let result = render(&world, Style::OrnateAntique);
+    let svg = render(&world, Style::OrnateAntique)
+        .expect("ornate_antique render must succeed once Phase 3e lands");
+
+    assert!(svg.starts_with("<svg"));
+    assert!(svg.trim_end().ends_with("</svg>"));
     assert!(
-        result.is_err(),
-        "ornate_antique unexpectedly returned Ok before Phase 3e implementation"
+        svg.len() >= 50_000,
+        "ornate SVG suspiciously small: {} bytes — render likely \
+         regressed to a placeholder",
+        svg.len()
     );
-    let msg = result.unwrap_err();
+    // Parchment gradient is the visual signature of the style; missing
+    // it would mean a regression to the biomes/cultures dev view.
     assert!(
-        msg.contains("ornate_antique"),
-        "error message should name the style: {msg:?}"
+        svg.contains("parchment"),
+        "ornate SVG missing the parchment gradient marker"
+    );
+    // Sample-render evidence (seed 42 / 4 000 cells): ALPINE / SNOW
+    // cells emit mountain triangles, forest biomes emit tree scatter,
+    // polities emit at least one capital settlement. We assert the
+    // tags that prove each layer ran.
+    assert!(
+        svg.contains("<polygon"),
+        "ornate SVG has no polygon tags — mountains + cell fills + \
+         tree tufts all use polygons"
     );
     assert!(
-        msg.to_lowercase().contains("not yet implemented")
-            || msg.to_lowercase().contains("phase 3e"),
-        "error message should explain *why* (not-implemented / Phase 3e): {msg:?}"
+        svg.contains("<rect"),
+        "ornate SVG has no rect — capitals draw filled squares"
+    );
+    assert!(
+        svg.contains("<circle"),
+        "ornate SVG has no circle — towns draw filled circles"
     );
 }

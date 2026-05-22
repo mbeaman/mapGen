@@ -37,9 +37,12 @@ to every land cell via weighted-Voronoi habitat fitness. Phase 3b/c/d/e
   `crates/mapgen-world/data/race_archetypes.csv`. Weighted Voronoi BFS
   assignment writes `culture_id` per land cell; iterative culling drops
   cultures below the 0.3 mean-fitness floor (ARCHITECTURE.md §4 Phase 3a).
-- Three render styles: `greyscale` (heightmap), `biomes` (Phase-2 data view),
-  and `cultures` (Phase-3a data view — cells colored by the `Race` of the
-  assigned culture, with the same coastline + river overlays as `biomes`).
+- **Four render styles:** `greyscale` (heightmap), `biomes` (Phase-2 data view),
+  `cultures` (Phase-3a data view), and `ornate_antique` (Phase-3e marquee —
+  parchment background, multi-offset coastline ripples, Tolkien triangular
+  mountain glyphs, biome-keyed forest scatter, polity-colored settlement
+  icons, dashed roads, sacred-site diamonds; MVP scope, `roughr` pen jitter +
+  embedded fonts + compass / cartouche + Imhof label placement deferred).
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 
