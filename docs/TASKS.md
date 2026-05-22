@@ -94,14 +94,24 @@ failing tests.
   §4 Phase 3a exit criteria (every land cell has a culture, ≥2
   distinct cultures, every roster entry has cells, determinism for
   fixed seed). All RED via `populate()`'s `todo!()` — the contract.
-- [ ] (1d) `cultures::populate` — habitat scoring + weighted Voronoi
-  assignment writes `culture_id` per cell. Makes the 8 spec tests
-  green; will also surface the habitat-fitness ≥ 0.3 invariant via a
-  shared scoring helper the test imports.
-- [ ] (4h) `crates/mapgen-world/data/race_archetypes.csv` with 4-5 MVP
+- [x] (4h) `crates/mapgen-world/data/race_archetypes.csv` with 4-5 MVP
   archetypes (1 human variant + 1 elf + 1 dwarf + 1 orc + 1 halfling).
-  Drives `populate`'s archetype roster — likely lands paired with the
-  populate implementation, not before.
+  **Shipped `5ac66af`** (C1). 5-archetype CSV + `RaceArchetype` struct
+  + panic-on-bad-data loader + 8 unit tests covering parse/coverage/
+  range/biome-validity/error-handling.
+- [x] (1d) `cultures::populate` — habitat scoring + weighted Voronoi
+  assignment writes `culture_id` per cell. **Shipped `1451d5f`** (C2)
+  + wired into `generate_full` in the C3 commit. Algorithm: seed
+  selection → multi-source BFS Voronoi → iterative culling. Geometric
+  mean across (biome, temperature, elevation, water) axes; greens all
+  8 prior RED tests + the deferred `mean_habitat_fitness_per_culture
+  _above_floor` test (architecture's 0.3 floor exit criterion). 88
+  passing across 17 test suites.
+
+**Phase 3a is complete.** Cultures runs in `generate_full`; tunables
+recorded in `docs/tuning_log.md` (Cultures section). Next aesthetic-
+payoff substage is Phase 3e (ornate render) or Phase 3b (religions),
+depending on whether you want visual payoff or world-shape depth next.
 
 ### Phase 3b — Religions
 

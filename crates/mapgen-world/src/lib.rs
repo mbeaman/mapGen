@@ -77,6 +77,11 @@ pub fn generate_full_with(
     ocean::run(&mut world);
     climate_seasonal::run(&mut world, climate_params);
     biomes::classify(&mut world);
+    cultures::populate(
+        &mut world,
+        cultures::CulturesParams::default(),
+        &mut rng.stream(mapgen_core::Stage::Cultures),
+    );
     world
 }
 

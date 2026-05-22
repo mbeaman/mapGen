@@ -186,6 +186,84 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** audit
 * **Source:** commit `bd30c9b`
 
+## Cultures — `mapgen-world::cultures`
+
+### `CulturesParams::target_cultures`
+
+* **Current:** `5`
+* **Why this value:** Phase 3a MVP roster is 5 archetypes (1 Human
+  variant + 1 Elf + 1 Dwarf + 1 Orc + 1 Halfling per ARCHITECTURE.md
+  §5.5 / TASKS.md). The target is effectively a ceiling — a seed
+  where Mountain habitats don't exist culls the Dwarf entry, so the
+  realized roster size is bounded above by this.
+* **Method:** derived (mirrors CSV row count)
+* **Source:** commit `1451d5f`
+
+### `CulturesParams::min_habitat_fitness`
+
+* **Current:** `0.3`
+* **Why this value:** ARCHITECTURE.md §4 Phase 3a exit criterion is
+  literal: "no culture's average habitat-score below 0.3." Cultures
+  whose mean fitness falls below this threshold are culled and their
+  cells reassigned. On seed 42 (4 000 cells) all 5 archetypes clear
+  the floor; the culling loop is dormant.
+* **Method:** reference (architecture-prescribed)
+* **Source:** commit `1451d5f`
+
+### `habitat_fitness` axis-blend (geometric vs arithmetic)
+
+* **Current:** geometric mean (`(b·t·e·w).powf(0.25)`) across biome /
+  temperature / elevation / water axes.
+* **Why this value:** Arithmetic mean rewards generalists scoring
+  `(0.5, 0.5, 0.5, 0.5)` the same as a specialist scoring
+  `(1.0, 1.0, 0.2, 0.2)`. "Earned worlds" need specialists winning
+  their niche — geometric mean punishes a single weak axis enough to
+  produce coherent territories (dwarves in mountains, halflings in
+  pastoral, river-valley humans on coasts).
+* **Method:** derived (advisor pass on the C2 design)
+* **Source:** commit `1451d5f`
+
+### Biome-mismatch floor (in `habitat_fitness`)
+
+* **Current:** `0.2` — a cell whose biome isn't in the archetype's
+  preferred list still scores `0.2` (not `0.0`) on the biome axis.
+* **Why this value:** Hard zero produces fragmented territories — a
+  Dwarf settlement on a single non-mountain cell becomes unplaceable.
+  `0.2` lets cultures bleed into adjacent non-preferred biomes when
+  other axes (temperature / elevation / water) are strong, which is
+  the realistic shape (Norse longhouses on the edges of fjord forest).
+  Worth sweeping `0.0..0.5` step 5 once the ornate render exists to
+  judge by visible territory coherence.
+* **Method:** derived
+* **Source:** commit `1451d5f`
+
+### Tent falloff width (temperature / elevation ranges)
+
+* **Current:** `0.2` — outside `[lo, hi]`, score falls linearly to 0
+  over a `0.2`-wide buffer.
+* **Why this value:** With temperature scale `[-0.4, 1.0]` and
+  elevation `[0, 1]`, a falloff of `0.2` means 14-20% of the full
+  range is the "marginal" zone where score interpolates. `0.1`
+  produces sharper boundaries (more fragmentation); `0.4` lets
+  cultures spread too far from their core habitat. Sweep candidate
+  once ornate render exists.
+* **Method:** derived
+* **Source:** commit `1451d5f`
+
+### Water-absence penalty multiplier
+
+* **Current:** `0.6` — a cell without coast / river / lake adjacency
+  scores `1.0 - 0.6 * archetype.water_weight` on the water axis.
+* **Why this value:** River-valley Human has `water_weight = 0.9`, so
+  inland cells score `0.46` on water → multiplied through geometric
+  mean drags fitness ~25% lower. Dwarf with `water_weight = 0.1`
+  barely penalizes inland placement (0.94). Calibrated so the
+  per-archetype `water_weight` column in the CSV is the dominant
+  knob, not this constant. Don't sweep alongside `water_weight` —
+  they trade off; pick one.
+* **Method:** derived
+* **Source:** commit `1451d5f`
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on
@@ -197,3 +275,11 @@ artifact that justified the pick, and the commit that landed the value.
 - **Riparian neighbor-search radius** — currently 1-ring only; a
   larger radius would extend green corridors further from the channel.
   Visual-only effect; needs an ornate render to judge.
+- **Cultures biome-mismatch floor** — `0.0..0.5` step 5 against the
+  ornate render. Affects territory fragmentation.
+- **Cultures tent-falloff width** — `0.1..0.4` step 5. Sharpness of
+  archetype range boundaries.
+- **Per-archetype `water_weight` in `race_archetypes.csv`** — five
+  values today; the River-valley Human `0.9` and Dwarf `0.1` are
+  archetype-defining and shouldn't move much, but the middle three
+  (Wood Elf `0.2`, Orc `0.2`, Halfling `0.4`) are mostly guesswork.

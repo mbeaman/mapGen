@@ -6,9 +6,11 @@ lore engine (planned).
 
 ## Status
 
-**Phase 2 + 2.5 shipped.** The geography pipeline runs end-to-end on any seed and
-produces deterministic, Earth-faithful worlds; a parameter-sweep CLI supports
-manual tuning. Phase 3 (cultures, polities, ornate render) is next. See
+**Phase 2 + 2.5 + 3a shipped.** The geography pipeline runs end-to-end on any
+seed and produces deterministic, Earth-faithful worlds; a parameter-sweep CLI
+supports manual tuning; the cultures stage assigns a race-archetype culture
+to every land cell via weighted-Voronoi habitat fitness. Phase 3b/c/d/e
+(religions, polities, naming, ornate render) is next. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the locked plan,
 [`docs/TASKS.md`](docs/TASKS.md) for active work, and
 [`docs/BACKLOG.md`](docs/BACKLOG.md) for deferred items with revival triggers.
@@ -29,11 +31,17 @@ manual tuning. Phase 3 (cultures, polities, ornate render) is next. See
 - RIPARIAN biome override for rivers in arid surroundings (Nile-through-Sahara).
 - `LorePatch` overlay foundation (every science stage queries patches for
   per-cell deltas / multipliers / overrides).
+- **Cultures stage (Phase 3a)** — per-cell habitat-fitness scoring across a
+  5-archetype MVP roster (River-valley Human, Wood Elf, Mountain Dwarf,
+  Marginal-lands Orc, Pastoral Halfling) loaded from
+  `crates/mapgen-world/data/race_archetypes.csv`. Weighted Voronoi BFS
+  assignment writes `culture_id` per land cell; iterative culling drops
+  cultures below the 0.3 mean-fitness floor (ARCHITECTURE.md §4 Phase 3a).
 - Two render styles: `greyscale` (heightmap) and `biomes` (Phase-2 data view).
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 
-**Not yet:** cultures, religions, polities, names, history simulation, ornate
+**Not yet:** religions, polities, names, history simulation, ornate
 hand-drawn render, Claude-narrated chronicles, web frontend. All in
 `docs/ARCHITECTURE.md` as later phases.
 
@@ -125,7 +133,7 @@ seed
  ├─► ocean currents (gyre limbs, upwelling)        [implemented]
  ├─► 3-cell seasonal climate                       [implemented]
  ├─► Köppen-Geiger → biome (+ RIPARIAN override)   [implemented]
- ├─► cultures (race archetype × habitat fitness)   [planned: Phase 3a]
+ ├─► cultures (race archetype × habitat fitness)   [implemented]
  ├─► religions (founder culture × spread)          [planned: Phase 3b]
  ├─► polities (Christaller k=4 hierarchy + roads)  [planned: Phase 3c]
  ├─► naming (phonotactic + Markov)                 [planned: Phase 3d]
