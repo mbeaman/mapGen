@@ -1,0 +1,6 @@
+race,archetype,culture_name,preferred_biomes,temp_min,temp_max,elev_min,elev_max,water_weight,law_chaos,good_evil,tech_era,metallurgy,agriculture,naval,military,arcane,magic_style,settlement_icon,architecture,diplomatic_pattern
+Human,River-valley,Riverfolk,3|7|8|14,0.4,0.85,0.0,0.25,0.9,0.5,-0.2,Iron,40,80,40,40,15,LowMagic,Hall,Classical,Mercantile
+Elf,Wood,Wildwood Kin,3|5|8,0.3,0.75,0.1,0.5,0.2,-0.3,-0.3,Classical,40,30,20,40,75,Wild,Treehouse,Organic,Isolationist
+Dwarf,Mountain,Iron Hold,11|1|2,-0.3,0.55,0.5,1.0,0.1,0.7,0.1,Iron,90,30,5,75,30,LowMagic,Gate,Megalithic,HonorBound
+Orc,Marginal,Burning Horde,10|6|7,0.0,0.75,0.0,0.5,0.2,0.8,0.7,Bronze,40,20,15,80,20,LowMagic,Longhouse,Megalithic,Expansionist
+Halfling,Pastoral,Greendale,7|10|3,0.3,0.7,0.05,0.3,0.4,-0.4,-0.5,Iron,30,90,25,15,5,None,Hall,Organic,Egalitarian
