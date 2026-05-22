@@ -16,6 +16,7 @@
 //!
 //! Architecture: `docs/ARCHITECTURE.md` §4 Phase 3b.
 
+use mapgen_core::entities::{Alignment, Culture, MagicStyle, PantheonPattern, Religion};
 use mapgen_core::WorldData;
 use rand_chacha::ChaCha8Rng;
 
@@ -47,12 +48,182 @@ impl Default for ReligionsParams {
     }
 }
 
+/// Maximum number of sacred sites per religion. Picked from the
+/// highest-elevation cells where the religion has adherents.
+const SACRED_SITES_PER_RELIGION: usize = 3;
+
 /// Populate `world.religions` — roster + per-cell adherence assignment +
 /// sacred-site placement.
 ///
 /// Preconditions: `world.cultures` must be populated (the religions
 /// stage runs after `cultures::populate` in `generate_full`); biome
 /// data on `world.climate.biome` must exist (for sacred-site placement).
-pub fn found(_world: &mut WorldData, _params: ReligionsParams, _rng: &mut ChaCha8Rng) {
-    todo!("Phase 3b: religions::found not yet implemented — see religions_spec.rs")
+///
+/// `_rng` is reserved for future per-religion variation; today's
+/// algorithm is fully deterministic from world state alone (cultures'
+/// populations, alignments, and the per-cell mesh).
+pub fn found(world: &mut WorldData, params: ReligionsParams, _rng: &mut ChaCha8Rng) {
+    let n_cells = world.mesh.cell_count();
+    let n_cultures = world.cultures.cultures.len();
+    if n_cells == 0 || n_cultures == 0 {
+        return;
+    }
+
+    // 1. Choose number of religions: capped by the user-supplied max and
+    //    by the actual culture count (each religion needs a founder).
+    let n_religions = params.max_religions.min(n_cultures).max(1);
+
+    // 2. Pick founder cultures: top-N by adherent-cell population. Ties
+    //    broken by lower culture_id for determinism. Largest cultures
+    //    sit closer to where religions historically emerged (more bodies
+    //    → more priests → more institutional infrastructure).
+    let mut pops: Vec<(u16, usize)> = (0..n_cultures as u16)
+        .map(|id| (id, count_cells_for_culture(world, id)))
+        .collect();
+    pops.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let founders: Vec<u16> = pops.iter().take(n_religions).map(|(id, _)| *id).collect();
+
+    // 3. Build the religion roster. Sacred sites are filled in step 5.
+    let mut religions: Vec<Religion> = founders
+        .iter()
+        .map(|&founder_id| {
+            let founder = &world.cultures.cultures[founder_id as usize];
+            let pantheon = pantheon_from_founder(founder);
+            Religion {
+                name: religion_name(founder, pantheon),
+                pantheon,
+                founder_culture_id: founder_id,
+                alignment: founder.alignment,
+                sacred_sites: Vec::new(),
+            }
+        })
+        .collect();
+
+    // 4. Spread by alignment compatibility. Each cell with a culture
+    //    adopts the religion whose founder culture's alignment is
+    //    closest in 2D law/chaos × good/evil space. The
+    //    `alignment_spread_radius` is a soft cap — beyond it, the
+    //    closest religion wins anyway so no land cell stays
+    //    unconverted (the per-cell `religion_id` mirrors `culture_id`
+    //    coverage exactly).
+    let mut religion_id: Vec<Option<u16>> = vec![None; n_cells];
+    for (cell, slot) in religion_id.iter_mut().enumerate() {
+        let Some(culture_idx) = world.cultures.culture_id.get(cell).copied().flatten() else {
+            continue;
+        };
+        let culture = &world.cultures.cultures[culture_idx as usize];
+        let mut best: (u16, f32) = (0, f32::MAX);
+        let mut best_within_radius: Option<(u16, f32)> = None;
+        for (r_idx, religion) in religions.iter().enumerate() {
+            let dist = alignment_distance(culture.alignment, religion.alignment);
+            if dist < best.1 {
+                best = (r_idx as u16, dist);
+            }
+            if dist <= params.alignment_spread_radius
+                && best_within_radius.map(|(_, d)| dist < d).unwrap_or(true)
+            {
+                best_within_radius = Some((r_idx as u16, dist));
+            }
+        }
+        *slot = Some(best_within_radius.unwrap_or(best).0);
+    }
+
+    // 5. Salvage: if any religion ended up with zero adherents (could
+    //    happen if its founder culture's cells were all swallowed by a
+    //    closer-aligned competitor), force-convert one of the founder
+    //    culture's cells back. The architecture invariant "no religion
+    //    has zero adherents" gets the floor it needs. Pick the
+    //    lowest-index founder cell for determinism.
+    for (r_idx, religion) in religions.iter().enumerate() {
+        let has_adherent = religion_id.contains(&Some(r_idx as u16));
+        if !has_adherent {
+            if let Some(c) = world
+                .cultures
+                .culture_id
+                .iter()
+                .position(|&id| id == Some(religion.founder_culture_id))
+            {
+                religion_id[c] = Some(r_idx as u16);
+            }
+        }
+    }
+
+    // 6. Place sacred sites — for each religion, the top-N highest-
+    //    elevation cells where the religion has adherents. High places
+    //    are sacred across most pantheon patterns (mountain monasteries,
+    //    holy peaks, ancestral burial mounds); MVP doesn't yet
+    //    discriminate by pantheon's preferred biome. Once the ornate
+    //    render exists and a magic-field LorePatch concept is in play,
+    //    swap elevation for magic-field intensity.
+    for (r_idx, religion) in religions.iter_mut().enumerate() {
+        let mut adherents: Vec<(u32, f32)> = religion_id
+            .iter()
+            .enumerate()
+            .filter_map(|(c, &id)| {
+                if id == Some(r_idx as u16) {
+                    let elev = world.terrain.elevation.get(c).copied().unwrap_or(0.0);
+                    Some((c as u32, elev))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        adherents.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.0.cmp(&b.0))
+        });
+        let n_sites = SACRED_SITES_PER_RELIGION.min(adherents.len());
+        religion.sacred_sites = adherents.iter().take(n_sites).map(|(c, _)| *c).collect();
+    }
+
+    world.religions.religions = religions;
+    world.religions.religion_id = religion_id;
+}
+
+fn count_cells_for_culture(world: &WorldData, culture_id: u16) -> usize {
+    world
+        .cultures
+        .culture_id
+        .iter()
+        .filter(|&&id| id == Some(culture_id))
+        .count()
+}
+
+/// Map the founder culture's `MagicStyle` to a `PantheonPattern`. Per
+/// ARCHITECTURE.md §4 Phase 3b: "Pantheon pattern picked by founder
+/// culture's tech tier and magic style." MVP uses magic style alone;
+/// tech tier modulation lands as a refinement when we have more
+/// archetypes.
+fn pantheon_from_founder(founder: &Culture) -> PantheonPattern {
+    match founder.magic {
+        MagicStyle::Highmagic => PantheonPattern::Poly,
+        MagicStyle::LowMagic => PantheonPattern::Mono,
+        MagicStyle::Wild => PantheonPattern::Animism,
+        MagicStyle::Divine => PantheonPattern::Mono,
+        MagicStyle::Ancestral => PantheonPattern::Ancestor,
+        MagicStyle::None => PantheonPattern::CosmicOrder,
+    }
+}
+
+/// Generate a religion name from its founder culture's name and the
+/// pantheon pattern. Naming will get richer in Phase 3d (phonotactic
+/// generator); for MVP a templated `"<Culture> <Suffix>"` is enough to
+/// distinguish religions in test output and renders.
+fn religion_name(founder: &Culture, pantheon: PantheonPattern) -> String {
+    let suffix = match pantheon {
+        PantheonPattern::Mono => "Faith",
+        PantheonPattern::Poly => "Pantheon",
+        PantheonPattern::Dual => "Twin Path",
+        PantheonPattern::Animism => "Spirits",
+        PantheonPattern::Ancestor => "Ancestors",
+        PantheonPattern::CosmicOrder => "Way",
+    };
+    format!("{} {}", founder.name, suffix)
+}
+
+fn alignment_distance(a: Alignment, b: Alignment) -> f32 {
+    let dlc = a.law_chaos - b.law_chaos;
+    let dge = a.good_evil - b.good_evil;
+    (dlc * dlc + dge * dge).sqrt()
 }

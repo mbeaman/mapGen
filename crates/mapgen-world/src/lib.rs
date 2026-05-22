@@ -83,6 +83,11 @@ pub fn generate_full_with(
         cultures::CulturesParams::default(),
         &mut rng.stream(mapgen_core::Stage::Cultures),
     );
+    religions::found(
+        &mut world,
+        religions::ReligionsParams::default(),
+        &mut rng.stream(mapgen_core::Stage::Religions),
+    );
     world
 }
 
