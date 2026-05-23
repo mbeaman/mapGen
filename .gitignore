@@ -21,7 +21,8 @@ Cargo.lock.bak
 .env
 .env.local
 
-# Session-local state (resume prompts, scratch notes) — NEVER commit
+# Per-machine scratch — never commit. Project session state and
+# resume context live in tracked files now (`docs/SESSION.md`,
+# `AGENTS.md`, `CONTRIBUTING.md`); this directory is reserved for
+# ad-hoc throwaways (debug renders, local notes, throwaway scripts).
 /.local/
-*.session-state.md
-*.resume-prompt.md

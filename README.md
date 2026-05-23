@@ -6,18 +6,28 @@ lore engine (planned).
 
 ## Status
 
-**Phase 2 + 2.5 + 3a/b/c/d + 3e (MVP) shipped.** The full geography +
-society + naming pipeline runs end-to-end on any seed and produces
-deterministic worlds with cultures, religions, polities, settlements,
-roads, and phonotactic in-world names. The ornate-antique render style
-ships an MVP-scope screenshot (parchment, perturbed coastlines, Tolkien
-mountains, forest scatter, settlement icons, sacred sites). Phase 3e
-polish items (`roughr` pen-jitter, embedded fonts, compass / cartouche,
-Imhof label placement, culture×architecture glyph derivation) and Phase
-4 (history sim) come next. See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the locked plan,
-[`docs/TASKS.md`](docs/TASKS.md) for active work, and
-[`docs/BACKLOG.md`](docs/BACKLOG.md) for deferred items with revival triggers.
+**Phase 2 + 2.5 + 3a/b/c/d + 3e (per architecture spec) shipped.** The
+full geography + society + naming pipeline runs end-to-end on any seed
+and produces deterministic worlds with cultures, religions, polities,
+settlements, roads, and phonotactic in-world names. The ornate-antique
+render style covers every Phase 3e architecture-spec item: parchment,
+roughr-perturbed coastlines (4 ripples), Tolkien mountains, biome-keyed
+forest scatter, culture × architecture × tier settlement glyphs,
+bundled Cinzel / IM Fell English / EB Garamond typography, compass
+rose, corner cartouche, edge-burn vignette. Phase 4 (history sim) is
+the next major arc.
+
+Project docs:
+
+- [`docs/SESSION.md`](docs/SESSION.md) — current state, phase, gotchas
+  (read first when resuming).
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — locked strategic plan.
+- [`docs/TASKS.md`](docs/TASKS.md) — active tactical work.
+- [`docs/BACKLOG.md`](docs/BACKLOG.md) — deferred items with revival triggers.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev process, validation gate,
+  TDD discipline, commit conventions.
+- [`AGENTS.md`](AGENTS.md) — guidance for AI collaborators (persona,
+  interaction style, file-read order).
 
 ## What works today
 
