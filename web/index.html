@@ -3,55 +3,74 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>mapgen</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <title>mapgen — a cartographer's engine</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23f4e9cf'/%3E%3Cpath d='M16 3 L19 13 L29 16 L19 19 L16 29 L13 19 L3 16 L13 13 Z' fill='%238a3324'/%3E%3C/svg%3E"
+    />
   </head>
   <body>
     <main>
       <aside class="controls">
-        <h1>mapgen</h1>
-        <p class="hint">
-          Science-grounded fantasy map generator. Generate is slow (~5 s at
-          15 k cells); switching style on a generated world is cheap.
-        </p>
+        <header class="brand">
+          <h1>mapgen</h1>
+          <p class="tagline">A cartographer's engine</p>
+        </header>
 
-        <label>
-          Seed
-          <input id="seed" type="number" value="42" min="0" step="1" />
-        </label>
-
-        <label>
-          Cells
-          <input id="cells" type="number" value="4000" min="500" step="500" />
-        </label>
-
-        <label>
-          Nations
-          <input id="nations" type="number" value="8" min="1" max="20" step="1" />
-        </label>
-
-        <label>
-          Style
-          <select id="style">
-            <option value="biomes">biomes</option>
-            <option value="cultures">cultures</option>
-            <option value="greyscale">greyscale</option>
-            <option value="ornate">ornate</option>
-          </select>
-        </label>
-
-        <div class="buttons">
-          <button id="generate" type="button">Generate</button>
-          <button id="rerender" type="button" disabled>Re-render</button>
+        <div class="field">
+          <label for="seed">Seed</label>
+          <div class="seed-row">
+            <input id="seed" type="text" inputmode="numeric" value="42" />
+            <button id="dice" type="button" class="icon" title="Random seed" aria-label="Random seed">⚄</button>
+          </div>
         </div>
 
-        <p id="status" class="status" role="status" aria-live="polite">
-          Loading WASM…
-        </p>
+        <div class="field">
+          <label for="cells">Detail <span class="muted" id="cells-label">4000 cells</span></label>
+          <input id="cells" type="range" min="1000" max="20000" step="1000" value="4000" />
+        </div>
+
+        <div class="field">
+          <label for="nations">Nations <span class="muted" id="nations-label">8</span></label>
+          <input id="nations" type="range" min="1" max="16" step="1" value="8" />
+        </div>
+
+        <div class="field">
+          <label for="style">Style</label>
+          <select id="style">
+            <option value="ornate">Ornate antique</option>
+            <option value="biomes">Biomes</option>
+            <option value="cultures">Cultures</option>
+            <option value="greyscale">Greyscale</option>
+          </select>
+        </div>
+
+        <button id="generate" type="button" class="primary" disabled>Generate</button>
+
+        <div class="export">
+          <button id="dl-svg" type="button" disabled>SVG</button>
+          <button id="dl-png" type="button" disabled>PNG</button>
+          <button id="share" type="button" disabled>Copy link</button>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite">Loading engine…</p>
       </aside>
 
       <section id="map" class="map" aria-label="Generated map">
-        <p class="placeholder">No map yet. Pick a seed and click Generate.</p>
+        <div id="map-content" class="map-content"></div>
+
+        <div class="zoom" role="group" aria-label="Zoom controls">
+          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button id="zoom-fit" type="button" aria-label="Fit to screen">⤢</button>
+          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+        </div>
+
+        <div id="overlay" class="overlay hidden">
+          <div class="spinner"></div>
+          <p id="overlay-text">Generating…</p>
+        </div>
+
+        <p id="placeholder" class="placeholder">The map appears here.</p>
       </section>
     </main>
 
