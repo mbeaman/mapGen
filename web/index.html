@@ -66,8 +66,17 @@
         </div>
 
         <div id="overlay" class="overlay hidden">
-          <div class="spinner"></div>
-          <p id="overlay-text">Generating…</p>
+          <div class="progress-panel">
+            <p id="overlay-text">Generating…</p>
+            <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+            <ol id="stage-list" class="stage-list"></ol>
+          </div>
+        </div>
+
+        <div id="scrubber" class="scrubber hidden" role="group" aria-label="Replay build-up">
+          <button id="replay" type="button" aria-label="Replay build-up">▶</button>
+          <input id="scrub" type="range" min="0" max="0" value="0" aria-label="Scrub build stages" />
+          <span id="scrub-label" class="muted"></span>
         </div>
 
         <p id="placeholder" class="placeholder">The map appears here.</p>

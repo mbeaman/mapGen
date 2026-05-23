@@ -1,11 +1,22 @@
 /// WASM lives here, off the main thread, so generate (~5 s) never freezes
-/// the UI. The `WorldHandle` is an opaque WASM object that cannot cross the
-/// worker boundary, so it stays here: the main thread sends commands and
-/// gets back SVG strings.
-import init, { generate, type WorldHandle } from "../pkg/mapgen_wasm";
+/// the UI. The `WorldHandle`/`Generation` are opaque WASM objects that
+/// cannot cross the worker boundary, so they stay here: the main thread
+/// sends commands and gets back progress + SVG strings.
+import init, { Generation, type WorldHandle } from "../pkg/mapgen_wasm";
 
 let ready: Promise<unknown> | null = null;
 let world: WorldHandle | null = null;
+
+/// Mirrors the Rust `StageInfo` struct (a plain serializable object).
+export interface StageInfo {
+  index: number;
+  total: number;
+  progress: number;
+  label: string;
+  stage: string;
+  sub: number;
+  sub_total: number;
+}
 
 export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string }
@@ -13,7 +24,9 @@ export type WorkerRequest =
 
 export type WorkerResponse =
   | { type: "ready" }
-  | { type: "generated"; svg: string; genMs: number; totalMs: number }
+  | { type: "progress"; info: StageInfo }
+  | { type: "frame"; svg: string; info: StageInfo }
+  | { type: "generated"; svg: string; genMs: number; totalMs: number; frameCount: number }
   | { type: "rendered"; svg: string; ms: number }
   | { type: "error"; message: string };
 
@@ -26,6 +39,24 @@ const ensureReady = async () => {
   await ready;
 };
 
+/// Progressive richness: render the partial world in the richest style
+/// whose inputs exist by this stage. Ornate is never rendered mid-build
+/// (it is 2–3× costlier) — the final frame handles the chosen style.
+const styleForStage = (stage: string): string => {
+  switch (stage) {
+    case "terrain":
+    case "erosion":
+      return "greyscale";
+    case "hydrology":
+    case "ocean":
+    case "climate":
+    case "biomes":
+      return "biomes";
+    default:
+      return "cultures";
+  }
+};
+
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   try {
     await ensureReady();
@@ -34,11 +65,24 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
     if (msg.type === "generate") {
       const t0 = performance.now();
       world?.free();
-      world = generate(BigInt(msg.seed), msg.cells, msg.nations);
+      world = null;
+
+      const gen = new Generation(BigInt(msg.seed), msg.cells, msg.nations);
+      let frameCount = 0;
+      for (;;) {
+        const info = gen.step() as StageInfo | undefined;
+        if (!info) break;
+        post({ type: "progress", info });
+        const svg = gen.render(styleForStage(info.stage));
+        post({ type: "frame", svg, info });
+        frameCount++;
+      }
       const genMs = performance.now() - t0;
+
+      world = gen.finish();
       const svg = world.render(msg.style);
       const totalMs = performance.now() - t0;
-      post({ type: "generated", svg, genMs, totalMs });
+      post({ type: "generated", svg, genMs, totalMs, frameCount });
     } else if (msg.type === "render") {
       if (!world) {
         post({ type: "error", message: "no world generated yet" });

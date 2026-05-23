@@ -12,9 +12,12 @@ pub mod naming;
 pub mod noise;
 pub mod ocean;
 pub mod patch;
+pub mod pipeline;
 pub mod plates;
 pub mod polities;
 pub mod religions;
+
+pub use pipeline::{FineStep, Pipeline, PipelineStage};
 
 use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};
 use mapgen_geom::{Mesh, MeshBuildParams};
@@ -64,43 +67,9 @@ pub fn generate_full_with(
     erosion_params: erosion::ErosionParams,
     climate_params: climate::ClimateParams,
 ) -> WorldData {
-    let rng = mapgen_core::StageRng::new(params.seed);
-    let mut world = generate(params);
-
-    erosion::run(
-        &mut world,
-        erosion_params,
-        &mut rng.stream(mapgen_core::Stage::Erosion),
-    );
-    hydrology::detect_coast(&mut world);
-    hydrology::fill_depressions(&mut world);
-    let flow_dir = hydrology::flow_directions(&world);
-    hydrology::accumulate_flow(&mut world, &flow_dir);
-    hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
-    ocean::run(&mut world);
-    climate_seasonal::run(&mut world, climate_params);
-    biomes::classify(&mut world);
-    cultures::populate(
-        &mut world,
-        cultures::CulturesParams::default(),
-        &mut rng.stream(mapgen_core::Stage::Cultures),
-    );
-    religions::found(
-        &mut world,
-        religions::ReligionsParams::default(),
-        &mut rng.stream(mapgen_core::Stage::Religions),
-    );
-    polities::lay_out(
-        &mut world,
-        polities::PolitiesParams::default(),
-        &mut rng.stream(mapgen_core::Stage::Capitals),
-    );
-    naming::name_world(
-        &mut world,
-        naming::NamingParams::default(),
-        &mut rng.stream(mapgen_core::Stage::Names),
-    );
-    world
+    let mut pipeline = Pipeline::with_params(params, erosion_params, climate_params);
+    while pipeline.step().is_some() {}
+    pipeline.into_world()
 }
 
 /// Build a world up through the geography pipeline: mesh, plate uplift,

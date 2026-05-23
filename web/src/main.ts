@@ -1,6 +1,6 @@
 import "./style.css";
 import { PanZoom } from "./panzoom";
-import type { WorkerRequest, WorkerResponse } from "./worker";
+import type { WorkerRequest, WorkerResponse, StageInfo } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -25,6 +25,12 @@ const contentEl = $<HTMLDivElement>("map-content");
 const placeholderEl = $<HTMLParagraphElement>("placeholder");
 const overlayEl = $<HTMLDivElement>("overlay");
 const overlayText = $<HTMLParagraphElement>("overlay-text");
+const barFill = $<HTMLDivElement>("bar-fill");
+const stageListEl = $<HTMLOListElement>("stage-list");
+const scrubberEl = $<HTMLDivElement>("scrubber");
+const scrubInput = $<HTMLInputElement>("scrub");
+const scrubLabel = $<HTMLSpanElement>("scrub-label");
+const replayBtn = $<HTMLButtonElement>("replay");
 
 type Status = "idle" | "busy" | "ok" | "error";
 const setStatus = (text: string, kind: Status = "idle") => {
@@ -38,6 +44,15 @@ const panzoom = new PanZoom(mapEl, contentEl);
 let lastSvg = "";
 let lastDims = { w: 0, h: 0 };
 let exportReady = false;
+
+// Build-up frames cached for the scrubber/replay (JS-side only; no Rust
+// snapshots). Each entry is one rendered stage frame.
+interface Frame {
+  svg: string;
+  label: string;
+}
+let frames: Frame[] = [];
+let replayId: number | null = null;
 
 // ---- URL permalink state ----
 interface MapState {
@@ -97,6 +112,9 @@ const parseDims = (svg: SVGSVGElement): { w: number; h: number } => {
   return { w: w || 1000, h: h || 1000 };
 };
 
+// Swap the displayed SVG. Refits the view only on the first paint or when
+// the content dimensions change, so pan/zoom set mid-build (or while
+// scrubbing) survives the next frame.
 const showSvg = (svg: string) => {
   lastSvg = svg;
   contentEl.innerHTML = svg;
@@ -104,15 +122,15 @@ const showSvg = (svg: string) => {
   if (!el) return;
   // Let the wrapper transform drive size; pin SVG to its natural box.
   const dims = parseDims(el);
+  const dimsChanged = dims.w !== lastDims.w || dims.h !== lastDims.h;
   lastDims = dims;
   el.removeAttribute("width");
   el.removeAttribute("height");
   el.style.width = `${dims.w}px`;
   el.style.height = `${dims.h}px`;
   panzoom.setContentSize(dims.w, dims.h);
-  panzoom.fit();
+  if (dimsChanged) panzoom.fit();
   placeholderEl.classList.add("hidden");
-  setExportEnabled(true);
 };
 
 const setExportEnabled = (on: boolean) => {
@@ -122,22 +140,94 @@ const setExportEnabled = (on: boolean) => {
   shareBtn.disabled = !on;
 };
 
-// ---- Generating overlay with elapsed timer ----
-let timerId: number | null = null;
+// ---- Generating overlay: determinate bar + stage checklist ----
 const showOverlay = (label: string) => {
-  const t0 = performance.now();
   overlayText.textContent = label;
+  barFill.style.width = "0%";
+  stageListEl.innerHTML = "";
   overlayEl.classList.remove("hidden");
-  timerId = window.setInterval(() => {
-    overlayText.textContent = `${label} ${((performance.now() - t0) / 1000).toFixed(1)}s`;
-  }, 100);
 };
-const hideOverlay = () => {
-  if (timerId !== null) {
-    clearInterval(timerId);
-    timerId = null;
+const hideOverlay = () => overlayEl.classList.add("hidden");
+
+// Build the checklist rows lazily (count known from the first progress
+// event), then fill labels in as each stage is reached — so JS never
+// hard-codes the stage list; it tracks whatever the Rust pipeline runs.
+const ensureStageRows = (total: number) => {
+  if (stageListEl.children.length === total) return;
+  stageListEl.innerHTML = "";
+  for (let i = 0; i < total; i++) {
+    const li = document.createElement("li");
+    li.dataset.state = "pending";
+    li.innerHTML = `<span class="s-dot"></span><span class="s-label">…</span>`;
+    stageListEl.appendChild(li);
   }
-  overlayEl.classList.add("hidden");
+};
+
+const updateProgress = (info: StageInfo) => {
+  ensureStageRows(info.total);
+  const pct = Math.round(info.progress * 100);
+  barFill.style.width = `${pct}%`;
+  const sub = info.sub_total > 1 ? ` ${info.sub}/${info.sub_total}` : "";
+  overlayText.textContent = `${info.label}${sub} · ${pct}%`;
+  const rows = stageListEl.children;
+  const active = rows[info.index] as HTMLLIElement | undefined;
+  const lbl = active?.querySelector(".s-label");
+  if (lbl) lbl.textContent = info.label;
+  for (let i = 0; i < rows.length; i++) {
+    (rows[i] as HTMLLIElement).dataset.state =
+      i < info.index ? "done" : i === info.index ? "active" : "pending";
+  }
+};
+
+const markAllDone = () => {
+  const rows = stageListEl.children;
+  for (let i = 0; i < rows.length; i++) (rows[i] as HTMLLIElement).dataset.state = "done";
+  barFill.style.width = "100%";
+};
+
+// ---- Scrubber / replay over cached build-up frames ----
+const stopReplay = () => {
+  if (replayId !== null) {
+    clearInterval(replayId);
+    replayId = null;
+  }
+  replayBtn.textContent = "▶";
+};
+
+const showFrame = (i: number) => {
+  const f = frames[i];
+  if (!f) return;
+  scrubInput.value = String(i);
+  scrubLabel.textContent = f.label;
+  showSvg(f.svg);
+};
+
+const setupScrubber = () => {
+  if (frames.length === 0) {
+    scrubberEl.classList.add("hidden");
+    return;
+  }
+  scrubInput.min = "0";
+  scrubInput.max = String(frames.length - 1);
+  scrubInput.value = String(frames.length - 1);
+  scrubLabel.textContent = frames[frames.length - 1].label;
+  scrubberEl.classList.remove("hidden");
+};
+
+const startReplay = () => {
+  if (frames.length === 0) return;
+  stopReplay();
+  let i = 0;
+  showFrame(0);
+  replayBtn.textContent = "⏸";
+  replayId = window.setInterval(() => {
+    i += 1;
+    if (i >= frames.length) {
+      stopReplay();
+      return;
+    }
+    showFrame(i);
+  }, 220);
 };
 
 // ---- Worker ----
@@ -158,12 +248,23 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setStatus("Ready.", "idle");
       doGenerate(); // autoload a map so the first paint is a finished world
       break;
+    case "progress":
+      updateProgress(msg.info);
+      break;
+    case "frame":
+      frames.push({ svg: msg.svg, label: msg.info.label });
+      showSvg(msg.svg);
+      break;
     case "generated":
+      markAllDone();
       hideOverlay();
       setBusy(false);
+      frames.push({ svg: msg.svg, label: "Finished" });
       showSvg(msg.svg);
+      setExportEnabled(true);
+      setupScrubber();
       setStatus(
-        `Generated in ${(msg.genMs / 1000).toFixed(2)}s · rendered in ${((msg.totalMs - msg.genMs) / 1000).toFixed(2)}s`,
+        `Generated in ${(msg.genMs / 1000).toFixed(2)}s · ${msg.frameCount} frames · rendered in ${((msg.totalMs - msg.genMs) / 1000).toFixed(2)}s`,
         "ok",
       );
       break;
@@ -171,6 +272,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       hideOverlay();
       setBusy(false);
       showSvg(msg.svg);
+      setExportEnabled(true);
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
       break;
     case "error":
@@ -190,6 +292,10 @@ const doGenerate = () => {
   }
   writeState(s);
   setBusy(true);
+  setExportEnabled(false);
+  stopReplay();
+  frames = [];
+  scrubberEl.classList.add("hidden");
   setStatus(`Generating seed ${s.seed}…`, "busy");
   showOverlay("Generating");
   send({ type: "generate", ...s });
@@ -281,5 +387,14 @@ $<HTMLButtonElement>("zoom-in").addEventListener("click", () => panzoom.zoomIn()
 $<HTMLButtonElement>("zoom-out").addEventListener("click", () => panzoom.zoomOut());
 $<HTMLButtonElement>("zoom-fit").addEventListener("click", () => panzoom.fit());
 window.addEventListener("resize", () => panzoom.fit());
+
+scrubInput.addEventListener("input", () => {
+  stopReplay();
+  showFrame(Number(scrubInput.value));
+});
+replayBtn.addEventListener("click", () => {
+  if (replayId !== null) stopReplay();
+  else startReplay();
+});
 
 applyStateToControls(readState());

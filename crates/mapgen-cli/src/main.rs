@@ -4,8 +4,9 @@ mod sweep;
 
 use std::{
     fs::{self, File},
-    io::{BufReader, BufWriter, Read, Write},
+    io::{BufReader, BufWriter, IsTerminal, Read, Write},
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -13,7 +14,7 @@ use clap::{Parser, Subcommand};
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use mapgen_core::WorldData;
 use mapgen_render::style::Style;
-use mapgen_world::GenerateParams;
+use mapgen_world::{GenerateParams, Pipeline, PipelineStage};
 
 #[derive(Parser)]
 #[command(name = "mapgen", version, about = "Fantasy map generator.")]
@@ -36,6 +37,20 @@ enum Cmd {
         nations: usize,
         #[arg(long, default_value = "worlds/world.json.gz")]
         out: PathBuf,
+        /// Print a live per-stage progress line (auto-on when stderr is a TTY).
+        #[arg(long)]
+        progress: bool,
+        /// Print a per-stage wall-clock timing table after generation.
+        #[arg(long)]
+        timings: bool,
+        /// Write an SVG snapshot of the world after each stage into this
+        /// directory (`NN-<stage>.svg`), for pipeline debugging.
+        #[arg(long, value_name = "DIR")]
+        dump_stages: Option<PathBuf>,
+        /// Fixed style for `--dump-stages`. Defaults to a per-stage
+        /// progression (greyscale → biomes → cultures).
+        #[arg(long, value_name = "STYLE")]
+        dump_style: Option<String>,
     },
     /// Render a previously generated world to SVG.
     Render {
@@ -86,6 +101,10 @@ fn main() -> Result<()> {
             plates,
             nations,
             out,
+            progress,
+            timings,
+            dump_stages,
+            dump_style,
         } => {
             let params = GenerateParams {
                 seed,
@@ -94,7 +113,24 @@ fn main() -> Result<()> {
                 nation_count: nations,
                 ..Default::default()
             };
-            let world = mapgen_world::generate_full(params);
+            let dump_style = match dump_style {
+                Some(s) => Some(s.parse::<Style>().map_err(anyhow::Error::msg)?),
+                None => None,
+            };
+            // Drive the pipeline directly only when the caller wants
+            // observability; otherwise take the fast one-shot path. Both
+            // are the same pipeline, so the persisted world is identical.
+            let world = if progress || timings || dump_stages.is_some() {
+                drive_generate(
+                    params,
+                    progress || std::io::stderr().is_terminal(),
+                    timings,
+                    dump_stages.as_deref(),
+                    dump_style,
+                )?
+            } else {
+                mapgen_world::generate_full(params)
+            };
             write_world(&out, &world)?;
             eprintln!("wrote world: {}", out.display());
         }
@@ -121,6 +157,74 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Drive the generation pipeline one stage at a time, optionally printing
+/// a live progress line, recording per-stage timings, and dumping a
+/// per-stage SVG. Returns the same world `generate_full` would.
+fn drive_generate(
+    params: GenerateParams,
+    show_progress: bool,
+    timings: bool,
+    dump_dir: Option<&Path>,
+    dump_style: Option<Style>,
+) -> Result<WorldData> {
+    if let Some(dir) = dump_dir {
+        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    }
+
+    let total = PipelineStage::total();
+    let mut pipeline = Pipeline::new(params);
+    let mut times: Vec<(&'static str, Duration)> = Vec::with_capacity(total);
+
+    for (i, stage) in PipelineStage::ORDER.iter().enumerate() {
+        if show_progress {
+            eprint!("\r[{:>2}/{}] {:<22}", i + 1, total, stage.label());
+            std::io::stderr().flush().ok();
+        }
+
+        let t0 = Instant::now();
+        let ran = pipeline
+            .step()
+            .expect("stage available while iterating ORDER");
+        let dt = t0.elapsed();
+        debug_assert_eq!(ran, *stage, "pipeline diverged from PipelineStage::ORDER");
+
+        if timings {
+            times.push((stage.label(), dt));
+        }
+        if let Some(dir) = dump_dir {
+            let style = dump_style.unwrap_or_else(|| progressive_style(*stage));
+            let svg = mapgen_render::render(pipeline.world(), style).map_err(anyhow::Error::msg)?;
+            let path = dir.join(format!("{:02}-{}.svg", i + 1, stage.id()));
+            fs::write(&path, svg).with_context(|| format!("writing {}", path.display()))?;
+        }
+    }
+
+    if show_progress {
+        eprintln!("\r[{0:>2}/{0}] done.{1:<18}", total, "");
+    }
+    if timings {
+        let total_t: Duration = times.iter().map(|(_, d)| *d).sum();
+        eprintln!("stage timings:");
+        for (label, d) in &times {
+            eprintln!("  {label:<22} {:>8.3}s", d.as_secs_f64());
+        }
+        eprintln!("  {:<22} {:>8.3}s", "total", total_t.as_secs_f64());
+    }
+
+    Ok(pipeline.into_world())
+}
+
+/// Per-stage render style for `--dump-stages`: show the world in the
+/// richest style whose inputs exist by that stage.
+fn progressive_style(stage: PipelineStage) -> Style {
+    use PipelineStage::*;
+    match stage {
+        Terrain | Erosion => Style::Greyscale,
+        Hydrology | Ocean | Climate | Biomes => Style::Biomes,
+        Cultures | Religions | Polities | Naming => Style::Cultures,
+    }
 }
 
 fn write_world(path: &Path, world: &WorldData) -> Result<()> {
