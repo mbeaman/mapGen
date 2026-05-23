@@ -1,0 +1,111 @@
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #1a1a1a;
+  color: #e8e8e8;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100vh;
+}
+
+aside.controls {
+  padding: 1.5rem 1.25rem;
+  border-right: 1px solid #2c2c2c;
+  background: #202020;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+}
+
+aside.controls h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+}
+
+aside .hint {
+  margin: 0 0 1rem;
+  color: #999;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+aside label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #c0c0c0;
+}
+
+aside input, aside select {
+  padding: 0.45rem 0.55rem;
+  background: #181818;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e8e8e8;
+  font: inherit;
+}
+
+.buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+button {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  background: #3b6cd6;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { background: #4d7ce6; }
+button:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+#rerender { background: #555; }
+#rerender:hover:not(:disabled) { background: #666; }
+
+.status {
+  margin-top: auto;
+  padding-top: 1rem;
+  font-size: 0.8rem;
+  color: #888;
+  border-top: 1px solid #2c2c2c;
+}
+
+.status.busy { color: #d9b34a; }
+.status.error { color: #d9534a; }
+.status.ok { color: #6fc36f; }
+
+section.map {
+  position: relative;
+  overflow: auto;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+section.map .placeholder {
+  color: #555;
+  font-style: italic;
+}
+
+section.map svg {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}

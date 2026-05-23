@@ -1,0 +1,17 @@
+{
+  "name": "mapgen-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser frontend for the mapgen fantasy-map generator. Drives the wasm-pack output from crates/mapgen-wasm.",
+  "scripts": {
+    "build:wasm": "wasm-pack build --release --target web --out-dir ../../web/pkg ../crates/mapgen-wasm",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

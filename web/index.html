@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mapgen</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <aside class="controls">
+        <h1>mapgen</h1>
+        <p class="hint">
+          Science-grounded fantasy map generator. Generate is slow (~5 s at
+          15 k cells); switching style on a generated world is cheap.
+        </p>
+
+        <label>
+          Seed
+          <input id="seed" type="number" value="42" min="0" step="1" />
+        </label>
+
+        <label>
+          Cells
+          <input id="cells" type="number" value="4000" min="500" step="500" />
+        </label>
+
+        <label>
+          Nations
+          <input id="nations" type="number" value="8" min="1" max="20" step="1" />
+        </label>
+
+        <label>
+          Style
+          <select id="style">
+            <option value="biomes">biomes</option>
+            <option value="cultures">cultures</option>
+            <option value="greyscale">greyscale</option>
+            <option value="ornate">ornate</option>
+          </select>
+        </label>
+
+        <div class="buttons">
+          <button id="generate" type="button">Generate</button>
+          <button id="rerender" type="button" disabled>Re-render</button>
+        </div>
+
+        <p id="status" class="status" role="status" aria-live="polite">
+          Loading WASM…
+        </p>
+      </aside>
+
+      <section id="map" class="map" aria-label="Generated map">
+        <p class="placeholder">No map yet. Pick a seed and click Generate.</p>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
