@@ -9,6 +9,15 @@ description = "Browser-facing wasm-bindgen façade for mapgen."
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# wasm-pack tries to download a specific binaryen release for wasm-opt;
+# the download is network-policy-blocked in some build environments. Skip
+# it here — CI / release builds can re-enable when binaryen is reachable.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false
+
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
 mapgen-world = { path = "../mapgen-world" }
