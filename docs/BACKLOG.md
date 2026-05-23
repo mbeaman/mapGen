@@ -649,6 +649,53 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** A day. Axum server wrapping `mapgen-lore::narrate`.
 - **Origin.** ARCHITECTURE.md §7.
 
+### Repository documentation top-tier polish pass
+
+- **Why deferred.** Current docs (`AGENTS.md`, `CONTRIBUTING.md`,
+  `docs/SESSION.md`, `README.md`) are at "solid hobby project" or
+  "internal team" bar — significantly better than the prior gitignored
+  `.local/` files, but well short of top-tier OSS Rust repos (tokio,
+  serde, ripgrep, clap). The gap is real but the marginal value at
+  one-developer scale is near zero, and the maintenance overhead is
+  real and recurring.
+- **Trigger for revival.** Any of:
+  (a) onboarding a second contributor;
+  (b) public OSS launch / external user adoption;
+  (c) doc rot has been observed (someone hit a documented gotcha that
+      was no longer accurate, or followed instructions that no longer
+      worked);
+  (d) the project starts taking external contributions / issues.
+- **Cost.** Tiered:
+  - **Option A — Internal team polish (~3–4h).** Strip session-
+    specific anecdotes (e.g. "two commits this session were
+    stopped"), add TOCs to longer files, restructure SESSION
+    gotchas as Symptom / Cause / Fix, add `_last reviewed_` dates,
+    add a stale-SESSION CI check that fails when SESSION.md's
+    latest-commit line doesn't match HEAD, generalize CONTRIBUTING's
+    "substage shape" beyond pipeline stages, add PR/review process
+    section, add code style guide beyond `fmt + clippy`.
+  - **Option B — Top-tier OSS bar (~1–2 weeks).** Everything in A
+    plus: `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`
+    (manual or git-cliff), `.github/ISSUE_TEMPLATE/`,
+    `.github/PULL_REQUEST_TEMPLATE.md`, `.github/CODEOWNERS`,
+    `.github/dependabot.yml`, `docs/adr/` (Architectural Decision
+    Records for Refinery rejection, schema versioning, font
+    vendoring, roughr adoption), `docs/GLOSSARY.md` (Köppen,
+    riparian, Christaller, etc.), README badges (CI / license /
+    MSRV / docs.rs), `cargo-deny` + `cargo-audit` + `lychee`
+    Markdown link checking in CI, mdBook docs site, `examples/`
+    directory, criterion benchmarks. Also: consider merging
+    `AGENTS.md` into `CONTRIBUTING.md` since the two-root-level-docs
+    split is unusual.
+  - **Mixed pick.** Select individual items from Option B even
+    pre-trigger if a specific one provides defensive value (e.g.,
+    `cargo-audit` + `dependabot` for security hygiene even at
+    single-developer scale).
+- **Origin.** 2026-05-22 doc-quality review against "would a PE write
+  this for a top-tier OSS repo?" Discussed in session-ending review;
+  AGENTS.md / CONTRIBUTING.md / SESSION.md shipped as Option-3-minus
+  on this date with this entry filed for the gap.
+
 ---
 
 ## How items move
