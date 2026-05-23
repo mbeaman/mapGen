@@ -17,3 +17,7 @@ wasm-bindgen = { workspace = true }
 serde-wasm-bindgen = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Enable getrandom's `js` feature on wasm32 so transitive rand-based
+# deps (roughr → rand → getrandom) build. getrandom otherwise errors
+# out on `wasm*-unknown-unknown` per its compile-time check.
+getrandom = { version = "0.2", features = ["js"] }

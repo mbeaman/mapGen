@@ -12,6 +12,8 @@ svg = { workspace = true }
 serde = { workspace = true }
 libm = { workspace = true }
 base64 = { workspace = true }
+roughr = { workspace = true }
+euclid = { workspace = true }
 
 [dev-dependencies]
 mapgen-world = { path = "../mapgen-world" }

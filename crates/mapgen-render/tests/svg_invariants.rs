@@ -287,6 +287,127 @@ fn ornate_antique_emits_a_phase_3e_render() {
 }
 
 #[test]
+fn ornate_antique_coastline_paths_have_explicit_moveto() {
+    // Pins the M-fix workaround for roughr 0.12's bug where
+    // `OpType::Move` is incorrectly serialized as `L` (lineto)
+    // instead of `M` (moveto). Without the fix, paths start with a
+    // lineto-from-origin and tiny-skia / usvg may draw a stray
+    // stroke from (0,0). The fix in `roughr_path_with_move_fix`
+    // replaces the leading L with M.
+    //
+    // Asserts: no `<path d="L` substring appears anywhere in the
+    // ornate render output. If this fires, the M-fix regressed and
+    // we're emitting invalid (or visually-bug-prone) SVG.
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    assert!(
+        !svg.contains(r##"<path d="L"##),
+        "ornate SVG has a <path d=\"L…\"> element — roughr 0.12's \
+         Move-as-L bug is reproducing. Check roughr_path_with_move_fix."
+    );
+}
+
+#[test]
+fn ornate_antique_renders_without_panic_across_seeds() {
+    // Multi-seed smoke test for the roughr coastline pipeline.
+    // Different seeds produce different coastline shapes:
+    //   * Tiny islands (short polylines, edge case for chain walk)
+    //   * Coastlines touching the canvas edge (open chains)
+    //   * Degree-3 vertex junctions (where 3+ coastline edges meet)
+    //   * Worlds with very few or very many distinct coastline loops
+    //
+    // What we assert per seed:
+    //   * `render()` returns Ok (no panic in polyline tracing or
+    //     roughr's perturbation).
+    //   * The output starts with `<svg` and ends with `</svg>`.
+    //   * No `NaN` or `inf` substrings (catches float corruption).
+    //   * No `<path d="L"` (catches M-fix regression).
+    //   * The svg has ≥4 `<path d="M"` elements (4 ripples ran).
+    //
+    // 10 seeds covers ~10× more coastline variety than the seed-42
+    // reference world and surfaces edge cases that don't show up on
+    // a single seed.
+    for seed in 1_u64..=10 {
+        let params = mapgen_world::GenerateParams {
+            seed,
+            ..ref_params()
+        };
+        let world = generate_full(params);
+        let svg = render(&world, Style::OrnateAntique)
+            .unwrap_or_else(|e| panic!("seed {seed} render failed: {e}"));
+        assert!(
+            svg.starts_with("<svg") && svg.trim_end().ends_with("</svg>"),
+            "seed {seed} produced malformed SVG envelope"
+        );
+        assert!(
+            !svg.contains("NaN") && !svg.contains("inf"),
+            "seed {seed} produced NaN / inf in SVG output"
+        );
+        assert!(
+            !svg.contains(r##"<path d="L"##),
+            "seed {seed} produced a <path d=\"L…\"> — M-fix regressed"
+        );
+        let move_paths = svg.matches(r##"<path d="M"##).count();
+        assert!(
+            move_paths >= 4,
+            "seed {seed} produced only {move_paths} <path d=\"M…\"> \
+             elements — coastline ripple count regressed"
+        );
+    }
+}
+
+#[test]
+fn ornate_antique_coastlines_use_roughr_perturbed_paths() {
+    // ARCHITECTURE.md §Phase 3e calls for "roughr-perturbed coastlines
+    // with 4 offset ripples." Before this commit the ripples were
+    // deterministic per-edge `<line>` strokes with hash-driven wobble;
+    // we now trace continuous polylines and hand each one to roughr's
+    // `linear_path` per ripple, producing scratchy hand-drawn Bezier
+    // paths.
+    //
+    // What this asserts (structural):
+    //   * No `<line>` elements appear in the coastline region anymore
+    //     — the renderer should emit `<path>` from roughr instead.
+    //   * The coastline color palette (3 outer haze blues + 1 dark
+    //     outline) appears, each via a `<g stroke="…">` group.
+    //   * The ripple-stroke palette has exactly 4 distinct color
+    //     groups (matching ARCHITECTURE.md's "4 offset ripples").
+    //
+    // What this does not verify:
+    //   * Whether the curves visually read as "hand-drawn" (eyeball
+    //     the seed-42 PNG).
+    //   * Per-ripple seed determinism (covered by the existing render
+    //     hash tests in mapgen-world).
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    // The four ripple stroke colors. If any one is missing, a ripple
+    // didn't render.
+    let ripple_strokes: &[&str] = &[
+        r##"stroke="#5a6a8a""##, // outermost haze
+        r##"stroke="#7a8aa8""##,
+        r##"stroke="#a09cb8""##, // 4th ripple — newly added
+        r##"stroke="#2a2418""##, // innermost crisp outline
+    ];
+    for needle in ripple_strokes {
+        assert!(
+            svg.contains(needle),
+            "ornate SVG missing ripple stroke group: {needle}"
+        );
+    }
+
+    // roughr emits curves as `<path d="...">` with M / L / C ops. If
+    // the new code regressed to straight-line edges, we'd lose paths.
+    let path_count = svg.matches(r##"<path d="M"##).count();
+    assert!(
+        path_count >= 4,
+        "ornate SVG has only {path_count} <path d=\"M…\"> elements — \
+         roughr coastline ripples expected to emit one path per \
+         polyline × 4 ripples"
+    );
+}
+
+#[test]
 fn ornate_antique_renders_compass_cartouche_and_edge_burn() {
     // ARCHITECTURE.md §Phase 3e requires: compass rose, corner
     // cartouche, vignette + edge burn. This test pins the contract

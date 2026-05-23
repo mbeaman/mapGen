@@ -154,11 +154,21 @@ depending on whether you want visual payoff or world-shape depth next.
 
 ### Phase 3e — Ornate render (the screenshot)
 
-- [ ] (4h) Probe `roughr` 0.12 API — `Generator::new` is private; find
-  the correct builder entry point. If unworkable, vendor ~600 LOC of
-  Rough.js bezier-perturbation algorithm. **Deferred** from the
-  `342f606` MVP — the per-edge wobble (hash-derived) gives a passable
-  hand-drawn feel without pulling in the dep.
+- [x] (4h-1d actual: ~4h) `roughr` 0.12 pen-jitter coastlines.
+  **Shipped** — public API works via `Generator::default()` +
+  per-call `Options` (the `Generator::new(opts)` constructor is
+  private but `linear_path(..., &Some(opts))` accepts custom options
+  per draw). Coastline rendering now traces continuous polylines from
+  the cell-edge graph (vertex adjacency walk, closed-loop + open-
+  chain detection) and hands each one to roughr's `linear_path` with
+  a per-ripple seed + roughness. 4 ripples per arch spec, each with
+  its own scratchy Bezier perturbation pass. Includes a workaround
+  for a real roughr 0.12 bug where `OpType::Move` is serialized as
+  `L` (lineto) instead of `M` (moveto) — `roughr_path_with_move_fix`
+  fixes the leading character. wasm32 build needed
+  `getrandom = { features = ["js"] }` in mapgen-wasm because rand →
+  getrandom otherwise rejects wasm. Pinned by `svg_invariants::
+  ornate_antique_coastlines_use_roughr_perturbed_paths`.
 - [ ] (2h) Hand-author `docs/target_aesthetic.svg` as the visual
   reference every render decision compares against. **Deferred** — the
   MVP shipped without a target SVG; revisit before tuning glyph

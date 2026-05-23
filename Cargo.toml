@@ -40,6 +40,15 @@ ciborium = "0.2"
 svg = "0.17"
 # base64 — used to embed @font-face TTF data: URLs in ornate SVG output.
 base64 = "0.22"
+# Rough.js port — produces hand-drawn Bezier-perturbed SVG paths for
+# the ornate coastline ripples. Pulls in palette + euclid as transitive
+# deps; we use Options::seed for per-ripple determinism so native and
+# WASM renders stay byte-identical.
+roughr = "0.12"
+# euclid — direct dep so we can name `default::Point2D<f32>` instead
+# of writing `Point2D::<f32, UnknownUnit>` everywhere. Already a
+# transitive dep of roughr; pinning to 0.22 to match.
+euclid = "0.22"
 # PNG export (native-only — used by mapgen-cli for the sweep grid).
 # Arch §1 originally pinned 0.43; bumped to current stable after API verification.
 resvg = "0.47"

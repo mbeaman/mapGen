@@ -31,13 +31,17 @@
 //! is threaded through this module, so the output is byte-identical
 //! across two runs of the same world.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use euclid::default::Point2D;
 use mapgen_core::entities::{Architecture, SettlementIcon, SettlementTier};
 use mapgen_core::WorldData;
+use roughr::core::{OpSetType, OptionsBuilder};
+use roughr::generator::Generator;
 
 use crate::FONTS_TTF;
 
@@ -143,72 +147,210 @@ fn render_land_fill(world: &WorldData, out: &mut String) {
     }
 }
 
-/// Three offset coastline strokes — outer (thick, faded), middle, inner
-/// (crisp). Each offset's points are nudged inward (toward the cell
-/// center on the land side) using a deterministic hash of the vertex
-/// pair so the offsets look hand-drawn without an RNG.
+/// Four offset coastline strokes hand-perturbed by `roughr` (the Rust
+/// port of Rough.js). Continuous coastline polylines are traced from
+/// the cell-edge graph, then each ripple draws each polyline as a
+/// roughr `linear_path` with its own seed + roughness — so the four
+/// ripples are visually independent scratchy passes rather than four
+/// parallel copies.
+///
+/// Per-ripple seeds give deterministic byte-identical output across
+/// runs. ARCHITECTURE.md §Phase 3e calls for 4 ripples; we ship 4.
 fn render_coastline_ripples(world: &WorldData, out: &mut String) {
+    let polylines = extract_coastline_polylines(world);
+    if polylines.is_empty() {
+        return;
+    }
+
+    // Per ripple: (color, stroke-width, roughness, bowing, seed).
+    // Outer ripples thicker + jitterier + faded (suggesting shallow
+    // water haze); inner ripples crisper for the coastline outline.
+    let ripples: &[(&str, f32, f32, f32, u64)] = &[
+        ("#5a6a8a", 4.0, 2.2, 2.0, 91_001), // outermost, deepest haze
+        ("#7a8aa8", 2.8, 1.8, 2.0, 91_002),
+        ("#a09cb8", 1.9, 1.4, 1.5, 91_003), // 4th ripple per arch spec
+        ("#2a2418", 1.2, 0.6, 1.0, 91_004), // innermost: crisp dark outline
+    ];
+
+    let gen = Generator::default();
+
+    for (color, width, roughness, bowing, seed) in ripples.iter().copied() {
+        write!(
+            out,
+            r##"<g stroke="{color}" stroke-width="{width:.2}" stroke-linecap="round" fill="none" stroke-opacity="0.78">"##
+        )
+        .unwrap();
+
+        let opts = OptionsBuilder::default()
+            .roughness(roughness)
+            .bowing(bowing)
+            .seed(seed)
+            .disable_multi_stroke(true)
+            .preserve_vertices(true)
+            .build()
+            .expect("OptionsBuilder must build with valid params");
+        let opts_some = Some(opts);
+
+        for (chain, closed) in &polylines {
+            if chain.len() < 2 {
+                continue;
+            }
+            let points: Vec<Point2D<f32>> =
+                chain.iter().map(|&[x, y]| Point2D::new(x, y)).collect();
+            let drawable = gen.linear_path(&points, *closed, &opts_some);
+            for op_set in &drawable.sets {
+                if matches!(op_set.op_set_type, OpSetType::Path) {
+                    let path = roughr_path_with_move_fix(op_set.clone());
+                    if !path.is_empty() {
+                        write!(out, r##"<path d="{path}"/>"##).unwrap();
+                    }
+                }
+            }
+        }
+
+        out.push_str("</g>");
+    }
+}
+
+/// Convert a roughr `OpSet<f32>` to an SVG `d=` attribute string,
+/// fixing the upstream roughr 0.12 bug where `OpType::Move` is
+/// incorrectly serialized as `L` (lineto) instead of `M` (moveto).
+/// Without this fix the path starts with an implicit moveto from
+/// origin and many renderers draw a stray stroke from (0,0) to the
+/// path's actual starting point.
+///
+/// See `roughr::generator::Generator::ops_to_path` line 479:
+/// `write!(&mut path, "L{} {} ", ...)` should write `M` for Move.
+fn roughr_path_with_move_fix(op_set: roughr::core::OpSet<f32>) -> String {
+    let raw = Generator::ops_to_path(op_set, Some(1));
+    if let Some(rest) = raw.strip_prefix('L') {
+        format!("M{rest}")
+    } else {
+        raw
+    }
+}
+
+/// Trace continuous coastline polylines from the land/sea cell-edge
+/// graph. Each output is `(chain, closed)` where `closed=true` means
+/// the polyline is a loop (typical case — coastlines wrap around
+/// islands/continents) and `closed=false` means it terminates at the
+/// canvas edge.
+///
+/// Algorithm: collect every shared edge between a land cell and a sea
+/// cell; build vertex adjacency; walk each unvisited edge to extract
+/// the chain it belongs to (forward then backward). Closed loops are
+/// detected by returning to the starting vertex; open chains by
+/// hitting a degree-1 endpoint.
+///
+/// Vertices of degree >2 (where 3+ coastline edges meet — rare in a
+/// Voronoi mesh) cause the walk to pick the first unvisited neighbor;
+/// the remaining edges become their own chain on a later pass.
+fn extract_coastline_polylines(world: &WorldData) -> Vec<(Vec<[f32; 2]>, bool)> {
     let mesh = &world.mesh;
     let elev = &world.terrain.elevation;
 
-    // Outer-most ripple: thick, very faded blue, suggesting deep
-    // water dropping off from coast. Inner ripples crisper.
-    let ripples: &[(&str, f32, f32)] = &[
-        ("#5a6a8a", 4.0, 0.18), // outermost, far offset
-        ("#7a8aa8", 2.5, 0.10),
-        ("#2a2418", 1.4, 0.0), // innermost: dark coastline outline
-    ];
-
-    for (color, width, offset) in ripples.iter().copied() {
-        write!(
-            out,
-            r##"<g stroke="{color}" stroke-width="{width:.2}" stroke-linecap="round" fill="none" stroke-opacity="0.75">"##
-        )
-        .unwrap();
-        for i in 0..mesh.cell_count() {
-            let i_land = elev[i] > 0.0;
-            for &nj in &mesh.neighbors[i] {
-                let j = nj as usize;
-                if j <= i {
-                    continue;
-                }
-                let j_land = elev[j] > 0.0;
-                if i_land == j_land {
-                    continue;
-                }
-                let Some((va, vb)) = shared_edge(&mesh.cell_vertices[i], &mesh.cell_vertices[j])
-                else {
-                    continue;
-                };
-                let mut a = mesh.vertices[va as usize];
-                let mut b = mesh.vertices[vb as usize];
-                if offset > 0.0 {
-                    // Push the line away from the land-side centroid.
-                    let land_cell = if i_land { i } else { j };
-                    let land_center = mesh.sites[land_cell];
-                    let nx = (a[0] + b[0]) * 0.5 - land_center[0];
-                    let ny = (a[1] + b[1]) * 0.5 - land_center[1];
-                    let len = (nx * nx + ny * ny).sqrt().max(1e-4);
-                    // Per-edge wobble so the ripple isn't a perfect copy.
-                    let wobble = hash_offset(va, vb) * 1.5;
-                    let push = offset * 14.0 + wobble;
-                    let dx = nx / len * push;
-                    let dy = ny / len * push;
-                    a[0] += dx;
-                    a[1] += dy;
-                    b[0] += dx;
-                    b[1] += dy;
-                }
-                write!(
-                    out,
-                    r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
-                    a[0], a[1], b[0], b[1]
-                )
-                .unwrap();
+    // Collect coastline edges as sorted (va, vb) pairs.
+    let mut edges: Vec<(u32, u32)> = Vec::new();
+    for i in 0..mesh.cell_count() {
+        let i_land = elev[i] > 0.0;
+        for &nj in &mesh.neighbors[i] {
+            let j = nj as usize;
+            if j <= i {
+                continue;
+            }
+            let j_land = elev[j] > 0.0;
+            if i_land == j_land {
+                continue;
+            }
+            if let Some((va, vb)) = shared_edge(&mesh.cell_vertices[i], &mesh.cell_vertices[j]) {
+                edges.push((va.min(vb), va.max(vb)));
             }
         }
-        out.push_str("</g>");
     }
+    if edges.is_empty() {
+        return Vec::new();
+    }
+
+    // Vertex adjacency.
+    let mut adj: HashMap<u32, Vec<u32>> = HashMap::new();
+    for &(a, b) in &edges {
+        adj.entry(a).or_default().push(b);
+        adj.entry(b).or_default().push(a);
+    }
+
+    // Walk chains. For each unused edge, follow forward until we
+    // return to start (closed loop) or hit a dead end (open chain),
+    // then extend backward from the start in the open-chain case.
+    let mut used: std::collections::HashSet<(u32, u32)> = std::collections::HashSet::new();
+    let mut chains: Vec<Vec<u32>> = Vec::new();
+
+    let edge_key = |x: u32, y: u32| (x.min(y), x.max(y));
+
+    for &(a0, b0) in &edges {
+        if used.contains(&edge_key(a0, b0)) {
+            continue;
+        }
+        used.insert(edge_key(a0, b0));
+        let mut chain = vec![a0, b0];
+
+        // Extend forward from b0.
+        let mut prev = a0;
+        let mut current = b0;
+        while let Some(neighbors) = adj.get(&current) {
+            let Some(next) = neighbors
+                .iter()
+                .copied()
+                .find(|&v| v != prev && !used.contains(&edge_key(current, v)))
+            else {
+                break;
+            };
+            used.insert(edge_key(current, next));
+            chain.push(next);
+            prev = current;
+            current = next;
+            if current == a0 {
+                break; // closed loop
+            }
+        }
+
+        // If chain didn't close, extend backward from a0.
+        let closed = chain.first() == chain.last() && chain.len() > 2;
+        if !closed {
+            let mut prev = b0;
+            let mut current = a0;
+            while let Some(neighbors) = adj.get(&current) {
+                let Some(next) = neighbors
+                    .iter()
+                    .copied()
+                    .find(|&v| v != prev && !used.contains(&edge_key(current, v)))
+                else {
+                    break;
+                };
+                used.insert(edge_key(current, next));
+                chain.insert(0, next);
+                prev = current;
+                current = next;
+            }
+        }
+
+        chains.push(chain);
+    }
+
+    // Convert vertex indices to coordinates. Drop the duplicate
+    // trailing vertex on closed loops — roughr's `close=true` adds it
+    // back.
+    chains
+        .into_iter()
+        .map(|chain| {
+            let closed = chain.first() == chain.last() && chain.len() > 2;
+            let drop_last = if closed { 1 } else { 0 };
+            let points: Vec<[f32; 2]> = chain[..chain.len() - drop_last]
+                .iter()
+                .map(|&v| mesh.vertices[v as usize])
+                .collect();
+            (points, closed)
+        })
+        .collect()
 }
 
 fn render_rivers(world: &WorldData, out: &mut String) {
