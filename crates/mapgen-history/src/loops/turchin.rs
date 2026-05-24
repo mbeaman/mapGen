@@ -30,10 +30,38 @@ const FAMINE_STRESS: f32 = 0.85;
 const PLAGUE_DENSITY_PROB: f32 = 0.010;
 /// Fraction of population lost to a plague.
 const PLAGUE_MORTALITY: f32 = 0.18;
-/// Floor so a polity's population never vanishes here — extinction /
-/// dissolution is the fiscal loop's job in 4d.
+/// Floor so a polity's population never vanishes — secular crises are
+/// recurring (boom/bust/recover), not terminal; permanent dissolution comes
+/// with conquest in 4e.
 const MIN_POPULATION: f32 = 0.5;
 const EPS: f32 = 1e-3;
+
+// --- 4d fiscal / elite / instability knobs (normalized units) ---------------
+/// Elite cohort growth per unit density, and natural attrition.
+const ELITE_GAIN: f32 = 0.012;
+const ELITE_DECAY: f32 = 0.02;
+/// Elite count the polity can sustain; the excess is "overproduction".
+const ELITE_SUSTAIN: f32 = 0.35;
+/// Treasury revenue per unit density and cost per unit elite.
+const TAX_YIELD: f32 = 0.10;
+const ELITE_UPKEEP: f32 = 0.20;
+/// Density above which the populace is immiserated (wages fall).
+const IMMIS_THRESH: f32 = 0.75;
+/// Instability gains per year from immiseration / elite overproduction /
+/// fiscal strain / dynastic decadence (1 − asabiyyah), minus baseline venting.
+const IMMIS_W: f32 = 0.020;
+const ELITE_W: f32 = 0.020;
+const FISCAL_W: f32 = 0.010;
+const DECADENCE_W: f32 = 0.012;
+const INSTAB_RELAX: f32 = 0.004;
+/// Instability at which a secular crisis erupts and vents. Tuned (with the
+/// gains above) for ~2–3 boom/bust cycles per polity across 500 years.
+const CRISIS_THRESHOLD: f32 = 0.65;
+/// Crisis losses.
+const CRISIS_POP_LOSS: f32 = 0.30;
+const CRISIS_ELITE_LOSS: f32 = 0.60;
+/// Expansion: chance per quiet, growing year of founding a new town.
+const EXPAND_PROB: f32 = 0.02;
 
 /// Turchin structural-demographic loop.
 pub struct Turchin;
@@ -110,6 +138,77 @@ impl CausalLoop for Turchin {
             // arithmetic — no transcendental, so native ↔ wasm32 stays
             // bit-identical without routing through fmath.
             p += GROWTH_RATE * p * (1.0 - p / k.max(EPS));
+
+            // --- 4d: fiscal / elite dynamics → secular-cycle instability ---
+            let density = (p / k.max(EPS)).clamp(0.0, 2.0);
+            let mut elites = ctx.state.elites[pid];
+            let mut fiscal = ctx.state.fiscal[pid];
+            let mut inst = ctx.state.instability[pid];
+            let asabiyyah = ctx.state.asabiyyah[pid];
+
+            elites += ELITE_GAIN * density - ELITE_DECAY * elites;
+            let overproduction = (elites - ELITE_SUSTAIN).max(0.0);
+            fiscal += TAX_YIELD * density - ELITE_UPKEEP * elites;
+            let fiscal_strain = (-fiscal).max(0.0);
+            let immiseration = (density - IMMIS_THRESH).max(0.0);
+            let d_inst = IMMIS_W * immiseration
+                + ELITE_W * overproduction
+                + FISCAL_W * fiscal_strain
+                + DECADENCE_W * (1.0 - asabiyyah);
+            inst = (inst + d_inst - INSTAB_RELAX).max(0.0);
+
+            if inst > CRISIS_THRESHOLD {
+                // Secular crisis: the state fragments — settlements emptied,
+                // people displaced, an elite faction purged. Population, elites,
+                // and treasury crash; instability vents.
+                emit(
+                    ctx.world,
+                    year,
+                    EventKind::CityAbandoned,
+                    cell,
+                    0.62,
+                    format!("A settlement of {name} was abandoned amid the upheaval."),
+                );
+                emit(
+                    ctx.world,
+                    year,
+                    EventKind::Migration,
+                    cell,
+                    0.5,
+                    format!("Famine and strife drove people from {name}."),
+                );
+                if overproduction > 0.0 {
+                    emit(
+                        ctx.world,
+                        year,
+                        EventKind::Exile,
+                        cell,
+                        0.55,
+                        format!("A defeated faction was cast out of {name}."),
+                    );
+                }
+                p *= 1.0 - CRISIS_POP_LOSS;
+                elites *= 1.0 - CRISIS_ELITE_LOSS;
+                fiscal *= 0.5;
+                inst = 0.0;
+            } else if inst < 0.2
+                && (0.5..0.85).contains(&density)
+                && unit_f32(ctx.rng) < EXPAND_PROB
+            {
+                // Expansion in quiet, growing years.
+                emit(
+                    ctx.world,
+                    year,
+                    EventKind::CityFounded,
+                    cell,
+                    0.32,
+                    format!("A new town was founded in {name} during the long peace."),
+                );
+            }
+
+            ctx.state.elites[pid] = elites;
+            ctx.state.fiscal[pid] = fiscal;
+            ctx.state.instability[pid] = inst;
             ctx.state.population[pid] = p.max(MIN_POPULATION);
         }
     }

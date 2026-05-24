@@ -13,7 +13,7 @@
 pub mod agent;
 pub mod loops;
 
-use mapgen_core::{splitmix64, WorldData};
+use mapgen_core::{splitmix64, EntityId, WorldData};
 use rand_chacha::{
     rand_core::{RngCore, SeedableRng},
     ChaCha8Rng,
@@ -56,6 +56,20 @@ pub struct SimState {
     /// Per-polity ruling court (current ruler, dynasty, heirs). Advanced by the
     /// agent layer each year; read by succession / power loops later.
     pub courts: Vec<agent::Court>,
+    /// Per-polity elite cohort size (normalized). Turchin: grows with
+    /// prosperity, overproduction drives instability.
+    pub elites: Vec<f32>,
+    /// Per-polity treasury (normalized; may go negative = fiscal crisis).
+    pub fiscal: Vec<f32>,
+    /// Per-polity sociopolitical instability (≥ 0). Crosses a threshold → a
+    /// secular crisis that vents it.
+    pub instability: Vec<f32>,
+    /// Per-polity asabiyyah / group cohesion in `[0, 1]` (Khaldun). High for a
+    /// young dynasty, decays with age; low cohesion amplifies instability.
+    pub asabiyyah: Vec<f32>,
+    /// The dynasty id observed last year, so Khaldun can detect a dynastic
+    /// change and reset asabiyyah.
+    pub last_dynasty: Vec<Option<EntityId>>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -118,6 +132,12 @@ impl SimState {
             capacity,
             aridity,
             courts: vec![agent::Court::default(); n_pol],
+            elites: vec![0.0; n_pol],
+            fiscal: vec![0.0; n_pol],
+            instability: vec![0.0; n_pol],
+            // Reset to ASAB_HIGH by Khaldun on the first tick (dynasty founded).
+            asabiyyah: vec![1.0; n_pol],
+            last_dynasty: vec![None; n_pol],
         }
     }
 }
@@ -441,5 +461,67 @@ mod tests {
                 "located at the capital cell"
             );
         }
+    }
+
+    // --- 4d: Khaldun asabiyyah dynamics -------------------------------------
+
+    #[test]
+    fn khaldun_renews_then_decays_asabiyyah_monotonically() {
+        use crate::agent::Court;
+        use crate::loops::khaldun::Khaldun;
+        use crate::loops::{CausalLoop, TickCtx};
+
+        let mut st = SimState {
+            asabiyyah: vec![1.0],
+            last_dynasty: vec![None],
+            courts: vec![Court {
+                dynasty: Some(EntityId(5)),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let mut world = WorldData::default();
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut khaldun = Khaldun;
+
+        // Year 0: a dynasty appears (None → Some) → cohesion is renewed high.
+        {
+            let mut ctx = TickCtx {
+                world: &mut world,
+                state: &mut st,
+                year: 0,
+                rng: &mut rng,
+            };
+            khaldun.tick(&mut ctx);
+        }
+        let high = st.asabiyyah[0];
+        assert!(
+            (0.85..=0.95).contains(&high),
+            "renewed asabiyyah ~0.9, got {high}"
+        );
+
+        // Same dynasty thereafter: non-increasing and bounded in [0, 1].
+        let mut prev = high;
+        for year in 1..300 {
+            let mut ctx = TickCtx {
+                world: &mut world,
+                state: &mut st,
+                year,
+                rng: &mut rng,
+            };
+            khaldun.tick(&mut ctx);
+            let a = st.asabiyyah[0];
+            assert!(
+                a <= prev,
+                "asabiyyah rose within a stable dynasty: {a} > {prev}"
+            );
+            assert!((0.0..=1.0).contains(&a), "asabiyyah out of [0,1]: {a}");
+            prev = a;
+        }
+        assert!(
+            prev < high,
+            "asabiyyah should decay over 300 years of one dynasty"
+        );
     }
 }

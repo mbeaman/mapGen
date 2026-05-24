@@ -320,6 +320,27 @@ artifact that justified the pick, and the commit that landed the value.
   `history_spec`).
 * **Source:** Phase 4c; `agent.rs`.
 
+### Turchin fiscal + Khaldun asabiyyah (4d) — `loops/turchin.rs` + `loops/khaldun.rs`
+
+* **Current:** instability gains `IMMIS_W = 0.020` (above `IMMIS_THRESH = 0.75`
+  density) / `ELITE_W = 0.020` / `FISCAL_W = 0.010` / `DECADENCE_W = 0.012`,
+  baseline venting `INSTAB_RELAX = 0.004`, `CRISIS_THRESHOLD = 0.65`; crisis
+  losses `CRISIS_POP_LOSS = 0.30` / `CRISIS_ELITE_LOSS = 0.60`; elites
+  `ELITE_GAIN = 0.012` / `ELITE_DECAY = 0.02` / `ELITE_SUSTAIN = 0.35`; treasury
+  `TAX_YIELD = 0.10` / `ELITE_UPKEEP = 0.20`; `EXPAND_PROB = 0.02`. Khaldun:
+  `ASAB_HIGH = 0.9`, `ASAB_DECAY = 0.9955`/yr (~0.5 after ~140 years).
+* **Why these values:** tuned so each polity runs **~3 secular boom/bust cycles**
+  over 500 years (Turchin's century-scale cadence), not a single fall or
+  constant churn. First drafts: `CRISIS_THRESHOLD = 1.0` gave only ~1 crisis per
+  polity (too rare); lowering to `0.65` and raising `DECADENCE_W` to `0.012`
+  gave ~3. The Exile (elite purge) gate was relaxed to any elite surplus —
+  crises here are decadence-driven and hit before elite overproduction peaks, so
+  the stricter gate never fired. Seed 42: crises cluster ~y223–243 / ~347–359 /
+  ~446–462; crash-relief eases famine (56→42 vs. 4b alone).
+* **Method:** tuned against seed 42 (crisis count per polity + event-kind mix);
+  Khaldun decay pinned monotonic + bounded in a unit test.
+* **Source:** Phase 4d; `loops/turchin.rs` (fiscal half) + `loops/khaldun.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

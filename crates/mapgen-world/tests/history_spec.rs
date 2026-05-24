@@ -21,7 +21,8 @@ fn fixed(seed: u64) -> GenerateParams {
     }
 }
 
-/// The event kinds Phase 4 emits so far (4b demographic + 4c dynastic).
+/// The event kinds Phase 4 emits so far (4b demographic + 4c dynastic + 4d
+/// secular-cycle rise/collapse).
 fn is_known_kind(k: &EventKind) -> bool {
     matches!(
         k,
@@ -32,6 +33,10 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::Marriage
             | EventKind::Coronation
             | EventKind::Death
+            | EventKind::CityFounded
+            | EventKind::CityAbandoned
+            | EventKind::Migration
+            | EventKind::Exile
     )
 }
 
@@ -242,6 +247,26 @@ fn history_is_well_formed_across_seeds() {
             );
         }
     }
+}
+
+#[test]
+fn secular_cycle_produces_rise_and_collapse_events() {
+    // 4d: the Turchin fiscal half + Khaldun decadence drive recurring crises
+    // (settlements abandoned, people displaced) punctuating expansion.
+    let world = generate_full(fixed(42));
+    let n = |k: fn(&EventKind) -> bool| world.events.events.iter().filter(|e| k(&e.kind)).count();
+    assert!(
+        n(|k| matches!(k, EventKind::CityAbandoned)) >= 1,
+        "expected at least one secular collapse (CityAbandoned)"
+    );
+    assert!(
+        n(|k| matches!(k, EventKind::Migration)) >= 1,
+        "a collapse should displace people (Migration)"
+    );
+    assert!(
+        n(|k| matches!(k, EventKind::CityFounded)) >= 1,
+        "expansion years should found new towns (CityFounded)"
+    );
 }
 
 #[test]

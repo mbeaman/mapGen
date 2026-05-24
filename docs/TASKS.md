@@ -367,12 +367,28 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
   Relationship / TitleHolding); **both goldens re-anchored**. `just check`
   green (161 tests). Knobs in `docs/tuning_log.md`.
 
-### Phase 4d — Turchin fiscal half + Khaldun asabiyyah *(promotes Khaldun from Phase 6)*
+### Phase 4d — Turchin fiscal half + Khaldun asabiyyah *(shipped; promotes Khaldun from Phase 6)*
 
-- [ ] (1d) Elite overproduction, fiscal health, instability (Turchin); asabiyyah
-  rise on frontier / decay in metropole over dynasty generations (Khaldun). Drives
-  rise/collapse → `CityFounded`/`CityAbandoned`/`Migration`/`Exile`; sets
-  `Polity.dissolved_year`.
+- [x] **Turchin fiscal half** (`loops/turchin.rs`): per-polity elite cohort,
+  treasury (tax vs. elite upkeep), and instability accumulating from
+  immiseration + elite overproduction + fiscal strain + dynastic decadence.
+  Instability past a threshold → a **secular crisis** that emits `CityAbandoned`
+  / `Migration` / `Exile`, crashes population/elites/treasury, and vents — then
+  rebuilds (boom/bust/recover). Quiet, growing years emit `CityFounded`. All
+  normalized arithmetic; no transcendental.
+- [x] **Khaldun asabiyyah** (`loops/khaldun.rs`, promoted from Phase-6 stub):
+  per-polity cohesion renews high on a new dynasty (detected via `court.dynasty`)
+  and decays multiplicatively while a dynasty endures; low cohesion amplifies
+  instability. State-only (its effect is harsher crises).
+- [x] Tuned vs. seed 42: **~3 secular cycles per polity** (crises clustering
+  ~y223–243 / ~347–359 / ~446–462 — three continent-wide times of troubles),
+  535 events, and the crash-relief visibly eases famine (56→42). Emergent
+  coupling, no permanent dissolution (deferred to 4e conquest). Knobs in
+  `docs/tuning_log.md`.
+- [x] Spec: Khaldun decay unit test (renew-then-monotonic-decay, bounded [0,1])
+  + `history_spec` crisis-occurrence + expanded allowed-kinds. No schema change
+  (v10 holds); **`seed42_full` re-anchored** (phase2 untouched). `just check`
+  green.
 - [ ] (4h) Spec: asabiyyah ∈[0,1] decays monotonically in a stable dynasty absent
   frontier pressure (cites Ibn Khaldun); fiscal collapse precedes dissolution;
   instability rises with elite overproduction (cites Turchin); determinism pin.
