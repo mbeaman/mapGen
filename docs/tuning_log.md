@@ -278,6 +278,29 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** derived (seed-42 spot check in `naming_spec`)
 * **Source:** Phase-3e polish; `naming.rs` step 6
 
+## History (Phase 4b demographic backbone) — `mapgen-history::loops::turchin`
+
+### `GROWTH_RATE` / `FAMINE_STRESS` / drought + plague knobs
+
+* **Current:** `GROWTH_RATE = 0.03` (logistic `r`); `FAMINE_STRESS = 0.85`
+  (stress threshold for famine); `DROUGHT_BASE_PROB = 0.15` ×aridity,
+  `DROUGHT_SEVERITY = 0.35`; `PLAGUE_DENSITY_PROB = 0.010` ×density,
+  `PLAGUE_MORTALITY = 0.18`; `INITIAL_FILL = 0.35`, `ARID_REF_PRECIP = 0.08`,
+  aridity floor `0.15`, `MIN_POPULATION = 0.5` (in `lib.rs`).
+* **Why these values:** famine is the Malthusian regulator and should be the
+  *common* crisis of Turchin's demographic backbone, so its threshold sits
+  below unity (`0.85`) while plague stays a rare density shock (`0.010`). The
+  first draft (`FAMINE_STRESS 0.92`, `PLAGUE_DENSITY_PROB 0.05`) produced a
+  plague-dominated log (71 plague / 7 famine / 6 drought on seed 42 — wrong
+  shape). Retuned to **56 famine / 49 drought / 24 plague** over 500 years,
+  spread evenly across all 4 seed-42 polities (25–41 events each) — famine-led,
+  believable. Discrete logistic (`r = 0.03`) approaches capacity without
+  overshoot; the dramatic secular *cycles* (overshoot → collapse) arrive with
+  the 4d fiscal/elite coupling.
+* **Method:** tuned against canonical seed 42 at 4k cells (event-kind mix +
+  per-polity spread).
+* **Source:** Phase 4b; `loops/turchin.rs` + `SimState` in `lib.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

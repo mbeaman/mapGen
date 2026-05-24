@@ -1,12 +1,14 @@
-//! Phase 4 history-stage contract.
+//! Phase 4 history-stage contract (integration, via the full pipeline).
 //!
-//! In Phase 4a the six causal loops are no-op skeletons, so these pin the
-//! *wiring* and the *determinism harness* — that History runs last in the
-//! pipeline, that a no-op sim leaves the log empty (no premature output), and
-//! that the history-bearing pipeline is still deterministic. The per-loop
-//! determinism mechanics (tick count, stream independence) are unit-tested in
-//! `mapgen-history` itself; event-emission contracts arrive with 4b.
+//! Pins the wiring (History runs last) and, from 4b on, the demographic
+//! event-emission contract: only Famine/Plague/Drought kinds, valid fields,
+//! famine-dominant shape on seed 42, and well-formed output across seeds. The
+//! per-loop determinism mechanics (tick count, stream independence, seed
+//! purity) and the synthetic-world dynamics are unit-tested in `mapgen-history`
+//! itself; the byte-level determinism pin is the full-pipeline golden hash in
+//! `pipeline_spec.rs`.
 
+use mapgen_core::EventKind;
 use mapgen_world::{generate_full, GenerateParams, Pipeline, PipelineStage};
 
 fn fixed(seed: u64) -> GenerateParams {
@@ -36,20 +38,56 @@ fn history_runs_last_in_the_pipeline() {
 }
 
 #[test]
-fn no_op_history_emits_no_events_or_entities_yet() {
-    // 4a contract: the driver ticks 500 years but the loops are no-op, so the
-    // log and entity store stay empty. This test flips to "non-empty" in 4b.
+fn history_emits_demographic_events_but_no_entities_yet() {
+    // 4b contract: the Turchin demographic backbone populates the event log
+    // (famine/plague/drought) over 500 years, but named entities don't arrive
+    // until 4c, so the entity store is still empty.
     let world = generate_full(fixed(42));
     assert!(
-        world.events.is_empty(),
-        "4a loops are no-op; got {} events",
-        world.events.len()
+        !world.events.is_empty(),
+        "4b should populate the event log with demographic crises"
     );
     assert!(
         world.entities.by_id.is_empty(),
-        "4a loops are no-op; got {} entities",
+        "entities arrive in 4c; got {} at 4b",
         world.entities.by_id.len()
     );
+}
+
+#[test]
+fn only_demographic_event_kinds_at_4b() {
+    // 4b emits exactly the Turchin demographic crises. Wars, successions,
+    // schisms, etc. arrive in later substages.
+    let world = generate_full(fixed(42));
+    for e in &world.events.events {
+        assert!(
+            matches!(
+                e.kind,
+                EventKind::Famine | EventKind::Plague | EventKind::Drought
+            ),
+            "unexpected event kind at 4b: {:?}",
+            e.kind
+        );
+    }
+}
+
+#[test]
+fn every_event_has_valid_fields() {
+    let world = generate_full(fixed(42));
+    let n_cells = world.mesh.cell_count() as u32;
+    for (i, e) in world.events.events.iter().enumerate() {
+        assert_eq!(e.id.0, i as u32, "event ids must be sequential from 0");
+        assert!((0..500).contains(&e.year), "year {} out of range", e.year);
+        assert!(
+            (0.0..=1.0).contains(&e.salience),
+            "salience {} out of [0,1]",
+            e.salience
+        );
+        match e.location {
+            Some(c) => assert!(c.0 < n_cells, "location cell {} >= {n_cells}", c.0),
+            None => panic!("4b events should be located at a cell"),
+        }
+    }
 }
 
 #[test]
@@ -63,6 +101,54 @@ fn history_stepper_runs_and_reports_history_stage() {
     }
     assert_eq!(last, Some(PipelineStage::History));
     assert!(p.is_done());
+}
+
+#[test]
+fn famine_is_the_dominant_crisis_on_seed_42() {
+    // Locks the tuned shape of the demographic backbone: famine is Turchin's
+    // Malthusian regulator and must outnumber the rarer plague. A regression to
+    // the plague-spam first draft (71 plague / 7 famine) would trip this.
+    let world = generate_full(fixed(42));
+    let count =
+        |k: fn(&EventKind) -> bool| world.events.events.iter().filter(|e| k(&e.kind)).count();
+    let famine = count(|k| matches!(k, EventKind::Famine));
+    let plague = count(|k| matches!(k, EventKind::Plague));
+    assert!(famine >= 1, "expected at least one famine over 500 years");
+    assert!(
+        famine >= plague,
+        "famine ({famine}) should be at least as common as plague ({plague}) — \
+         famine is the regulator, plague the rarer shock"
+    );
+}
+
+#[test]
+fn history_is_well_formed_across_seeds() {
+    // Robustness beyond seed 42: several seeds must run without panicking and
+    // emit only valid demographic events (no degenerate kind, no bad field).
+    // Doesn't require non-empty (a barren-territory world legitimately could be
+    // quiet) — it guards against panics and malformed output.
+    for seed in 1..=5u64 {
+        let world = generate_full(fixed(seed));
+        let n_cells = world.mesh.cell_count() as u32;
+        for e in &world.events.events {
+            assert!(
+                matches!(
+                    e.kind,
+                    EventKind::Famine | EventKind::Plague | EventKind::Drought
+                ),
+                "seed {seed}: unexpected kind {:?}",
+                e.kind
+            );
+            assert!(
+                (0.0..=1.0).contains(&e.salience),
+                "seed {seed}: bad salience"
+            );
+            assert!(
+                e.location.map(|c| c.0 < n_cells).unwrap_or(false),
+                "seed {seed}: event not located at a valid cell"
+            );
+        }
+    }
 }
 
 #[test]

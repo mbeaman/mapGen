@@ -329,16 +329,21 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
 - [ ] **fmath-purity guard** — deferred to 4b/4d (the first loop that uses a
   transcendental); 4a introduces no float math, so there's nothing to guard yet.
 
-### Phase 4b — Turchin demographic backbone → first events *(visible-value milestone)*
+### Phase 4b — Turchin demographic backbone → first events *(shipped)*
 
-- [ ] (1d) Per-region/polity logistic population vs carrying capacity (from
-  biome/agriculture inputs, in `SimState`); Malthusian stress threshold →
-  `Famine`/`Plague`/`Drought` events. **First events appear.** Provisional salience
-  from kind-weight.
-- [ ] (4h) Spec: event count grows with `years`; valid `year∈[0,years]`, real
-  `location` cell, monotonic IDs, `salience∈[0,1]`; famines correlate with
-  low-agriculture/drought cells (doc comment cites Turchin secular cycles);
-  determinism pin (byte-identical logs). Re-anchor.
+- [x] Per-polity logistic population vs carrying capacity in `SimState`
+  (capacity from territory biomes × founding-culture agriculture; aridity from
+  mean precip; cells→polity rollup once). Malthusian stress → `Famine` (the
+  regulator) / `Plague` (rare density shock) / `Drought` (aridity-weighted
+  capacity shock). Discrete logistic = no transcendental. **First events
+  appear** — seed 42 yields ~129 events (56 famine / 49 drought / 24 plague)
+  over years 10–487, spread across all 4 polities. Knobs in
+  `docs/tuning_log.md` (History section), tuned against seed 42.
+- [x] Spec: `mapgen-history` units (events accumulate with years; famine &
+  drought both fire over a long run; deterministic event log; valid fields) +
+  `history_spec.rs` integration (events non-empty, entities still empty,
+  **only** Famine/Plague/Drought kinds, valid id/year/salience/location). Schema
+  `v8→v9`; **both goldens re-anchored**. `just check` green (156 tests).
 
 ### Phase 4c — Agent layer: Characters, Houses, Dynasties, lineage, Titles
 

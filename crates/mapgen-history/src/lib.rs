@@ -34,23 +34,133 @@ impl Default for HistoryParams {
 }
 
 /// Cross-loop scratch state for one sim run. Holds the system-dynamics
-/// aggregates the loops read and write each year. **Never serialized** — only
-/// the resulting events / entities persist (the persistence boundary from the
-/// Phase-4 plan). Minimal in 4a; grows as the loops land.
+/// aggregates the loops read and write each year, all indexed by polity id
+/// (position in `world.society.nations`). **Never serialized** — only the
+/// resulting events / entities persist (the persistence boundary from the
+/// Phase-4 plan). 4b adds the demographic backbone; later loops add fiscal /
+/// asabiyyah / power vectors here.
 #[derive(Clone, Debug, Default)]
 pub struct SimState {
-    /// Polity count snapshotted at sim start. Aggregating cells → per-polity
-    /// state vectors is Phase 4b's job; for now this is the one real datum the
-    /// driver threads through.
+    /// Number of polities (length of every per-polity vector below).
     pub polity_count: usize,
+    /// Per-polity population in relative units (no real-world scale). Written
+    /// by the Turchin loop each year; read by power / dynasty loops later.
+    pub population: Vec<f32>,
+    /// Per-polity carrying capacity in the same units. Computed once at sim
+    /// start from territory biomes × the founding culture's agriculture tech.
+    pub capacity: Vec<f32>,
+    /// Per-polity aridity in `[0, 1]` (drought propensity), from mean
+    /// territory precipitation. Computed once at start.
+    pub aridity: Vec<f32>,
 }
+
+/// Initial population as a fraction of carrying capacity — low enough that the
+/// logistic growth phase plays out before Malthusian crises begin.
+const INITIAL_FILL: f32 = 0.35;
+/// Precipitation reference for the aridity scale: territory at or above this
+/// mean precip is treated as non-arid (aridity 0). Land precip in this model
+/// runs ~0.04–0.07, so this differentiates dry from wet realms.
+const ARID_REF_PRECIP: f32 = 0.08;
 
 impl SimState {
     fn new(world: &WorldData) -> Self {
+        let n_pol = world.society.nations.len();
+        let n_cells = world.mesh.cell_count();
+        let mut capacity = vec![0.0f32; n_pol];
+        let mut precip_sum = vec![0.0f32; n_pol];
+        let mut cells = vec![0u32; n_pol];
+
+        // Aggregate each polity's controlled cells into a carrying capacity
+        // and a precipitation tally (the cells → per-polity SD rollup, done
+        // once; per the perf note, loops then run over O(polities), not cells).
+        for cell in 0..n_cells {
+            let Some(pid) = world.society.control.get(cell).copied().flatten() else {
+                continue;
+            };
+            let pid = pid as usize;
+            if pid >= n_pol {
+                continue;
+            }
+            let biome = world.climate.biome.get(cell).copied().unwrap_or(0);
+            capacity[pid] += cell_capacity(biome);
+            precip_sum[pid] += world
+                .climate
+                .precipitation
+                .get(cell)
+                .copied()
+                .unwrap_or(0.0);
+            cells[pid] += 1;
+        }
+
+        for (pid, cap) in capacity.iter_mut().enumerate() {
+            *cap *= agriculture_factor(world, pid);
+        }
+        let aridity = (0..n_pol)
+            .map(|pid| {
+                if cells[pid] == 0 {
+                    return 0.0;
+                }
+                let mean = precip_sum[pid] / cells[pid] as f32;
+                // Floor at 0.15 so even wet realms see the occasional drought
+                // year (no perfectly drought-proof territory).
+                (1.0 - (mean / ARID_REF_PRECIP).min(1.0)).clamp(0.15, 1.0)
+            })
+            .collect();
+        let population = capacity.iter().map(|&k| INITIAL_FILL * k).collect();
+
         Self {
-            polity_count: world.society.nations.len(),
+            polity_count: n_pol,
+            population,
+            capacity,
+            aridity,
         }
     }
+}
+
+/// Agronomic carrying weight per biome, in relative units. Biome ids are
+/// frozen schema (source of truth: `mapgen_world::biomes`); grassland is the
+/// breadbasket, riparian / temperate forest fertile, deserts / ice barren, sea
+/// uninhabited. History interprets biomes agronomically just as the renderer
+/// interprets them visually.
+fn cell_capacity(biome: u8) -> f32 {
+    match biome {
+        4 => 1.00,          // TEMPERATE_GRASSLAND
+        14 => 0.95,         // RIPARIAN
+        3 => 0.80,          // TEMPERATE_FOREST
+        5 => 0.70,          // TEMPERATE_RAINFOREST
+        8 => 0.60,          // TROPICAL_RAINFOREST
+        9 => 0.55,          // TROPICAL_DRY_FOREST
+        7 => 0.50,          // SAVANNA
+        2 => 0.35,          // TAIGA
+        10 => 0.25,         // SHRUBLAND
+        1 => 0.10,          // TUNDRA
+        0 | 6 | 11 => 0.05, // SNOW, DESERT, ALPINE
+        _ => 0.0,           // SEA_SHALLOW(12), SEA_DEEP(13), UNASSIGNED
+    }
+}
+
+/// Multiplier on raw territory capacity from the founding culture's
+/// agriculture skill (0..100 → 0.6..1.4). The founder is the culture owning
+/// the polity's capital cell.
+fn agriculture_factor(world: &WorldData, pid: usize) -> f32 {
+    let cap_cell = world.society.nations[pid].capital_cell as usize;
+    let agri = world
+        .cultures
+        .culture_id
+        .get(cap_cell)
+        .copied()
+        .flatten()
+        .and_then(|cid| world.cultures.cultures.get(cid as usize))
+        .map(|c| c.tech.agriculture)
+        .unwrap_or(40);
+    0.6 + 0.008 * agri as f32
+}
+
+/// A deterministic uniform draw in `[0, 1)` from a loop RNG. Avoids relying on
+/// `rand::Rng::gen`'s float algorithm so the value is explicit and portable
+/// (top 24 bits of a `u64`, 2⁻²⁴ resolution). No transcendental.
+pub(crate) fn unit_f32(rng: &mut ChaCha8Rng) -> f32 {
+    ((rng.next_u64() >> 40) as f32) / ((1u64 << 24) as f32)
 }
 
 /// Derive the RNG seed for one loop in one year. Pure: depends only on the
@@ -203,5 +313,102 @@ mod tests {
     fn order_constant_matches_default_loops() {
         let ids: Vec<LoopId> = default_loops().iter().map(|l| l.id()).collect();
         assert_eq!(ids, loops::ORDER.to_vec());
+    }
+
+    // --- 4b: Turchin demographic backbone -----------------------------------
+
+    use mapgen_core::{EventKind, Nation};
+
+    /// A minimal world with one polity controlling `n_cells` grassland cells
+    /// at low precipitation — fertile enough to grow, arid enough to see
+    /// droughts. Enough for the demographic loop; no cultures (agriculture
+    /// defaults), no mesh geometry beyond the cell count.
+    fn synthetic_world(n_cells: usize) -> WorldData {
+        let mut w = WorldData::default();
+        w.mesh.sites = vec![[0.0, 0.0]; n_cells];
+        w.climate.biome = vec![4u8; n_cells]; // TEMPERATE_GRASSLAND
+        w.climate.precipitation = vec![0.03f32; n_cells]; // arid-ish
+        w.society.nations = vec![Nation {
+            name: "Testria".to_string(),
+            capital_cell: 0,
+            color: [0, 0, 0],
+        }];
+        w.society.control = vec![Some(0u32); n_cells];
+        w
+    }
+
+    fn run_synth(years: i32, seed: u64) -> WorldData {
+        let mut w = synthetic_world(200);
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        run(&mut w, HistoryParams { years }, &mut rng);
+        w
+    }
+
+    #[test]
+    fn demographic_events_accumulate_with_years() {
+        let short = run_synth(40, 99).events.len();
+        let long = run_synth(400, 99).events.len();
+        assert!(
+            long > short,
+            "more simulated years should yield more events: {short} (40y) vs {long} (400y)"
+        );
+    }
+
+    #[test]
+    fn turchin_fires_both_famine_and_drought_over_a_long_run() {
+        let w = run_synth(500, 99);
+        assert!(!w.events.is_empty(), "expected demographic events");
+        assert!(
+            w.events
+                .events
+                .iter()
+                .any(|e| matches!(e.kind, EventKind::Famine)),
+            "a 500-year arid grassland run should suffer at least one famine"
+        );
+        assert!(
+            w.events
+                .events
+                .iter()
+                .any(|e| matches!(e.kind, EventKind::Drought)),
+            "an arid polity should suffer at least one drought"
+        );
+    }
+
+    #[test]
+    fn turchin_output_is_deterministic() {
+        let fingerprint = |w: &WorldData| -> Vec<(i32, String, Option<u32>, u32)> {
+            w.events
+                .events
+                .iter()
+                .map(|e| {
+                    (
+                        e.year,
+                        format!("{:?}", e.kind),
+                        e.location.map(|c| c.0),
+                        e.salience.to_bits(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(
+            fingerprint(&run_synth(300, 7)),
+            fingerprint(&run_synth(300, 7)),
+            "same seed must produce a byte-identical event log"
+        );
+    }
+
+    #[test]
+    fn demographic_events_have_valid_fields() {
+        let w = run_synth(300, 7);
+        for (i, e) in w.events.events.iter().enumerate() {
+            assert_eq!(e.id.0, i as u32, "event ids sequential from 0");
+            assert!((0..300).contains(&e.year));
+            assert!((0.0..=1.0).contains(&e.salience));
+            assert_eq!(
+                e.location,
+                Some(mapgen_core::CellId(0)),
+                "located at the capital cell"
+            );
+        }
     }
 }

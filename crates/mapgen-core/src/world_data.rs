@@ -31,7 +31,11 @@ use crate::{
 /// * v8 — Phase 3e polish: `WorldData::mountain_ranges` (named clusters
 ///   of ALPINE/SNOW cells). `skip_serializing_if`-elided when empty;
 ///   both goldens re-anchor for the `schema_version` byte itself.
-pub const SCHEMA_VERSION: u32 = 8;
+/// * v9 — Phase 4b: the history sim populates `WorldData::events` (Turchin
+///   demographic backbone → Famine / Plague / Drought). No struct change
+///   (the `events` field already existed); both goldens re-anchor for the
+///   `schema_version` byte and `seed42_full` additionally for the events.
+pub const SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
