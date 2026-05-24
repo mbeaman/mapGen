@@ -326,8 +326,10 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
   history_spec.rs`: History runs last, no-op emits nothing yet, deterministic.
   Golden hashes pass **unchanged** (no re-anchor). `just check` green; `just perf`
   30k +10% = known machine artifact (this box ≈1.6× the Ryzen anchor), not re-anchored.
-- [ ] **fmath-purity guard** — deferred to 4b/4d (the first loop that uses a
-  transcendental); 4a introduces no float math, so there's nothing to guard yet.
+- [x] **fmath-purity guard** — deferred from 4a (no float math there) and
+  **landed at 4h** as `mapgen-history/tests/fmath_purity.rs` (review #2), a
+  source-scan that fails on raw transcendentals. In practice Phase 4 uses only
+  arithmetic, so the native↔wasm byte-identity risk never materialized.
 
 ### Phase 4b — Turchin demographic backbone → first events *(shipped)*
 
@@ -430,11 +432,22 @@ battles/sieges). Robust across seeds (16 kinds, ~700 events, no degenerate
 worlds). Crises hit every polity evenly — Turchin already checks the hegemon.
 Open findings folded into the substages below:
 
-- [ ] **(#1, pre-4i) Re-evaluate hegemon dominance.** Top-salience events skew to
-  the strongest realm; land-share 40–68% across seeds (seed 42 = 48%, multipolar;
-  seeds 3/7 ~66–68%). 4f/4g are the fragmenting forces — re-check after them; if
-  seeds still trend >65% hegemon, add a defender bonus / overextension penalty to
-  Mearsheimer.
+- [x] **(#1) Hegemon dominance — re-evaluated and resolved at 4j.** This finding
+  had two parts. **(a) Salience headline-monopoly** (top-salience events all from
+  the strongest realm) — *fixed* at 4j: `events --major` on seed 42 was 96
+  near-identical battles pinned at 0.98 because `STAKES_REF = 300` saturated
+  battle salience. Re-anchored to 2000 so salience spreads, and lifted rare
+  marquee kinds (schism/prophecy/megabeast/hero) into the major band, so the reel
+  now surfaces the world's turning points, not just one empire's battles
+  (`docs/tuning_log.md` § Salience). **(b) Territorial land-share** (38/61/69/68/47%
+  on seeds 1/2/3/7/42) — *accepted as emergent range, not a defect.* The canonical
+  seed (42) is multipolar at 47%; the conquest-hegemonies on seeds 3/7 (~68%) are
+  historically plausible (offensive realism predicts hegemons emerge) and make
+  those worlds narratively rich rather than broken. The conditional defender-bonus
+  / overextension-penalty remains a **documented future knob** in Mearsheimer if
+  the user later wants forced multipolarity — but imposing it now would override
+  emergent dynamics and destabilize the well-tuned canonical seed for no clear
+  gain. Left as-is by design.
 - [ ] **(#7, project-wide) Native↔wasm byte-identity** — reasoned (all
   arithmetic), not machine-tested. Tracked in BACKLOG; not 4-specific.
 
@@ -586,13 +599,16 @@ Lock-honoring fallback if direction changes: ship 4a–4e + 4i + 4j, route
 
 ## Cross-cutting / hygiene
 
-- [ ] (15m) Bump `SCHEMA_VERSION` (currently v2) when the next breaking
-  WorldData change lands (likely with Phase 3a — cultures field).
+- [x] **Standing practice (not a one-time TODO).** Bump `SCHEMA_VERSION` with
+  every breaking `WorldData` change and re-anchor the goldens. Done routinely since
+  v2 → **v11** now (cultures, religions, naming, mountain ranges, `HistoryData`).
+  Codified in `CONTRIBUTING.md` § Schema changes + the SESSION gotcha.
 - [x] (30m) Baseline performance — measure `generate_full` for 4k / 15k /
   30k cell counts, record in `docs/perf_baseline.md`. Set a regression
-  budget. **Shipped:** 17/66/133 ms median (4k/15k/30k) on Ryzen 9 5950X,
-  budget 1.5× baseline. Harness at
-  `crates/mapgen-world/examples/perf_baseline.rs`, manual re-run.
+  budget. **Re-anchored 2026-05-24 (Phase 4j) to the current dev box:**
+  26/111/259 ms median (4k/15k/30k), budget 1.5× (39/166/388 ms), now including
+  the history sim. (Original Ryzen 9 5950X anchor 17/66/133 ms is retired.)
+  Harness at `crates/mapgen-world/examples/perf_baseline.rs`, manual re-run.
 - [ ] (deferred — see BACKLOG.md "Cross-platform byte-identical golden
   hashes") `wasm-bindgen-test` for native↔wasm32 hash parity.
 
