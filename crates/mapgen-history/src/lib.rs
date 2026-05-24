@@ -74,9 +74,10 @@ pub struct SimState {
     /// Polity adjacency (who borders whom), computed once from the initial
     /// borders. Wars ignite between neighbors; the 4e loop reads this.
     pub adjacency: Vec<Vec<usize>>,
-    /// Active dynastic claims as `(claimant_polity, target_polity, asserted_year)`
-    /// — a claim supplies a `DynasticClaim` casus belli until it expires.
-    pub claims: Vec<(u16, u16, i32)>,
+    /// Active dynastic claims as `(claimant_polity, target_polity, asserted_year,
+    /// claim_event)` — a claim supplies a `DynasticClaim` casus belli until it
+    /// expires, and the war it justifies cites `claim_event` as its cause.
+    pub claims: Vec<(u16, u16, i32, EventId)>,
     /// Year each polity last initiated a war, for the war cooldown (init
     /// `i32::MIN` = never).
     pub last_war: Vec<i32>,

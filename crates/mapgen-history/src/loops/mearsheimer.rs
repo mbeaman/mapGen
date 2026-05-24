@@ -55,7 +55,7 @@ impl CausalLoop for Mearsheimer {
         // Expire stale claims so casus belli stays truthful.
         ctx.state
             .claims
-            .retain(|&(_, _, asserted)| year - asserted < CLAIM_EXPIRY);
+            .retain(|&(_, _, asserted, _)| year - asserted < CLAIM_EXPIRY);
 
         // 1. Dynastic claims — occasional pressure on a neighbour's throne.
         for a in 0..n {
@@ -73,7 +73,7 @@ impl CausalLoop for Mearsheimer {
                             .state
                             .claims
                             .iter()
-                            .any(|&(x, y, _)| x == a as u16 && y == b as u16)
+                            .any(|&(x, y, _, _)| x == a as u16 && y == b as u16)
                 }) {
                     assert_claim(ctx, a, b, year);
                 }
@@ -184,7 +184,7 @@ fn assert_claim(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     let cell = ctx.world.society.nations[a].capital_cell;
     let name_a = ctx.world.society.nations[a].name.clone();
     let name_b = ctx.world.society.nations[b].name.clone();
-    Emit::new(
+    let claim_ev = Emit::new(
         year,
         EventKind::ClaimAsserted,
         cell,
@@ -199,7 +199,7 @@ fn assert_claim(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         asserted_year: year,
         dormant: false,
     }));
-    ctx.state.claims.push((a as u16, b as u16, year));
+    ctx.state.claims.push((a as u16, b as u16, year, claim_ev));
 }
 
 fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
@@ -212,13 +212,15 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     let cell = ctx.world.society.nations[a].capital_cell;
     let name_a = ctx.world.society.nations[a].name.clone();
     let name_b = ctx.world.society.nations[b].name.clone();
-    let has_claim = ctx
+    // A claim (if any) both sets the casus belli and is cited as the war's cause.
+    let claim_ev = ctx
         .state
         .claims
         .iter()
-        .any(|&(x, y, _)| x == a as u16 && y == b as u16);
+        .find(|&&(x, y, _, _)| x == a as u16 && y == b as u16)
+        .map(|&(_, _, _, ev)| ev);
     let (ra, rb) = (polity_religion(ctx.world, a), polity_religion(ctx.world, b));
-    let casus = if has_claim {
+    let casus = if claim_ev.is_some() {
         CasusBelli::DynasticClaim
     } else if ra.is_some() && rb.is_some() && ra != rb {
         // Different faiths — a war of religion (schisms deepen these divides).
@@ -227,7 +229,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         CasusBelli::FrontierIncident
     };
 
-    Emit::new(
+    let mut war = Emit::new(
         year,
         EventKind::WarDeclared,
         cell,
@@ -235,8 +237,11 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         format!("{name_a} declared war upon {name_b}."),
     )
     .actors(&[ruler_a, ruler_b])
-    .casus(casus)
-    .push(ctx.world);
+    .casus(casus);
+    if let Some(ce) = claim_ev {
+        war = war.causes(&[ce]);
+    }
+    let war_ev = war.push(ctx.world);
 
     // Battle: stronger side, perturbed by fortune, prevails.
     let la = pa * (0.7 + 0.6 * unit_f32(ctx.rng));
@@ -251,7 +256,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     // only the largest wars read as "major" (≥ 0.8).
     let stakes = ((pa + pb) / STAKES_REF).clamp(0.0, 1.0);
     let battle_sal = (0.58 + 0.4 * stakes).clamp(0.0, 1.0);
-    Emit::new(
+    let battle_ev = Emit::new(
         year,
         EventKind::BattleFought,
         cell,
@@ -260,11 +265,12 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     )
     .actors(&[w_ruler])
     .patients(&[l_ruler])
+    .causes(&[war_ev])
     .push(ctx.world);
 
     let moved = transfer_border_cells(ctx.world, w_pid, l_pid, TRANSFER_CELLS);
     if moved > 0 {
-        Emit::new(
+        let siege_ev = Emit::new(
             year,
             EventKind::Siege,
             cell,
@@ -273,6 +279,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         )
         .actors(&[w_ruler])
         .patients(&[l_ruler])
+        .causes(&[battle_ev])
         .push(ctx.world);
         // Borders moved — Turchin's capacity must track the new territory.
         ctx.state.capacity[w_pid] = polity_capacity(ctx.world, w_pid);
@@ -292,6 +299,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
             )
             .actors(&[w_ruler])
             .patients(&[l_ruler])
+            .causes(&[siege_ev])
             .push(ctx.world);
         }
     }
@@ -304,6 +312,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         format!("{w_name} and {l_name} made peace."),
     )
     .actors(&[w_ruler, l_ruler])
+    .causes(&[war_ev])
     .push(ctx.world);
 }
 

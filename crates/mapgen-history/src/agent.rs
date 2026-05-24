@@ -12,8 +12,8 @@
 //! successions and succession wars layer on top in 4f, reading this lineage.
 
 use mapgen_core::{
-    generate_name, CasusBelli, Character, Claim, Dynasty, Entity, EntityId, EventKind, House,
-    RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
+    generate_name, CasusBelli, Character, Claim, Dynasty, Entity, EntityId, EventId, EventKind,
+    House, RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
 };
 use rand_chacha::{rand_core::RngCore, ChaCha8Rng};
 
@@ -327,14 +327,16 @@ fn succeed(
         .filter(|&cid| char_age(world, cid, year) >= MIN_RULE_AGE)
         .collect();
 
+    // Coronations cite the death that vacated the throne.
+    let cause = Some(death_ev);
     if adults.len() >= 2 && unit_f32(rng) < CONTEST_PROB {
         // A war of brothers: the eldest two adult heirs contest the throne.
-        contested_succession(world, state, pid, adults[0], adults[1], year, rng);
+        contested_succession(world, state, pid, adults[0], adults[1], year, rng, cause);
     } else if let Some(&heir) = adults.first() {
-        crown_heir(world, state, pid, heir, year, rng);
+        crown_heir(world, state, pid, heir, year, rng, cause);
     } else if let Some(&minor) = alive.first() {
         // Regency-lite: no adult heir, so the eldest surviving child is crowned.
-        crown_heir(world, state, pid, minor, year, rng);
+        crown_heir(world, state, pid, minor, year, rng, cause);
     } else {
         found_dynasty(world, state, pid, year, rng);
     }
@@ -343,6 +345,7 @@ fn succeed(
 /// A contested succession: a `Succession` crisis, a war between the two
 /// claimants, the victor crowned (same dynasty — both are the late ruler's
 /// children), and the loser exiled with a lingering dormant claim.
+#[allow(clippy::too_many_arguments)]
 fn contested_succession(
     world: &mut WorldData,
     state: &mut SimState,
@@ -351,13 +354,15 @@ fn contested_succession(
     challenger: EntityId,
     year: i32,
     rng: &mut ChaCha8Rng,
+    cause: Option<EventId>,
 ) {
     let cell = world.society.nations[pid].capital_cell;
     let nation = world.society.nations[pid].name.clone();
     let fav_name = char_name(world, favorite);
     let cha_name = char_name(world, challenger);
 
-    Emit::new(
+    let cause_slice: &[EventId] = cause.as_slice();
+    let crisis = Emit::new(
         year,
         EventKind::Succession,
         cell,
@@ -367,6 +372,7 @@ fn contested_succession(
         ),
     )
     .actors(&[favorite, challenger])
+    .causes(cause_slice)
     .push(world);
     Emit::new(
         year,
@@ -377,6 +383,7 @@ fn contested_succession(
     )
     .actors(&[favorite, challenger])
     .casus(CasusBelli::DynasticClaim)
+    .causes(&[crisis])
     .push(world);
 
     // The favourite (eldest) holds the advantage, but fortune can upset it.
@@ -395,9 +402,10 @@ fn contested_succession(
         format!("{w_name} prevailed in the war of succession over {l_name}."),
     )
     .actors(&[winner])
+    .causes(&[crisis])
     .push(world);
 
-    crown_heir(world, state, pid, winner, year, rng);
+    crown_heir(world, state, pid, winner, year, rng, cause);
 
     Emit::new(
         year,
@@ -426,6 +434,7 @@ fn crown_heir(
     heir_id: EntityId,
     year: i32,
     rng: &mut ChaCha8Rng,
+    cause: Option<EventId>,
 ) {
     let cell = world.society.nations[pid].capital_cell;
     let title_id = state.courts[pid].title;
@@ -439,6 +448,7 @@ fn crown_heir(
         format!("{hname} ascended the throne."),
     )
     .actors(&[heir_id])
+    .causes(cause.as_slice())
     .push(world);
     if let Some(tid) = title_id {
         if let Some(Entity::Character(c)) = world.entities.by_id.get_mut(&heir_id) {

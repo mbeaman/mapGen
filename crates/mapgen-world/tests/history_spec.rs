@@ -617,6 +617,56 @@ fn no_realm_is_warred_or_inherited_after_it_falls() {
 }
 
 #[test]
+fn causal_links_are_acyclic_and_follow_the_grammar() {
+    // 4i.2: cause_ids form a legible, sane DAG. Causes are emitted before their
+    // effects (so cause.id < effect.id ⇒ acyclic), and every edge matches the
+    // fixed effect→cause grammar (no nonsense links).
+    let world = generate_full(fixed(42));
+    let kind_of: std::collections::HashMap<u32, &EventKind> = world
+        .events
+        .events
+        .iter()
+        .map(|e| (e.id.0, &e.kind))
+        .collect();
+
+    // Allowed cause kinds per effect kind (debug-name strings).
+    let allowed = |effect: &EventKind, cause: &EventKind| -> bool {
+        let e = format!("{effect:?}");
+        let c = format!("{cause:?}");
+        matches!(
+            (e.as_str(), c.as_str()),
+            ("MegabeastSlain", "MegabeastRise")
+                | ("ProphecyFulfilled", "ProphecyUttered")
+                | ("BattleFought", "WarDeclared")
+                | ("BattleFought", "Succession")
+                | ("Siege", "BattleFought")
+                | ("TreatySigned", "WarDeclared")
+                | ("Coronation", "Death")
+                | ("Succession", "Death")
+                | ("WarDeclared", "Succession")
+                | ("WarDeclared", "ClaimAsserted")
+                | ("CityAbandoned", "Siege")
+        )
+    };
+
+    let mut linked = 0;
+    for e in &world.events.events {
+        for c in &e.cause_ids {
+            linked += 1;
+            assert!(c.0 < e.id.0, "cause {} must precede effect {}", c.0, e.id.0);
+            let cause_kind = kind_of.get(&c.0).expect("cause id resolves to an event");
+            assert!(
+                allowed(&e.kind, cause_kind),
+                "ungrammatical causal edge: {:?} <- {:?}",
+                e.kind,
+                cause_kind
+            );
+        }
+    }
+    assert!(linked > 0, "expected some causal links by 4i.2");
+}
+
+#[test]
 fn history_produces_major_events() {
     // Extended MVP exit criterion: at least three high-salience events
     // (major battles / collapses) for chronicles to anchor on.
