@@ -387,7 +387,7 @@ fn render_mountains(world: &WorldData, out: &mut String) {
     let biomes = &world.climate.biome;
     let elev = &world.terrain.elevation;
 
-    out.push_str(r##"<g fill="#3a2f25" stroke="#1a140e" stroke-width="0.6" stroke-linejoin="round" fill-opacity="0.92">"##);
+    out.push_str(r##"<g class="mountains" fill="#3a2f25" stroke="#1a140e" stroke-width="0.6" stroke-linejoin="round" fill-opacity="0.92">"##);
     for i in 0..mesh.cell_count() {
         let biome = biomes.get(i).copied().unwrap_or(0);
         if biome != ALPINE && biome != SNOW {
@@ -406,6 +406,23 @@ fn render_mountains(world: &WorldData, out: &mut String) {
         let by = cy + height * 0.4;
         let peak_x = cx + hash_offset(i as u32, 2) * base * 0.15;
         let peak_y = cy - height * 0.6;
+        // Depth shadow: the same triangle offset down-right and painted
+        // semi-transparent dark *under* the peak, so mountains read as
+        // 3D land features lit from the upper-left rather than flat
+        // stickers. Scales with the peak so big mountains throw bigger
+        // shadows. Drawn first → the main triangle paints over it.
+        let sh = (base * 0.18).clamp(1.5, 4.0);
+        write!(
+            out,
+            r##"<polygon class="mtn-shadow" points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}" fill="#160f08" fill-opacity="0.30" stroke="none"/>"##,
+            bx_l + sh,
+            by + sh,
+            bx_r + sh,
+            by + sh,
+            peak_x + sh,
+            peak_y + sh,
+        )
+        .unwrap();
         write!(
             out,
             r##"<polygon points="{bx_l:.1},{by:.1} {bx_r:.1},{by:.1} {peak_x:.1},{peak_y:.1}"/>"##
@@ -550,7 +567,7 @@ fn render_settlements(world: &WorldData, out: &mut String) {
 
         let scale = match s.tier {
             SettlementTier::Capital => 1.0,
-            SettlementTier::Town => 0.75,
+            SettlementTier::Town => town_scale(s.population),
             SettlementTier::Village => 0.0, // village uses a uniform tinted dot
         };
 
@@ -650,6 +667,15 @@ fn tier_class(tier: SettlementTier) -> &'static str {
         SettlementTier::Town => "town",
         SettlementTier::Village => "village",
     }
+}
+
+/// Town glyph scale as a function of the settlement's normalized
+/// population proxy in `(0, 1]`. Towns range 0.6×–0.95× the capital
+/// glyph so the Christaller hierarchy's population spread is legible at
+/// a glance instead of every town rendering at a fixed 0.75×. Capitals
+/// are always 1.0 (handled by the caller); villages collapse to a dot.
+fn town_scale(population: f32) -> f32 {
+    (0.55 + population * 0.4).clamp(0.6, 0.95)
 }
 
 fn darken_color(color: [u8; 3], factor: f32) -> String {
@@ -1347,4 +1373,28 @@ fn shared_edge(a: &[u32], b: &[u32]) -> Option<(u32, u32)> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn town_scale_grows_with_population_and_stays_bounded() {
+        // The whole point of the feature: a more-populous town renders a
+        // visibly bigger glyph than a small one.
+        assert!(
+            town_scale(0.9) > town_scale(0.3),
+            "higher population must produce a larger town glyph"
+        );
+        // Stay inside the documented 0.6×–0.95× band so towns never
+        // out-size a capital (1.0×) or shrink into village territory.
+        for p in [0.0_f32, 0.1, 0.5, 0.9, 1.0] {
+            let s = town_scale(p);
+            assert!(
+                (0.6..=0.95).contains(&s),
+                "town_scale({p}) = {s} escaped the [0.6, 0.95] band"
+            );
+        }
+    }
 }

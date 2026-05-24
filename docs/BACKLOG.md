@@ -515,33 +515,6 @@ guess at value-per-day. Re-prioritize freely.
   spaced by `hash_offset()`-driven jitter for the hand-drawn feel.
 - **Origin.** Phase 3e polish brainstorm, current session.
 
-### Mountain depth shadow
-
-- **Why deferred.** Tolkien-style mountain triangles render flat
-  with optional snowcap. Adding a sub-triangle shadow under each
-  peak (offset down-right, semi-transparent) would give them
-  perceived 3D depth at modest visual cost.
-- **Trigger for revival.** Mountains read as "stickers on a map"
-  rather than "land features." Or the user wants more dramatic
-  topography emphasis.
-- **Cost.** ~1h. Per-mountain extra polygon offset 1–2 px down-right
-  in semi-transparent dark brown, drawn under the main triangle.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
-### Town size variation by population
-
-- **Why deferred.** Today all town glyphs render at 0.75× the
-  capital scale regardless of `Settlement.population`. The Christaller
-  hierarchy in `polities.rs` already differentiates capital / town /
-  village; could push that further by scaling town glyphs by
-  population proxy (e.g., 0.6× – 0.9× linearly with population).
-- **Trigger for revival.** Multi-town polities where the ranking of
-  towns isn't visually obvious. Or a feature where the user can
-  inspect/click a town for population.
-- **Cost.** ~30m to wire `Settlement.population` into the glyph
-  scale.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
 ### Roads differentiated by trunk vs branch
 
 - **Why deferred.** `pick_towns` builds trunk-and-branch road

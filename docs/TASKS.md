@@ -238,6 +238,25 @@ depending on whether you want visual payoff or world-shape depth next.
 diamonds. The screenshot exists; refinement items above are
 incremental polish.
 
+### Phase 3e polish (post-MVP)
+
+Promoted from `docs/BACKLOG.md` Render section — trigger fired: user
+asked to finish all Phase-3e polish before moving to Phase 4.
+
+- [x] Town size variation by population — town glyphs scale 0.6×–0.95×
+  with `Settlement.population` (`town_scale`). Unit-tested.
+- [x] Mountain depth shadow — semi-transparent offset triangle under
+  each peak (`class="mtn-shadow"`). Pinned in `svg_invariants`.
+- [ ] Irregular parchment edge burn — hash-positioned dark stains.
+- [ ] Ocean hatching / contour texture.
+- [ ] Polity border lines — trace shared edges across `control[]`.
+- [ ] Roads differentiated by trunk vs branch.
+- [ ] Sacred sites differentiated by pantheon.
+- [ ] Major-river + lake names (needs naming-stage extension).
+- [ ] Curve-along-feature labels (rivers / mountain ranges).
+- [ ] Lake labels.
+- [ ] Imhof simulated-annealing label placement.
+
 ---
 
 ## Cross-cutting / hygiene

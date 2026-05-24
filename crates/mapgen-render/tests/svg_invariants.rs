@@ -626,6 +626,50 @@ fn synthetic_world_for_glyph_matrix() -> mapgen_core::WorldData {
     world
 }
 
+/// Minimal world carrying a single ALPINE peak (biome 11) at high
+/// elevation, with no coast / society / hydrology. Just enough for
+/// `render_mountains` to fire exactly once so the depth-shadow marker
+/// is unambiguous to assert.
+fn world_with_one_alpine_peak() -> mapgen_core::WorldData {
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 200.0;
+    world.mesh.height = 200.0;
+    world.mesh.sites = vec![[100.0, 100.0]];
+    world.mesh.cell_vertices = vec![vec![]];
+    world.mesh.neighbors = vec![vec![]];
+    world.mesh.coast = vec![false];
+    world.terrain.elevation = vec![0.8];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0)];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![11]; // ALPINE
+    world.climate.temperature = vec![0.2];
+    world.climate.precipitation = vec![0.2];
+    world
+}
+
+#[test]
+fn ornate_antique_mountains_cast_a_depth_shadow() {
+    // BACKLOG "Mountain depth shadow": each Tolkien triangle now drops a
+    // semi-transparent offset shadow beneath it so peaks read as 3D land
+    // features. Pin the shadow primitive so a future refactor of
+    // render_mountains can't silently drop it back to flat stickers.
+    let world = world_with_one_alpine_peak();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    assert!(
+        svg.contains(r#"class="mtn-shadow""#),
+        "alpine peak rendered without a depth-shadow polygon"
+    );
+    // The shadow must sit *under* the main peak triangle (painted
+    // first), else it would occlude the mountain instead of grounding
+    // it. Assert the shadow's opening tag precedes the solid fill.
+    let shadow_at = svg.find(r#"class="mtn-shadow""#).unwrap();
+    let group_at = svg.find(r#"class="mountains""#).unwrap();
+    assert!(
+        group_at < shadow_at,
+        "mtn-shadow emitted outside the mountains group"
+    );
+}
+
 #[test]
 fn ornate_antique_dispatches_glyph_for_every_icon_arch_tier_combination() {
     // The Phase 3e ornate render is contracted to derive settlement
