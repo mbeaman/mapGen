@@ -49,7 +49,11 @@ use crate::{
 ///   it as actor/patient on its `MegabeastRise` / `MegabeastSlain` events. Both
 ///   goldens re-anchor for the `schema_version` byte; `seed42_full` additionally
 ///   for the new entities + event actor refs.
-pub const SCHEMA_VERSION: u32 = 12;
+/// * v13 — Phase 4k: new `ArcKind::Conquest` variant (a plain war of expansion,
+///   distinct from HolyWar / DynasticConflict / Chronicle). Both goldens
+///   re-anchor for the `schema_version` byte; `seed42_full` additionally for the
+///   re-woven arcs (HolyWar now requires a real schism; wars cite schisms).
+pub const SCHEMA_VERSION: u32 = 13;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {

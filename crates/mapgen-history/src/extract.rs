@@ -136,23 +136,30 @@ fn extract_arcs(world: &WorldData) -> Vec<NarrativeArc> {
 
 fn classify(members: &[usize], evs: &[mapgen_core::Event]) -> ArcKind {
     let has = |pred: &dyn Fn(&EventKind) -> bool| members.iter().any(|&i| pred(&evs[i].kind));
-    if members.iter().any(|&i| {
-        matches!(evs[i].kind, EventKind::WarDeclared)
-            && matches!(
-                evs[i].casus_belli,
-                Some(mapgen_core::CasusBelli::ReligiousSchism)
-            )
-    }) {
+    // HolyWar only when an actual schism is in the thread — not merely a war
+    // tagged `ReligiousSchism` (a plain inter-faith border war), which used to
+    // brand most wars holy. The schism→war cause edge puts the schism in the arc.
+    if has(&|k| matches!(k, EventKind::Schism)) {
         ArcKind::HolyWar
     } else if has(&|k| {
         matches!(
             k,
-            EventKind::MegabeastSlain | EventKind::MegabeastRise | EventKind::ProphecyFulfilled
+            EventKind::MegabeastSlain
+                | EventKind::MegabeastRise
+                | EventKind::ProphecyFulfilled
+                | EventKind::Ascension
         )
     }) {
         ArcKind::HeroSaga
     } else if has(&|k| matches!(k, EventKind::Succession | EventKind::ClaimAsserted)) {
         ArcKind::DynasticConflict
+    } else if has(&|k| {
+        matches!(
+            k,
+            EventKind::WarDeclared | EventKind::BattleFought | EventKind::Siege
+        )
+    }) {
+        ArcKind::Conquest
     } else {
         ArcKind::Chronicle
     }
@@ -167,6 +174,8 @@ fn title_for(kind: ArcKind, key: &[EntityId], world: &WorldData) -> String {
         (ArcKind::DynasticConflict, None) => "A Disputed Succession".to_string(),
         (ArcKind::HolyWar, Some(n)) => format!("The War of Faith of {n}"),
         (ArcKind::HolyWar, None) => "A War of Faith".to_string(),
+        (ArcKind::Conquest, Some(n)) => format!("The Conquests of {n}"),
+        (ArcKind::Conquest, None) => "A War of Conquest".to_string(),
         (ArcKind::Chronicle, Some(n)) => format!("The Chronicle of {n}"),
         (ArcKind::Chronicle, None) => "A Chronicle of the Age".to_string(),
     }

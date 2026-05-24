@@ -648,6 +648,7 @@ fn causal_links_are_acyclic_and_follow_the_grammar() {
                 | ("Succession", "Death")
                 | ("WarDeclared", "Succession")
                 | ("WarDeclared", "ClaimAsserted")
+                | ("WarDeclared", "Schism")
                 | ("CityAbandoned", "Siege")
         )
     };

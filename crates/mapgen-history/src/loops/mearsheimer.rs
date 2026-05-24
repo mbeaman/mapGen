@@ -125,6 +125,16 @@ fn polity_religion(world: &WorldData, pid: usize) -> Option<u16> {
     world.religions.religion_id.get(cap).copied().flatten()
 }
 
+/// If faiths `ra` and `rb` are the two sides of a recorded schism (a sect and
+/// the parent it broke from), the schism event that split them — the cause of a
+/// genuine war of religion. `None` for same-faith or unrelated-faith pairs.
+fn schism_link(state: &SimState, ra: Option<u16>, rb: Option<u16>) -> Option<mapgen_core::EventId> {
+    let (ra, rb) = (ra?, rb?);
+    state.schism_parent.iter().find_map(|&(sect, parent, ev)| {
+        ((ra == sect && rb == parent) || (ra == parent && rb == sect)).then_some(ev)
+    })
+}
+
 /// Whether polities `a` and `b` currently share a controlled border (a cell of
 /// one adjacent to a cell of the other). O(cells); only called when a war's
 /// ignition roll has already passed.
@@ -224,14 +234,21 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         .find(|&&(x, y, _, _)| x == a as u16 && y == b as u16)
         .map(|&(_, _, _, ev)| ev);
     let (ra, rb) = (polity_religion(ctx.world, a), polity_religion(ctx.world, b));
+    // A *war of religion* is specifically orthodox-vs-heterodox: one side follows
+    // a sect that broke from the other's faith. A mere difference between two
+    // unrelated faiths is an ordinary border war (it gets no religious framing,
+    // so the chronicle doesn't brand every neighbour-war a holy war).
+    let schism_ev = schism_link(ctx.state, ra, rb);
     let casus = if claim_ev.is_some() {
         CasusBelli::DynasticClaim
-    } else if ra.is_some() && rb.is_some() && ra != rb {
-        // Different faiths — a war of religion (schisms deepen these divides).
+    } else if schism_ev.is_some() {
         CasusBelli::ReligiousSchism
     } else {
         CasusBelli::FrontierIncident
     };
+    // Cite the casus event (claim or schism) as the war's cause, so the war
+    // weaves into that thread's arc.
+    let cause = claim_ev.or(schism_ev);
 
     let mut war = Emit::new(
         year,
@@ -242,7 +259,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     )
     .actors(&[ruler_a, ruler_b])
     .casus(casus);
-    if let Some(ce) = claim_ev {
+    if let Some(ce) = cause {
         war = war.causes(&[ce]);
     }
     let war_ev = war.push(ctx.world);

@@ -98,6 +98,11 @@ pub struct SimState {
     /// freezes and it stops warring / being a war target — no more "throne of a
     /// realm that owns nothing".
     pub dissolved: Vec<bool>,
+    /// Schisms that have happened: `(sect_religion_index, parent_religion_index,
+    /// schism_event)`. A war between a polity following the sect and one following
+    /// its parent faith is a genuine *war of religion* and cites the schism as its
+    /// cause — distinct from an ordinary border war between unrelated faiths.
+    pub schism_parent: Vec<(u16, u16, EventId)>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -200,6 +205,7 @@ impl SimState {
             active_megabeasts: Vec::new(),
             pending_prophecies: Vec::new(),
             dissolved: vec![false; n_pol],
+            schism_parent: Vec::new(),
         }
     }
 }

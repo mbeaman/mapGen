@@ -5,8 +5,10 @@
 //! Phase 4g: schisms mint a splinter `Entity::Religion` (the sect) and a
 //! `Schism` event referencing the parent faith. Per-cell adherence / sect
 //! *spread* is deferred; the schism is recorded as an entity + event for the
-//! chronicle, and religious difference between polities drives `ReligiousSchism`
-//! wars in the Mearsheimer loop.
+//! chronicle. A later war between a polity of the sect and one of the parent
+//! faith reads as a war of religion (`ReligiousSchism` casus) and cites this
+//! schism as its cause (4k) — so the schism and its wars weave into one HolyWar
+//! arc. A mere difference between two *unrelated* faiths is just a border war.
 
 use mapgen_core::{generate_name, Entity, EntityId, EventKind, Religion, WorldData};
 
@@ -80,7 +82,7 @@ fn schism(ctx: &mut TickCtx, ri: usize, year: i32) {
     }
 
     let cell = parent.sacred_sites.first().copied().unwrap_or(0);
-    Emit::new(
+    let schism_ev = Emit::new(
         year,
         EventKind::Schism,
         cell,
@@ -93,6 +95,11 @@ fn schism(ctx: &mut TickCtx, ri: usize, year: i32) {
     .actors(&[splinter_id])
     .patients(&[parent_id])
     .push(ctx.world);
+
+    // Remember the parent↔sect split so a later war between a polity of the
+    // sect and one of the parent faith reads as a war of religion that cites
+    // this schism (Mearsheimer's `resolve_war`).
+    ctx.state.schism_parent.push((new_ri, ri as u16, schism_ev));
 }
 
 /// Mint (once) an `Entity::Religion` mirror of the original religion at index

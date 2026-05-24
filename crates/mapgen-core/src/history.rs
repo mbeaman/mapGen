@@ -72,6 +72,10 @@ pub enum ArcKind {
     HeroSaga,
     /// Succession crisis or dynastic claim driving conflict.
     DynasticConflict,
+    /// A war of expansion between realms — no schism, no dynastic claim, just
+    /// territory. Appended in Phase 4k (append-only). Keeps plain border wars
+    /// out of the catch-all `Chronicle`.
+    Conquest,
     /// Anything else linked and salient.
     Chronicle,
 }
