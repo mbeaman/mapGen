@@ -247,8 +247,10 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   with `Settlement.population` (`town_scale`). Unit-tested.
 - [x] Mountain depth shadow — semi-transparent offset triangle under
   each peak (`class="mtn-shadow"`). Pinned in `svg_invariants`.
-- [ ] Irregular parchment edge burn — hash-positioned dark stains.
-- [ ] Ocean hatching / contour texture.
+- [x] Irregular parchment edge burn — hash-positioned dark stains on
+  the vignette (`class="edge-stain"`).
+- [x] Ocean hatching / contour texture — faint horizontal dashes on
+  ~40% of sea cells (`class="ocean-hatch"`).
 - [ ] Polity border lines — trace shared edges across `control[]`.
 - [ ] Roads differentiated by trunk vs branch.
 - [ ] Sacred sites differentiated by pantheon.

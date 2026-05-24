@@ -500,21 +500,6 @@ guess at value-per-day. Re-prioritize freely.
   different `control[]` values, draw as a dashed polyline group.
 - **Origin.** Phase 3e polish brainstorm, current session.
 
-### Ocean hatching / contour texture
-
-- **Why deferred.** Deep + shallow ocean today are flat fills with
-  the parchment radial-gradient bleeding through. Real antique maps
-  often have horizontal hatching, stippling, or fanning current
-  lines to give the ocean visual texture without making it dominant.
-  Adds rendering cost (more polylines), so deferring until aesthetic
-  payoff justifies the bytes.
-- **Trigger for revival.** Side-by-side with the target_aesthetic.svg
-  reference confirms ocean texture is the biggest missing element.
-  Or the rendered SVG starts feeling "empty" on large oceanic seeds.
-- **Cost.** ~half-day. Generate hatching lines parallel to coast,
-  spaced by `hash_offset()`-driven jitter for the hand-drawn feel.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
 ### Roads differentiated by trunk vs branch
 
 - **Why deferred.** `pick_towns` builds trunk-and-branch road
@@ -544,20 +529,6 @@ guess at value-per-day. Re-prioritize freely.
   has 1–2 religions so the distinction is minimal; matters more on
   seeds that surface 3 religions.
 - **Cost.** ~half-day for 6 small SVG glyph functions + dispatch.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
-### Irregular parchment edge burn
-
-- **Why deferred.** Current edge-burn vignette uses a smooth radial
-  gradient — clean but mathematically uniform. Real antique parchment
-  burns irregularly (some corners more than others, occasional dark
-  splotches mid-edge). Adding 4–6 hash-positioned dark stains along
-  the edge would humanize the gradient.
-- **Trigger for revival.** Vignette starts feeling "Photoshop filter"
-  rather than "real antique." Or alongside any aesthetic-pass
-  redesign.
-- **Cost.** ~1h. Stain SVG primitives positioned via hash_offset()
-  along the canvas perimeter.
 - **Origin.** Phase 3e polish brainstorm, current session.
 
 ### Lake labels

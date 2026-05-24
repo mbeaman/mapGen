@@ -100,6 +100,7 @@ pub fn render(world: &WorldData) -> String {
     out.push_str(r##"<rect width="100%" height="100%" fill="url(#parchment)"/>"##);
 
     render_land_fill(world, &mut out);
+    render_ocean_hatching(world, &mut out);
     render_coastline_ripples(world, &mut out);
     render_rivers(world, &mut out);
     render_mountains(world, &mut out);
@@ -114,7 +115,7 @@ pub fn render(world: &WorldData) -> String {
     // Decorative top-of-stack overlays. The edge-burn overlay darkens
     // the periphery (intentionally fading edge labels into "aged"
     // shadow); compass + cartouche sit on top, untouched.
-    render_edge_burn(&mut out);
+    render_edge_burn(w, h, &mut out);
     render_compass(w, h, &mut out);
     render_cartouche(w, h, &mut out);
 
@@ -145,6 +146,40 @@ fn render_land_fill(world: &WorldData, out: &mut String) {
         }
         write!(out, r##"" fill="{fill}" fill-opacity="0.75"/>"##).unwrap();
     }
+}
+
+/// Antique ocean engraving: short faint horizontal hatch dashes
+/// scattered across sea cells, the way old maps lined the water with
+/// fine horizontal strokes to give it texture without dominating the
+/// land. Sparse (~40% of sea cells) and low-opacity so the parchment
+/// still reads through. Dash length / vertical jitter are hash-driven
+/// for a hand-engraved, broken-line feel; drawn over the flat sea fill
+/// but under the coastline ripples so the coast stays crisp.
+fn render_ocean_hatching(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let elev = &world.terrain.elevation;
+    out.push_str(
+        r##"<g class="ocean-hatch" stroke="#5a7088" stroke-width="0.5" stroke-opacity="0.28" stroke-linecap="round">"##,
+    );
+    for i in 0..mesh.cell_count() {
+        if elev.get(i).copied().unwrap_or(0.0) > 0.0 {
+            continue; // land
+        }
+        if hash_offset(i as u32, 7) < 0.2 {
+            continue; // sparse: ~40% of sea cells carry a dash
+        }
+        let site = mesh.sites[i];
+        let len = 7.0 + hash_offset(i as u32, 8).abs() * 6.0;
+        let y = site[1] + hash_offset(i as u32, 9) * 4.0;
+        write!(
+            out,
+            r##"<line x1="{:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}"/>"##,
+            site[0] - len * 0.5,
+            site[0] + len * 0.5,
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
 }
 
 /// Four offset coastline strokes hand-perturbed by `roughr` (the Rust
@@ -1164,10 +1199,47 @@ fn xml_escape(s: &str) -> String {
 /// than the parchment gradient underneath (which tints the background);
 /// this one darkens labels and glyphs that sit near the canvas edge,
 /// matching the look of a real burnt-edge antique map.
-fn render_edge_burn(out: &mut String) {
+fn render_edge_burn(w: f32, h: f32, out: &mut String) {
     out.push_str(
-        r##"<g class="edge-burn"><rect width="100%" height="100%" fill="url(#edge-burn)" pointer-events="none"/></g>"##,
+        r##"<g class="edge-burn"><rect width="100%" height="100%" fill="url(#edge-burn)" pointer-events="none"/>"##,
     );
+    // Irregular burn stains: a handful of soft dark blobs scattered
+    // around the perimeter so the aging reads as real scorching — some
+    // corners darker than others, occasional splotch mid-edge — rather
+    // than the mathematically uniform radial gradient underneath.
+    // Positions / sizes / opacities are hash-driven (deterministic).
+    const STAINS: u32 = 7;
+    for k in 0..STAINS {
+        let t = (k as f32 + 0.5) / STAINS as f32; // spread around perimeter
+        let (px, py) = perimeter_point(t, w, h);
+        let cx = px + hash_offset(900 + k, 1) * w * 0.05;
+        let cy = py + hash_offset(900 + k, 2) * h * 0.05;
+        let r = w.min(h) * 0.05 * (0.6 + hash_offset(900 + k, 3).abs() * 0.9);
+        let op = 0.16 + hash_offset(900 + k, 4).abs() * 0.22;
+        write!(
+            out,
+            r##"<ellipse class="edge-stain" cx="{cx:.1}" cy="{cy:.1}" rx="{r:.1}" ry="{ry:.1}" fill="#160f06" fill-opacity="{op:.2}" pointer-events="none"/>"##,
+            ry = r * 0.7,
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+/// Map `t` in `[0, 1)` to a point walking clockwise around the canvas
+/// rectangle perimeter, starting at the top-left corner. Used to scatter
+/// edge-burn stains along the border.
+fn perimeter_point(t: f32, w: f32, h: f32) -> (f32, f32) {
+    let p = t.fract() * 2.0 * (w + h);
+    if p < w {
+        (p, 0.0)
+    } else if p < w + h {
+        (w, p - w)
+    } else if p < 2.0 * w + h {
+        (w - (p - w - h), h)
+    } else {
+        (0.0, h - (p - 2.0 * w - h))
+    }
 }
 
 /// Compass rose in the NW corner — an 8-point star with 4 long

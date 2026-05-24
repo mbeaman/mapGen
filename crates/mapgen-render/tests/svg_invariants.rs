@@ -626,6 +626,36 @@ fn synthetic_world_for_glyph_matrix() -> mapgen_core::WorldData {
     world
 }
 
+#[test]
+fn ornate_antique_textures_ocean_and_burns_edges() {
+    // Two BACKLOG render-polish items: faint horizontal ocean hatching,
+    // and irregular dark stains layered onto the edge-burn vignette so
+    // the aging reads as real scorching rather than a uniform gradient.
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    // Ocean hatching group exists and actually carries dashes (seed 42
+    // is mostly sea). Scope the line check to the group so river/glyph
+    // <line> elements elsewhere can't mask an empty hatch layer.
+    let start = svg
+        .find(r#"<g class="ocean-hatch""#)
+        .expect("ocean hatching group missing");
+    let end = svg[start..]
+        .find("</g>")
+        .expect("ocean-hatch group unclosed")
+        + start;
+    assert!(
+        svg[start..end].contains("<line"),
+        "ocean-hatch group emitted no hatch dashes on a mostly-sea world"
+    );
+
+    // Irregular edge-burn stains.
+    assert!(
+        svg.contains(r#"class="edge-stain""#),
+        "edge-burn vignette missing its irregular dark stains"
+    );
+}
+
 /// Minimal world carrying a single ALPINE peak (biome 11) at high
 /// elevation, with no coast / society / hydrology. Just enough for
 /// `render_mountains` to fire exactly once so the depth-shadow marker
