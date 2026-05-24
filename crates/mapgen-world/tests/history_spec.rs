@@ -45,6 +45,12 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::ClaimAsserted
             | EventKind::Succession
             | EventKind::Schism
+            | EventKind::MegabeastRise
+            | EventKind::MegabeastSlain
+            | EventKind::Ascension
+            | EventKind::ArtifactForged
+            | EventKind::ProphecyUttered
+            | EventKind::ProphecyFulfilled
     )
 }
 
@@ -522,6 +528,53 @@ fn schisms_spawn_drifted_sects_referencing_their_parent() {
         }
     }
     assert!(schisms >= 1, "expected at least one schism on seed 42");
+}
+
+#[test]
+fn hero_sagas_are_causally_linked_and_rare() {
+    // 4h: foreshadow→payoff links. Every slaying cites the beast's rise; every
+    // fulfilled prophecy cites its utterance. Legendary events are rare.
+    let world = generate_full(fixed(42));
+    let ids = |k: fn(&EventKind) -> bool| -> std::collections::HashSet<u32> {
+        world
+            .events
+            .events
+            .iter()
+            .filter(|e| k(&e.kind))
+            .map(|e| e.id.0)
+            .collect()
+    };
+    let rises = ids(|k| matches!(k, EventKind::MegabeastRise));
+    let utterances = ids(|k| matches!(k, EventKind::ProphecyUttered));
+
+    let mut slayings = 0;
+    let mut fulfilments = 0;
+    for e in &world.events.events {
+        match e.kind {
+            EventKind::MegabeastSlain => {
+                slayings += 1;
+                assert!(
+                    e.cause_ids.iter().any(|c| rises.contains(&c.0)),
+                    "a slaying must cite the beast's rise"
+                );
+            }
+            EventKind::ProphecyFulfilled => {
+                fulfilments += 1;
+                assert!(
+                    e.cause_ids.iter().any(|c| utterances.contains(&c.0)),
+                    "a fulfilled prophecy must cite its utterance"
+                );
+            }
+            _ => {}
+        }
+    }
+    assert!(slayings >= 1, "expected at least one megabeast slaying");
+    assert!(fulfilments >= 1, "expected at least one fulfilled prophecy");
+    assert!(
+        rises.len() <= 30,
+        "megabeasts should be rare (legendary), got {}",
+        rises.len()
+    );
 }
 
 #[test]

@@ -395,6 +395,21 @@ artifact that justified the pick, and the commit that landed the value.
 * **Source:** Phase 4g; `loops/schism.rs` + `polity_religion` in
   `loops/mearsheimer.rs`.
 
+### Hero / megabeast (4h) — `loops/hero.rs`
+
+* **Current:** `PROPHECY_PROB = 0.020`/yr, `MEGABEAST_PROB = 0.025`/yr,
+  `SLAY_PROB = 0.18`/yr per active beast, `HERO_AGE = 25`.
+* **Why these values:** legendary events must be *rare* (the DA flagged 4h as the
+  most speculative loop — ship minimal). These give seed 42 ~7 hero-sagas over
+  500 years (rise → champion → slaying → artifact → prophecy fulfilled), not a
+  flood. `SLAY_PROB = 0.18` ⇒ a beast rampages ~5–6 years before a champion ends
+  it (occasionally slain the same year if one is ready). Prophecies slightly
+  rarer than beasts so some lapse unfulfilled (Phase-5 lacunae). All world-scale
+  (not per-polity).
+* **Method:** tuned against seed 42 (saga count + rarity); foreshadow→payoff
+  cause links asserted in `history_spec`.
+* **Source:** Phase 4h; `loops/hero.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

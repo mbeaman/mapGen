@@ -482,22 +482,31 @@ Open findings folded into the substages below:
   covers casus presence. No schema change (v10; `Religion` reused); `seed42_full`
   re-anchored. `just check` green. Knobs in `docs/tuning_log.md`.
 
-### Phase 4h — Hero/megabeast + Artifacts + Prophecy + mythic ages *(highest-risk; ship minimal)*
+### Phase 4h — Hero/megabeast + Artifacts + Prophecy *(shipped; ages moved to 4i)*
 
-- [ ] (20m) **(review #2) fmath-purity guard — do this first.** 4a–4e use only
-  arithmetic, but 4h may want transcendentals (decay curves, etc.). Add a
-  source-scan test asserting `mapgen-history` calls no raw `f32::{sin,cos,exp,
-  ln,powf,...}` — route any through `mapgen_core::fmath` to keep native↔wasm
-  identical.
-- [ ] (1-2d) `MegabeastRise`/`MegabeastSlain`, hero `Ascension`/`Return`,
-  `ArtifactForged`/`Stolen`/`Destroyed` (ordered `provenance`),
-  `ProphecyUttered`/`ProphecyFulfilled` (pending-prophecy queue; unfulfilled →
-  Phase-5 `lacunae`). Mythic-age framing → `HistoryData.ages` — **fixed-window
-  ages first**, not turbulence detection.
-- [ ] (4h) Spec: every `ProphecyFulfilled` cites its `ProphecyUttered`;
-  `MegabeastSlain` cites a prior `MegabeastRise`; artifact provenance ordered
-  forge→steal→destroy; ages partition [0,500] with no gaps/overlaps; determinism
-  pin. Re-anchor.
+- [x] **(review #2) fmath-purity guard** — `tests/fmath_purity.rs` scans
+  `mapgen-history/src` for raw `f32`/`f64` transcendentals (`.exp(`/`.sqrt(`/
+  `f32::sin`/…); `.powi(` exempt). 4a–4h are arithmetic-only so it passes;
+  guards future loops against breaking native↔wasm.
+- [x] `loops/hero.rs` (promoted): rare world-scale legendary events forming a
+  saga — `ProphecyUttered` (queued) · `MegabeastRise` (named beast at a capital,
+  tracked) · per active beast a champion `Ascension` + `MegabeastSlain` (**cites
+  the rise**) + `ArtifactForged` (mints an `Artifact` entity) + the oldest
+  pending prophecy `ProphecyFulfilled` (**cites the utterance**). Unfulfilled
+  prophecies remain (Phase-5 `lacunae`). SimState: `active_megabeasts` +
+  `pending_prophecies`.
+- [x] Seed 42: 7 sagas over 500 years (7 rise/slain/ascension/artifact, 6
+  prophecies / 4 fulfilled). All slayings cite their rise, all fulfilments cite
+  their utterance. Rare + legendary, no tuning needed. Artifact `provenance`
+  (forge→steal→destroy) deferred — the event chain carries it; full
+  steal/destroy lifecycle is a later enrichment.
+- [x] Spec (`history_spec`): every `MegabeastSlain` cites a `MegabeastRise`,
+  every `ProphecyFulfilled` cites a `ProphecyUttered`, megabeasts are rare
+  (≤30). No schema change (v10; `Artifact{name}` reused); `seed42_full`
+  re-anchored. `just check` green. Knobs in `docs/tuning_log.md`.
+- Note: **mythic-age framing moved to 4i** — it needs the `HistoryData`
+  side-table that 4i creates alongside narrative arcs (both post-sim
+  scaffolding).
 
 ### Phase 4i — Uplevel capstone: causal chains + salience + rivalries + arcs
 

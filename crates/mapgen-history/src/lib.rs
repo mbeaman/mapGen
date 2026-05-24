@@ -13,7 +13,7 @@
 pub mod agent;
 pub mod loops;
 
-use mapgen_core::{splitmix64, EntityId, WorldData};
+use mapgen_core::{splitmix64, EntityId, EventId, WorldData};
 use rand_chacha::{
     rand_core::{RngCore, SeedableRng},
     ChaCha8Rng,
@@ -83,6 +83,12 @@ pub struct SimState {
     /// `world.religions.religions`), minted lazily by the schism loop so
     /// `Schism` events can reference the parent faith. `None` until minted.
     pub religion_entities: Vec<Option<EntityId>>,
+    /// Megabeasts currently ravaging the world: `(cell, rise_event, name)`.
+    /// A `MegabeastSlain` cites the stored rise event (foreshadow→payoff).
+    pub active_megabeasts: Vec<(u32, EventId, String)>,
+    /// `ProphecyUttered` event ids awaiting fulfillment; a heroic deed fulfils
+    /// the oldest, and any still pending at sim end are Phase-5 lacunae.
+    pub pending_prophecies: Vec<EventId>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -182,6 +188,8 @@ impl SimState {
             claims: Vec::new(),
             last_war: vec![i32::MIN; n_pol],
             religion_entities: vec![None; world.religions.religions.len()],
+            active_megabeasts: Vec::new(),
+            pending_prophecies: Vec::new(),
         }
     }
 }
