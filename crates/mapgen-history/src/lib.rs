@@ -12,6 +12,7 @@
 
 pub mod agent;
 pub(crate) mod emit;
+pub mod extract;
 pub mod loops;
 
 use mapgen_core::{splitmix64, EntityId, EventId, WorldData};
@@ -323,6 +324,9 @@ pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
             lp.tick(&mut ctx);
         }
     }
+
+    // Post-sim: weave the causal event graph into narrative arcs + mythic ages.
+    world.history = extract::build(world);
 }
 
 /// [`run`] with an injectable loop set — the seam tests use to count ticks and

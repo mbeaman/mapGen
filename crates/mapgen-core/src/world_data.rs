@@ -40,7 +40,11 @@ use crate::{
 ///   (lineage, titles, sex, culture). History populates `WorldData::entities`
 ///   with rulers / houses / dynasties / titles. Both goldens re-anchor for
 ///   the `schema_version` byte; `seed42_full` additionally for the entities.
-pub const SCHEMA_VERSION: u32 = 10;
+/// * v11 — Phase 4i: `WorldData::history` (`HistoryData` — mythic ages +
+///   narrative arcs woven from the causal event graph). `skip`-elided when
+///   empty; both goldens re-anchor for the `schema_version` byte, `seed42_full`
+///   additionally for the arcs/ages.
+pub const SCHEMA_VERSION: u32 = 11;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -80,6 +84,10 @@ pub struct WorldData {
     /// default. History sim and authored content populate this.
     #[serde(default)]
     pub patches: crate::patch::PatchData,
+    /// Phase 4i — narrative scaffolding (mythic ages + arcs) woven from the
+    /// event graph after the sim. `skip`-elided when empty.
+    #[serde(default, skip_serializing_if = "crate::history::HistoryData::is_empty")]
+    pub history: crate::history::HistoryData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

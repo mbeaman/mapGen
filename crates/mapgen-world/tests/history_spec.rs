@@ -667,6 +667,54 @@ fn causal_links_are_acyclic_and_follow_the_grammar() {
 }
 
 #[test]
+fn narrative_arcs_and_ages_are_well_formed() {
+    // 4i.3: the post-sim weave. Mythic ages partition the timeline with no gaps;
+    // arcs are multi-event threads referencing real events + characters.
+    let world = generate_full(fixed(42));
+    let h = &world.history;
+    let n_events = world.events.events.len() as u32;
+
+    assert!(!h.ages.is_empty(), "expected mythic ages");
+    // Ages tile [start, end) contiguously, in order.
+    for pair in h.ages.windows(2) {
+        assert_eq!(
+            pair[0].end_year, pair[1].start_year,
+            "ages must be contiguous"
+        );
+        assert!(
+            pair[0].start_year < pair[0].end_year,
+            "age has non-positive span"
+        );
+    }
+
+    assert!(!h.arcs.is_empty(), "expected narrative arcs");
+    let char_ids: std::collections::HashSet<u32> = world
+        .entities
+        .by_id
+        .iter()
+        .filter(|(_, e)| matches!(e, Entity::Character(_)))
+        .map(|(id, _)| id.0)
+        .collect();
+    for arc in &h.arcs {
+        assert!(arc.member_events.len() >= 3, "an arc threads ≥3 events");
+        assert!(!arc.title.is_empty(), "an arc has a title");
+        // climax + endpoints are members; all members are real events.
+        assert!(arc.member_events.contains(&arc.climax_event));
+        assert!(arc.member_events.contains(&arc.start_event));
+        assert!(arc.member_events.contains(&arc.end_event));
+        for ev in &arc.member_events {
+            assert!(ev.0 < n_events, "arc references a real event");
+        }
+        for ch in &arc.key_characters {
+            assert!(
+                char_ids.contains(&ch.0),
+                "arc key character resolves to a Character"
+            );
+        }
+    }
+}
+
+#[test]
 fn history_produces_major_events() {
     // Extended MVP exit criterion: at least three high-salience events
     // (major battles / collapses) for chronicles to anchor on.
