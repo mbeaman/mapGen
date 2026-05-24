@@ -12,7 +12,7 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `75c685c feat: named mountain ranges + spine labels (schema v8)` |
+| Latest commit | `cec14b2 docs(backlog): add multi-scale generation track + inter-scale research brief` |
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
@@ -61,13 +61,22 @@ git log -8 --oneline
 
 ## Currently in flight
 
-Nothing. Phase 3e (per architecture spec), the web-frontend MVP, and
-the full Phase-3e render-polish pass are all complete. Only one render
-item stays deferred in BACKLOG: a hand-authored `target_aesthetic.svg`
-(taste reference; user-deferred, revisit on a new style variant). Next
-direction is the user's call:
+**Phase 4 (history sim) is planned and drafted — `4a` is next to code.**
+The full task list is in `docs/TASKS.md` (`## Phase 4`); plan of record is
+`.claude/plans/cosmic-dreaming-comet.md`. Scope was expanded past the locked
+MVP to **all six causal loops + an uplevel layer** (user directive 2026-05-24,
+"time is not a factor" + "uplevel the output"); wiring is **Option B** (History
+becomes a `PipelineStage`, so it shows in the web live build-up and re-anchors
+`seed42_full` per output-changing substage). No Phase-4 code written yet — start
+at `4a` (schema v9 + `CausalLoop` trait + tick driver + pipeline wiring +
+determinism spec). Promoting Khaldun/succession/schism/hero and amending LOCKED
+ARCHITECTURE §2/§4 is task `4j`.
 
-- **Phase 4 (history sim).** Six causal loops (Turchin secular cycles
+Phase 3e (spec + polish), the web-frontend MVP, and the multi-scale BACKLOG
+track are all complete. Deferred render item: a hand-authored
+`target_aesthetic.svg` (taste reference; user-deferred).
+
+- **Phase 4 (history sim) — full plan.** Six causal loops (Turchin secular cycles
   + Khaldun dynasty decline + Mearsheimer offensive realism +
   Succession crises + Schism splits + Hero events). 500-year
   deterministic agent-based sim. Reads cultures + religions +

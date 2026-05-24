@@ -270,6 +270,197 @@ asked to finish all Phase-3e polish before moving to Phase 4.
 
 ---
 
+## Phase 4 — History simulation + event log (full six-loop scope)
+
+Goal: fill the empty `events` / `entities` log with a deterministic 500-year
+sim that reads cultures/religions/polities and writes a causally-linked,
+chronicler-ready history. **Scope expanded past the locked MVP** (was Turchin +
+Mearsheimer live, four stubbed) to **all six loops + the uplevel layer** —
+trigger fired: user directive 2026-05-24 ("time is not a factor" + "uplevel the
+output"). Forks resolved with user: full six-loop scope (amends LOCKED
+ARCHITECTURE §2/§4 in 4j); Option-B wiring (History is a `PipelineStage`, shows
+in the web live build-up, costs a `mapgen-world → mapgen-history` dep and a
+`seed42_full` re-anchor per output-changing substage). Plan of record:
+`.claude/plans/cosmic-dreaming-comet.md`.
+
+Approach: **hybrid system-dynamics backbone + agent-based character layer.** SD
+state vectors (population, carrying capacity, elite count, fiscal health,
+instability, asabiyyah, relative power) drive macro transitions over
+O(polities)≈8 actors/year; an ABM layer mints named Characters with lifecycles,
+lineages, and rivalries. Research basis: Turchin SDT, Ibn Khaldun asabiyyah,
+Mearsheimer/power-transition, DF legends mode, Crusader Kings, Caves of Qud.
+
+**Standing constraints for every substage:** determinism via hierarchical
+sub-seeding `splitmix64(master, Stage::History) → year → LoopId → entity_id`
+(re-rolling one loop can't perturb another — `LoopId` discriminants are
+append-only like `Stage`); all transcendentals through `mapgen_core::fmath`;
+`IndexMap`/`Vec`/`BTreeMap` only; `tests/history_spec.rs` follows the
+synthetic-passes-now / populate-RED-until-impl pattern (model:
+`cultures_spec.rs`); each output-changing commit re-anchors
+`seed42_full.blake3.txt`; `just check` green per commit, `just perf` within 1.5×
+after 4a and 4e.
+
+### Phase 4a — Schema v9 + `CausalLoop` trait + tick driver + pipeline wiring
+
+The foundation — over-invest in the determinism spec here; everything inherits it.
+
+- [ ] (1d) **Schema v9** (one bump, all additive, every field `#[serde(default)]`).
+  `mapgen-core/src/entities.rs`: new shared types `Trait` (repr(u8), append-only),
+  `Epithet{text,earned_year,source_event}`, `Relationship{other,kind:RelationKind,
+  since_year,origin_event,intensity,ended_year}`, `RelationKind`, appended
+  `Entity::Title` variant + `TitleHolding`. Extend `Character` (culture_id, sex,
+  traits, epithets, relationships, titles, birth/death_event, prestige),
+  `Dynasty`/`House` (founder, founded/extinct_year, culture_id, seat/cadet_of,
+  prestige), `Artifact`, `Claim`, `Site` (founding_event, founder), `Religion`
+  (founder_character, founding_event). `world_data.rs`: `WorldData.history:
+  HistoryData{ages, arcs, polity_relations}` + `SCHEMA_VERSION` 8→9. **Event struct
+  unchanged; `EventKind`/`CasusBelli` untouched (frozen).** Round-trip test for
+  `Entity::Title`.
+- [ ] (1d) **`CausalLoop` trait + tick driver** in `mapgen-history/src/lib.rs`:
+  `LoopId` enum (stable discriminants, fixed `ORDER`), `SimState` scratch (never
+  serialized), `HistoryParams{years:500,..}`, sub-seeding helpers, annual driver
+  looping `years` × loops in `ORDER`. Six **no-op** `impl CausalLoop` so it runs
+  500 empty years.
+- [ ] (2h) **Pipeline wiring (Option B).** `mapgen-world/Cargo.toml`: add
+  `mapgen-history` dep. `pipeline.rs`: `PipelineStage::History` after `Naming`;
+  `ORDER`→11; `id()/label()/weight()/run_stage()` arms; `run_stage` calls
+  `mapgen_history::run(&mut self.world, HistoryParams::default(), &mut
+  self.rng.stream(Stage::History))`.
+- [ ] (4h) **Determinism spec (the front-loaded risk).** Driver runs exactly
+  `years` ticks; `LoopId`/`year_seed`/`loop_seed` derivation deterministic **and
+  independent** (re-derive loop 3's seed, add a loop, loop 3 unchanged); extend the
+  `rng` test for `Stage::History` independence; fmath-purity check on
+  `mapgen-history`. Re-anchor `seed42_full` (schema byte; no events yet).
+
+### Phase 4b — Turchin demographic backbone → first events *(visible-value milestone)*
+
+- [ ] (1d) Per-region/polity logistic population vs carrying capacity (from
+  biome/agriculture inputs, in `SimState`); Malthusian stress threshold →
+  `Famine`/`Plague`/`Drought` events. **First events appear.** Provisional salience
+  from kind-weight.
+- [ ] (4h) Spec: event count grows with `years`; valid `year∈[0,years]`, real
+  `location` cell, monotonic IDs, `salience∈[0,1]`; famines correlate with
+  low-agriculture/drought cells (doc comment cites Turchin secular cycles);
+  determinism pin (byte-identical logs). Re-anchor.
+
+### Phase 4c — Agent layer: Characters, Houses, Dynasties, lineage, Titles
+
+- [ ] (1d) Per-polity ruling Characters (`born/died_year`, names via the Phase-3d
+  language engine in `naming.rs`), Houses→Dynasties, parent/child via
+  `Relationship`, one `Title` per polity + `TitleHolding`. Emits `Birth`/`Death`/
+  `Coronation`/`Marriage`.
+- [ ] (4h) Spec: `born_year ≤ died_year`; ruler→House→Dynasty chains valid; lineage
+  acyclic; coronation follows death; title-holdings have start/end events;
+  determinism pin. Re-anchor.
+
+### Phase 4d — Turchin fiscal half + Khaldun asabiyyah *(promotes Khaldun from Phase 6)*
+
+- [ ] (1d) Elite overproduction, fiscal health, instability (Turchin); asabiyyah
+  rise on frontier / decay in metropole over dynasty generations (Khaldun). Drives
+  rise/collapse → `CityFounded`/`CityAbandoned`/`Migration`/`Exile`; sets
+  `Polity.dissolved_year`.
+- [ ] (4h) Spec: asabiyyah ∈[0,1] decays monotonically in a stable dynasty absent
+  frontier pressure (cites Ibn Khaldun); fiscal collapse precedes dissolution;
+  instability rises with elite overproduction (cites Turchin); determinism pin.
+  Re-anchor.
+
+### Phase 4e — Mearsheimer power-transition wars + Claims *(first wars)*
+
+- [ ] (1-2d) In-sim relative power per polity (tech/military/population/territory);
+  dyadic ratios over `mesh.neighbors` adjacency; Thucydides-trap ignition. Emits
+  `WarDeclared`/`BattleFought`/`Siege`/`TreatySigned`/`AllianceFormed` with
+  `casus_belli`. Claims system (`Claim` entities + `ClaimAsserted` →
+  `CasusBelli::DynasticClaim`). Mutates `society.control[]`/`nations` →
+  **post-history political map.**
+- [ ] (4h) Spec: every `WarDeclared` has `casus_belli: Some`; participants adjacent
+  or share a claim; battles reference valid entity IDs; territory transfers conserve
+  total controlled cells; ≥1 event `salience ≥ 0.8`; post-sim `control[]` ≠ pre-sim;
+  determinism pin. **Re-check `just perf` (heaviest loop).** Re-anchor.
+
+### Phase 4f — Succession crises *(promotes succession from Phase 6)*
+
+- [ ] (1d) Ruler death + contested heirs (lineage from 4c, claims from 4e) →
+  `Succession`, succession wars, dormant claims activating.
+- [ ] (2h) Spec: every `Succession` follows a `Death`; contested cases reference ≥2
+  claimants; `Claim.dormant` flips correctly; no succession without a prior
+  coronation; determinism pin. Re-anchor.
+
+### Phase 4g — Religious schism *(promotes schism from Phase 6)*
+
+- [ ] (1d) Reads `world.religions`; alignment drift between adherent cultures →
+  `ReligionFounded`/`Schism`, `CasusBelli::ReligiousSchism`, splinter sect entities
+  inheriting + drifting alignment.
+- [ ] (2h) Spec: `Schism` references a parent religion; splinter inherits then
+  drifts alignment; schism-driven wars carry the right casus belli; determinism
+  pin. Re-anchor.
+
+### Phase 4h — Hero/megabeast + Artifacts + Prophecy + mythic ages *(highest-risk; ship minimal)*
+
+- [ ] (1-2d) `MegabeastRise`/`MegabeastSlain`, hero `Ascension`/`Return`,
+  `ArtifactForged`/`Stolen`/`Destroyed` (ordered `provenance`),
+  `ProphecyUttered`/`ProphecyFulfilled` (pending-prophecy queue; unfulfilled →
+  Phase-5 `lacunae`). Mythic-age framing → `HistoryData.ages` — **fixed-window
+  ages first**, not turbulence detection.
+- [ ] (4h) Spec: every `ProphecyFulfilled` cites its `ProphecyUttered`;
+  `MegabeastSlain` cites a prior `MegabeastRise`; artifact provenance ordered
+  forge→steal→destroy; ages partition [0,500] with no gaps/overlaps; determinism
+  pin. Re-anchor.
+
+### Phase 4i — Uplevel capstone: causal chains + salience + rivalries + arcs
+
+- [ ] (1d) **Causal chaining grammar** populated inline at emission, validated by a
+  debug check: fixed small cause-set per effect kind (war→casus event;
+  battle/siege→war; succession→death+claim; prophecy-fulfilled→uttered;
+  city-abandoned→siege/plague/famine/megabeast). Roots cite nothing. Fan-in cap 1-2.
+- [ ] (4h) **Persistent rivalries** — `BloodFeud`/`Rival` edges inherited across
+  generations preserving `origin_event`; **minimal first**: binary inherited-or-not,
+  dies on house extinction.
+- [ ] (4h) **Salience post-sim pass** — `clamp01(0.30·kind_weight + 0.25·actor_
+  prestige + 0.15·scale + 0.15·causal_depth + 0.10·rarity + 0.05·first_of_kind)`.
+  Fixed linear combo — **no tunable optimizer** (Refinery anti-pattern). Guarantees
+  ≥3 events ≥0.8.
+- [ ] (1d) **Narrative-arc extraction** → `HistoryData.arcs`: weakly-connected
+  components of the salience-floored cause-DAG sharing an actor/house/title/artifact
+  → `NarrativeArc{title,kind,start/climax/end_event,member_events,key_characters,
+  theme_tags,peak_salience}`. **3 arc kinds first** (HolyWar/HeroSaga/
+  DynasticConflict), rest = generic `Chronicle`.
+- [ ] (4h) **Phase-5 boundary API** in `mapgen-history` (unused until Phase 5):
+  `entity_brief`, `arc_slice` (events + transitive `cause_ids` closure),
+  `ner_lexicon` (closed proper-noun set; exact because all names are deterministic).
+- [ ] (2h) Spec: cause graph acyclic; ≥X% of wars have non-empty `cause_ids`; ≥3
+  events ≥0.8; a rivalry persists ≥2 generations on some seed; `extract_arcs(42)`
+  returns ≥1 multi-event arc; arc/age extraction is a pure function of the log.
+  Re-anchor.
+
+### Phase 4j — CLI + docs + perf + architecture amendment *(phase "D")*
+
+- [ ] (2h) `mapgen events --in world.json.gz --major` subcommand (MVP exit
+  criterion) in `mapgen-cli/src/main.rs`.
+- [ ] (2h) README pipeline diagram → 11 stages; check off this list;
+  `docs/tuning_log.md` Phase-4 section (growth rate, asabiyyah decay, war-ignition
+  power ratio, salience weights, arc/age thresholds); `docs/perf_baseline.md`
+  history-stage entry.
+- [ ] (1h) **Amend LOCKED `docs/ARCHITECTURE.md` §2/§4** — record six-loop scope +
+  the 2026-05-24 trigger (promotion of the four Phase-6 loops). Update
+  `docs/SESSION.md`. Update `docs/BACKLOG.md` (cataclysm-clock item's relation to
+  the now-live four loops).
+
+**Phase-4 acceptance (extended MVP exit):** `mapgen events --major` lists ≥3
+`salience ≥ 0.8` events; ≥200 events with populated `cause_ids`; `extract_arcs`
+returns named multi-event arcs; `render-42` shows the **post-history** political
+map; determinism pins prove byte-identical logs across runs and native↔wasm.
+
+**Risk register (from the plan's DA):** 4a is the foundation — review sub-seeding
+before 4b. 4h is the most speculative (strongest cut candidate; ship minimal).
+4i salience must stay a fixed linear combo. Schema-bloat guards: 5 RelationKinds /
+6 traits / 1 title-per-polity / 3 arc-kinds / fixed-window ages first; a field
+with no mechanical consumer doesn't ship. Perf: aggregate cells → ~8 per-polity
+state vectors once, run loops over O(polities) not O(cells); cache adjacency once.
+Lock-honoring fallback if direction changes: ship 4a–4e + 4i + 4j, route
+4f/4g/4h back to Phase 6.
+
+---
+
 ## Cross-cutting / hygiene
 
 - [ ] (15m) Bump `SCHEMA_VERSION` (currently v2) when the next breaking
