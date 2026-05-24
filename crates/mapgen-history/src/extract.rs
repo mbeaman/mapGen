@@ -14,6 +14,13 @@ use mapgen_core::{
 const ARC_FLOOR: f32 = 0.45;
 /// A causal cluster needs this many salient members to count as an arc.
 const MIN_ARC_EVENTS: usize = 3;
+/// A thread that doesn't span at least this many years must instead be a rich
+/// cluster (see `RICH_ARC_EVENTS`) to count — keeps single-year border
+/// skirmishes from each masquerading as a saga.
+const MIN_ARC_SPAN: i32 = 1;
+/// A single-year cluster this large still counts as an arc (a war that toppled a
+/// realm, or a full hero saga that played out in one year).
+const RICH_ARC_EVENTS: usize = 4;
 /// Number of mythic ages the timeline is split into.
 const N_AGES: i32 = 4;
 
@@ -92,6 +99,12 @@ fn extract_arcs(world: &WorldData) -> Vec<NarrativeArc> {
             continue;
         }
         members.sort_by_key(|&i| (evs[i].year, i));
+        // Tighten: a thread must span years or be a rich cluster — not a lone
+        // one-year skirmish.
+        let span_years = evs[*members.last().unwrap()].year - evs[members[0]].year;
+        if span_years < MIN_ARC_SPAN && members.len() < RICH_ARC_EVENTS {
+            continue;
+        }
 
         let kind = classify(&members, evs);
         let climax = *members
@@ -131,7 +144,45 @@ fn extract_arcs(world: &WorldData) -> Vec<NarrativeArc> {
             key_characters,
         });
     }
+    disambiguate_titles(&mut arcs);
     arcs
+}
+
+/// Append regnal-style numerals to any title shared by more than one arc, in
+/// chronological order ("The Wars of Vae I", "… II"), so a dynast who led
+/// several conflicts doesn't yield indistinguishable threads.
+fn disambiguate_titles(arcs: &mut [NarrativeArc]) {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for a in arcs.iter() {
+        *counts.entry(a.title.clone()).or_default() += 1;
+    }
+    let dups: Vec<String> = counts
+        .into_iter()
+        .filter(|&(_, c)| c > 1)
+        .map(|(t, _)| t)
+        .collect();
+    for title in dups {
+        let mut idxs: Vec<usize> = (0..arcs.len())
+            .filter(|&i| arcs[i].title == title)
+            .collect();
+        idxs.sort_by_key(|&i| arcs[i].start_event.0);
+        for (n, &i) in idxs.iter().enumerate() {
+            arcs[i].title = format!("{title} {}", roman(n + 1));
+        }
+    }
+}
+
+/// Minimal Roman numeral (1..=39 covers any realistic arc-title collision).
+fn roman(mut n: usize) -> String {
+    const TABLE: &[(usize, &str)] = &[(10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")];
+    let mut out = String::new();
+    for &(v, s) in TABLE {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
 }
 
 fn classify(members: &[usize], evs: &[mapgen_core::Event]) -> ArcKind {
@@ -199,36 +250,47 @@ fn frame_ages(world: &WorldData) -> Vec<MythicAge> {
     if span <= 0 {
         return Vec::new();
     }
-    let mut ages = Vec::new();
+
+    // Pass 1: per-age tally of heroic deeds and *acute* catastrophes (realms
+    // falling, plague, migration). War and famine are baseline — every age has
+    // them — so they don't discriminate one age from another.
+    let mut tally: Vec<(i32, i32, i32, i32)> = Vec::new(); // (start, end, heroic, dark)
     for k in 0..N_AGES {
         let start = k * span / N_AGES;
         let end = (k + 1) * span / N_AGES;
-        // Tally the window's character.
         let (mut heroic, mut dark) = (0i32, 0i32);
         for e in evs.iter().filter(|e| e.year >= start && e.year < end) {
             match e.kind {
                 EventKind::MegabeastSlain | EventKind::Ascension | EventKind::ProphecyFulfilled => {
                     heroic += 1
                 }
-                EventKind::CityAbandoned
-                | EventKind::Famine
-                | EventKind::Plague
-                | EventKind::Migration
-                | EventKind::WarDeclared => dark += 1,
+                EventKind::CityAbandoned | EventKind::Plague | EventKind::Migration => dark += 1,
                 _ => {}
             }
         }
+        tally.push((start, end, heroic, dark));
+    }
+
+    // Pass 2: classify each age *relative to the timeline's own average*, so the
+    // motifs actually vary (absolute thresholds made every age the same). An age
+    // above the mean in catastrophe reads Dark; above the mean in heroism reads
+    // Heroic; quiet on both reads Golden. (`x*n > sum` ⇔ `x > mean`, no rounding.)
+    let n = tally.len() as i32;
+    let sum_h: i32 = tally.iter().map(|t| t.2).sum();
+    let sum_d: i32 = tally.iter().map(|t| t.3).sum();
+    let mut ages = Vec::new();
+    for (k, &(start, end, heroic, dark)) in tally.iter().enumerate() {
         let motif = if k == 0 {
             AgeMotif::Founding
-        } else if heroic * 3 >= dark && heroic > 0 {
-            AgeMotif::Heroic
-        } else if dark > 0 {
+        } else if dark * n > sum_d && dark >= heroic {
             AgeMotif::Dark
+        } else if heroic * n > sum_h {
+            AgeMotif::Heroic
         } else {
             AgeMotif::Golden
         };
         ages.push(MythicAge {
-            name: age_name(motif, k),
+            name: age_name(motif, k as i32),
             start_year: start,
             end_year: end,
             motif,
@@ -249,4 +311,110 @@ fn age_name(motif: AgeMotif, index: i32) -> String {
         AgeMotif::Dark => "Strife",
     };
     format!("The {ordinal} Age, an Age of {epithet}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mapgen_core::Event;
+
+    fn ev(id: u32, year: i32, kind: EventKind) -> Event {
+        Event {
+            id: EventId(id),
+            year,
+            kind,
+            actors: Default::default(),
+            patients: Default::default(),
+            location: None,
+            cause_ids: Default::default(),
+            salience: 0.9,
+            casus_belli: None,
+            summary_canonical: String::new(),
+        }
+    }
+
+    #[test]
+    fn classify_picks_the_right_arc_kind() {
+        use EventKind::*;
+        let mk = |kinds: &[EventKind]| {
+            let evs: Vec<Event> = kinds
+                .iter()
+                .enumerate()
+                .map(|(i, k)| ev(i as u32, 0, k.clone()))
+                .collect();
+            let members: Vec<usize> = (0..evs.len()).collect();
+            classify(&members, &evs)
+        };
+        // HolyWar requires an actual schism in the thread, not merely a war.
+        assert_eq!(mk(&[WarDeclared, BattleFought, Schism]), ArcKind::HolyWar);
+        assert_eq!(
+            mk(&[MegabeastRise, Ascension, MegabeastSlain]),
+            ArcKind::HeroSaga
+        );
+        assert_eq!(
+            mk(&[ClaimAsserted, WarDeclared, BattleFought]),
+            ArcKind::DynasticConflict
+        );
+        // A plain war (no schism, no claim) is a Conquest — not dumped in Chronicle.
+        assert_eq!(mk(&[WarDeclared, BattleFought, Siege]), ArcKind::Conquest);
+        assert_eq!(mk(&[Birth, Death, Coronation]), ArcKind::Chronicle);
+    }
+
+    fn world_with(evs: Vec<Event>) -> WorldData {
+        let mut w = WorldData::default();
+        w.events.events = evs;
+        w
+    }
+
+    #[test]
+    fn frame_ages_classifies_relative_to_the_timeline() {
+        use EventKind::*;
+        // span ⇒ 400, four 100-year ages.
+        let mut evs = vec![ev(0, 10, Birth), ev(1, 399, Birth)];
+        for y in [110, 120, 130, 140, 150] {
+            let id = evs.len() as u32;
+            evs.push(ev(id, y, CityAbandoned)); // age 1: above-average catastrophe
+        }
+        for y in [210, 220, 230, 240, 250] {
+            let id = evs.len() as u32;
+            evs.push(ev(id, y, MegabeastSlain)); // age 2: above-average heroism
+        }
+        // age 3 (300..400): quiet — only the year-399 Birth.
+        let motifs: Vec<AgeMotif> = frame_ages(&world_with(evs))
+            .iter()
+            .map(|a| a.motif)
+            .collect();
+        assert_eq!(
+            motifs,
+            vec![
+                AgeMotif::Founding,
+                AgeMotif::Dark,
+                AgeMotif::Heroic,
+                AgeMotif::Golden,
+            ],
+        );
+    }
+
+    #[test]
+    fn disambiguate_titles_numbers_collisions_chronologically() {
+        let arc = |title: &str, start: u32| NarrativeArc {
+            title: title.to_string(),
+            kind: ArcKind::Conquest,
+            member_events: vec![EventId(start)],
+            start_event: EventId(start),
+            climax_event: EventId(start),
+            end_event: EventId(start),
+            key_characters: vec![],
+        };
+        let mut arcs = vec![
+            arc("The Wars of Vae", 30),
+            arc("The Wars of Vae", 10),
+            arc("Unique", 5),
+        ];
+        disambiguate_titles(&mut arcs);
+        // Earliest collision gets I, later gets II; the unique title is untouched.
+        assert_eq!(arcs[0].title, "The Wars of Vae II"); // started later (id 30)
+        assert_eq!(arcs[1].title, "The Wars of Vae I"); // started earlier (id 10)
+        assert_eq!(arcs[2].title, "Unique");
+    }
 }

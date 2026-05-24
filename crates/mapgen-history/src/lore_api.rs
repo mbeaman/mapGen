@@ -79,3 +79,44 @@ pub fn arc_event_closure(world: &WorldData, arc: &NarrativeArc) -> Vec<EventId> 
     }
     seen.into_iter().map(EventId).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mapgen_core::{ArcKind, Event, EventKind, NarrativeArc};
+
+    fn ev(id: u32, causes: &[u32]) -> Event {
+        Event {
+            id: EventId(id),
+            year: 0,
+            kind: EventKind::Birth,
+            actors: Default::default(),
+            patients: Default::default(),
+            location: None,
+            cause_ids: causes.iter().map(|&c| EventId(c)).collect(),
+            salience: 0.5,
+            casus_belli: None,
+            summary_canonical: String::new(),
+        }
+    }
+
+    #[test]
+    fn arc_event_closure_pulls_in_transitive_causes() {
+        // 0 (root) <- 1 <- 2. An arc whose only member is event 2 must yield the
+        // whole causal chain {0,1,2}, sorted ascending — this is the point of the
+        // function (a buggy version returning members verbatim would fail here).
+        let mut w = WorldData::default();
+        w.events.events = vec![ev(0, &[]), ev(1, &[0]), ev(2, &[1])];
+        let arc = NarrativeArc {
+            title: "T".into(),
+            kind: ArcKind::Chronicle,
+            member_events: vec![EventId(2)],
+            start_event: EventId(2),
+            climax_event: EventId(2),
+            end_event: EventId(2),
+            key_characters: vec![],
+        };
+        let closure: Vec<u32> = arc_event_closure(&w, &arc).iter().map(|e| e.0).collect();
+        assert_eq!(closure, vec![0, 1, 2]);
+    }
+}
