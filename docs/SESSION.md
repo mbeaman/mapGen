@@ -12,7 +12,7 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `a309159 feat(render): Imhof simulated-annealing settlement-label placement` |
+| Latest commit | `75c685c feat: named mountain ranges + spine labels (schema v8)` |
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
@@ -41,14 +41,14 @@ fast; the others are stable.
 ## Recently shipped (most recent first)
 
 ```
+75c685c feat: named mountain ranges + spine labels (schema v8)
+4f893fa docs: mark Phase-3e render polish complete (README + SESSION)
 a309159 feat(render): Imhof simulated-annealing settlement-label placement
 8dcd888 feat(render): label major rivers (textPath) + lakes
 be1469b feat(world): name major rivers + lakes (schema v7)
 e77e95e feat(render): per-pantheon sacred-site glyphs
 d5d5b48 feat(render): polity border lines + trunk/branch road weighting
 11a4470 feat(render): irregular edge-burn stains + faint ocean hatching
-8c646fb chore: shared dev-command allowlist in .claude/settings.json
-263136b feat(render): town glyphs scale by population + mountain depth shadows
 ```
 
 Regenerate this list when stale:
