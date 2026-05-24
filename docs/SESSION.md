@@ -12,7 +12,7 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `bfcdb5b feat: live stage-by-stage generation build-up via resumable Pipeline` |
+| Latest commit | `6131c5b feat(just): web-setup/web-build/web-dev recipes + document web toolchain` |
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
@@ -41,14 +41,14 @@ fast; the others are stable.
 ## Recently shipped (most recent first)
 
 ```
+6131c5b feat(just): web-setup/web-build/web-dev recipes + document web toolchain
+d61a935 docs: reconcile SESSION/README with shipped web frontend
 bfcdb5b feat: live stage-by-stage generation build-up via resumable Pipeline
 103be12 feat(web): worker + pan/zoom + parchment theme + SVG/PNG/permalink export
 98ba3de feat(web): scaffold Vite + TypeScript frontend driving the wasm-pack output
 8916303 feat(wasm): split generate/render with WorldHandle so style switching is cheap
 0f50dc7 docs(backlog): defer repository doc top-tier polish pass
 8e340da docs: promote resume context to first-class tracked docs
-b1815b2 feat(render): roughr pen-jitter coastlines + 4th ripple
-8efb276 docs(backlog): catalog Phase 3e polish ideas surfaced this session
 ```
 
 Regenerate this list when stale:
