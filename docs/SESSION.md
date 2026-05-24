@@ -12,9 +12,9 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `b1815b2 feat(render): roughr pen-jitter coastlines + 4th ripple` |
+| Latest commit | `bfcdb5b feat: live stage-by-stage generation build-up via resumable Pipeline` |
 | Tree | clean, synced to origin |
-| Tests | 124 across 30 non-empty suites, 0 failures |
+| Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
 | Schema | v6 |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger) |
@@ -33,6 +33,7 @@ fast; the others are stable.
 | 3d naming | done | `9aedddb` (skel) → `6ba0ff6` (spec) → `c74089f` |
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
 | 3e backlog polish | open | 11 ideas catalogued in `docs/BACKLOG.md` Render section, each with revival trigger. None required to call 3e "done." |
+| web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | not started | — |
 
 ---
@@ -40,14 +41,14 @@ fast; the others are stable.
 ## Recently shipped (most recent first)
 
 ```
+bfcdb5b feat: live stage-by-stage generation build-up via resumable Pipeline
+103be12 feat(web): worker + pan/zoom + parchment theme + SVG/PNG/permalink export
+98ba3de feat(web): scaffold Vite + TypeScript frontend driving the wasm-pack output
+8916303 feat(wasm): split generate/render with WorldHandle so style switching is cheap
+0f50dc7 docs(backlog): defer repository doc top-tier polish pass
+8e340da docs: promote resume context to first-class tracked docs
 b1815b2 feat(render): roughr pen-jitter coastlines + 4th ripple
 8efb276 docs(backlog): catalog Phase 3e polish ideas surfaced this session
-39721d0 chore: multi-machine bootstrap automation
-65ab468 feat(render): compass rose + cartouche + edge-burn vignette
-92b18a3 chore: justfile for multi-machine dev verbs
-90567ff feat(render): vendored typography — Cinzel + EB Garamond + IM Fell English
-dc6db51 feat(render): culture × architecture × tier glyph dispatch
-8125c41 feat(render): ornate labels — settlements + polities + sacred sites
 ```
 
 Regenerate this list when stale:
@@ -60,8 +61,8 @@ git log -8 --oneline
 
 ## Currently in flight
 
-Nothing. Phase 3e per architecture spec is complete. Next direction
-is the user's call:
+Nothing. Phase 3e (per architecture spec) and the web-frontend MVP are
+both complete. Next direction is the user's call:
 
 - **Phase 4 (history sim).** Six causal loops (Turchin secular cycles
   + Khaldun dynasty decline + Mearsheimer offensive realism +
@@ -72,6 +73,12 @@ is the user's call:
 
 - **3e backlog polish.** Pick from `docs/BACKLOG.md` Render section.
   ~6–8 days total if shipped end-to-end.
+
+- **Web frontend hardening.** The MVP shipped (generate/render/style/
+  pan-zoom/export/permalinks). Setup is now codified in `just web-setup`
+  / `web-build` / `web-dev`, but it still has no automated tests and no
+  CI step. Candidate consolidation work if the frontend becomes
+  load-bearing.
 
 - **Other.** Bug fixes, dep bumps, or anything else.
 

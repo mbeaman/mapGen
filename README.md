@@ -1,8 +1,8 @@
 # mapgen
 
 A lore-rich fantasy map generator. Rust + WASM core, geography pipeline grounded
-in real Earth science, hand-drawn SVG output (planned), hybrid simulation + LLM
-lore engine (planned).
+in real Earth science, hand-drawn ornate SVG output, browser frontend, and a
+hybrid simulation + LLM lore engine (planned).
 
 ## Status
 
@@ -14,8 +14,9 @@ render style covers every Phase 3e architecture-spec item: parchment,
 roughr-perturbed coastlines (4 ripples), Tolkien mountains, biome-keyed
 forest scatter, culture × architecture × tier settlement glyphs,
 bundled Cinzel / IM Fell English / EB Garamond typography, compass
-rose, corner cartouche, edge-burn vignette. Phase 4 (history sim) is
-the next major arc.
+rose, corner cartouche, edge-burn vignette. A browser frontend
+(`web/`) drives the wasm build with live generation, pan/zoom, export,
+and permalinks. Phase 4 (history sim) is the next major arc.
 
 Project docs:
 
@@ -59,12 +60,17 @@ Project docs:
   embedded fonts + compass / cartouche + Imhof label placement deferred).
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
+- **Browser frontend** (`web/`) — vanilla TypeScript + Vite driving the
+  `mapgen-wasm` build through a WebWorker: seed/detail/nations/style
+  controls, live stage-by-stage generation, pan / zoom, SVG + 2× PNG
+  export, and shareable permalinks. Setup in [`web/README.md`](web/README.md)
+  (needs Node + npm + `wasm-pack`; not covered by `scripts/bootstrap.sh`,
+  which bootstraps the Rust core only).
 
-**Not yet:** history simulation, Claude-narrated chronicles, web frontend,
-the remaining Phase-3e ornate-render polish items (roughr-perturbed
-primitives, embedded WOFF2 fonts, compass / cartouche / edge-burn,
-culture-driven glyph shapes). All tracked in `docs/ARCHITECTURE.md` +
-`docs/TASKS.md`.
+**Not yet:** history simulation (Phase 4), Claude-narrated chronicles
+(Phase 5), and the deferred ornate-render polish items (ocean hatching,
+polity borders, river/lake names, etc.). All tracked in
+`docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/BACKLOG.md`.
 
 ## First-time setup
 
@@ -91,6 +97,21 @@ If you'd rather do it by hand (or you're on Windows):
 
 (`rust-toolchain.toml` pins the channel; the right Rust version
 auto-installs on first `cargo` invocation.)
+
+### Web frontend
+
+The bootstrap above sets up the **Rust core only**. The browser
+frontend (`web/`) has its own toolchain. First install **Node 18+ and
+npm** (via apt / brew / nvm — they are not cargo-installable), then:
+
+```sh
+just web-setup    # installs wasm-pack, npm deps, and builds the wasm package
+just web-dev      # Vite dev server → http://localhost:5173
+```
+
+Rebuild the wasm package after Rust changes with `just web-build`. Full
+detail (layout, dev loop, production build) in
+[`web/README.md`](web/README.md).
 
 ## Prerequisites (reference)
 
