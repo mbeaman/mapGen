@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v *)",
+      "Bash(cargo fmt --all -- --check)",
+      "Bash(cargo clippy --workspace --all-targets -- -D warnings)",
+      "Bash(cargo test --workspace)",
+      "Bash(cargo build -p mapgen-wasm --target wasm32-unknown-unknown --release)"
+    ]
+  }
+}
