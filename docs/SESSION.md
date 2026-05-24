@@ -14,9 +14,9 @@ fast; the others are stable.
 | Branch | `claude/fantasy-map-generator-1du5B` |
 | Latest commit | **HEAD** = `feat(history): Phase 4j — events CLI + salience recalibration + docs/perf re-anchor (closes Phase 4)` (run `git log -1` for the hash) |
 | Tree | clean |
-| Tests | 177 across the workspace, 0 failures |
+| Tests | 184 across the workspace, 0 failures |
 | Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** — re-anchored to this box at 4j (26/111/259 ms medians vs 39/166/388 budgets) |
-| Schema | v11 (Phase 4 landed v9 at 4b, v10 at 4c, v11 at 4i.3 `HistoryData`) |
+| Schema | v13 (Phase 4: v9 4b, v10 4c, v11 4i.3 `HistoryData`, v12 4k `Entity::Megabeast`, v13 4k `ArcKind::Conquest`) |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** to record the six-loop Phase-4 scope (trigger: the "time is not a factor" + "uplevel" directive) |
 
 ---
@@ -34,21 +34,21 @@ fast; the others are stable.
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
 | 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
-| 4 history sim | **done** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` (this closer). See `docs/TASKS.md` `## Phase 4`. |
+| 4 history sim | **done (+ reviewed & upleveled, 4k)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). A deep multi-agent review after 4j (verdict: substrate sound; presentation needed work) drove the **4k** pass — see "Currently in flight". `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` (this closer). See `docs/TASKS.md` `## Phase 4`. |
 
 ---
 
 ## Recently shipped (most recent first)
 
 ```
-(HEAD) Phase 4j — events CLI + salience recalibration + docs/perf re-anchor
-532444c feat(history): 4i.4 — blood feuds + Phase-5 boundary API (completes 4i)
-980f461 feat(history): 4i.3 — HistoryData (v11): narrative arcs + mythic ages
-ab119b0 feat(history): 4i.2 — causal-chain grammar (populate cause_ids across loops)
-66b7f17 refactor(history): 4i.1 — unify 8 emit() helpers into one Emit builder
-ae5c90e fix(history): pre-4i hardening — dissolve conquered realms, de-spam wars
-26df4a3 feat(history): Phase 4h — hero/megabeast/artifact/prophecy sagas + fmath guard
-858e9d4 feat(history): Phase 4g — religious schism + wars of religion
+(HEAD) 4k — Golden ages + deduped arc titles + tighter arc bar + extract tests
+4k — accurate HolyWar classification + Conquest arc kind (schema v13)
+4k — weave hero sagas into arcs (causal cassette links)
+4k — salience novelty discount for verbatim-repeated beats
+4k — varied battle/siege phrasing + margin-scaled conquest
+4k — transfer_border_cells panic-free on neighbor-less meshes
+4k — megabeasts as named entities (schema v12) + NER acid-test
+c74db19 docs(tasks): close out Phase-4 review findings + refresh stale hygiene notes
 ```
 
 Regenerate this list when stale:
@@ -77,13 +77,27 @@ feuds). Output: a causally-chained `EventLog` (~808 events on seed 42 across 24
 kinds) + `HistoryData` (mythic ages + classified narrative arcs); wars mutate the
 political map the renderer reads. Inspect via `mapgen events`.
 
-- **4j (this closer):** `mapgen events` subcommand; README/ARCHITECTURE/SESSION/
-  BACKLOG/tuning-log roll-ups; perf re-anchored to this box (now green). **Plus a
-  phase-end salience recalibration** (the formal 4j holistic review): the
-  `events --major` reel was 96 near-identical battles pinned at 0.98 while rare
-  marquee events (schism/prophecy/hero) sat below the bar. Fixed `STAKES_REF`
-  300 → 2000 (battles now spread) and lifted the rare world-shaping kinds into the
-  major band. Re-anchored `seed42_full`. See `docs/tuning_log.md` § Salience.
+- **4j (the closer):** `mapgen events` subcommand; doc roll-ups; perf re-anchored
+  to this box (now green); the first salience recalibration (`STAKES_REF` 300 →
+  2000).
+- **Deep review + 4k uplevel (post-4j):** four independent fresh-lens agents
+  audited Phase 4 across correctness/determinism/coherence/Phase-5-readiness.
+  Verdict: the **substrate is sound** (all invariants hold across 7 seeds;
+  determinism, fmath, schema back-compat, wasm all clean) — the gaps were in the
+  *presentation* layer + one Phase-5 handoff. The **4k** pass (commits
+  `669f174`…`d1a6197`) fixed them, keeping loop dynamics intact:
+  - Phase-5 NER blocker: megabeasts are now named `Entity::Megabeast` (v12) so
+    they enter `ner_lexicon`; a new acid-test scans every summary's proper nouns.
+  - Salience: a novelty discount (`refine_salience`) demotes verbatim-repeated
+    beats — seed-42 major reel 96 → 39, varied.
+  - Arcs: hero cassettes now weave into HeroSaga arcs; HolyWar requires a real
+    schism (4 → 1 on seed 42); new `ArcKind::Conquest` (v13); titles deduped with
+    numerals; tighter bar. seed 42: 52 → 20 well-classified arcs.
+  - Ages: classified relative to the timeline's average — motifs vary across
+    seeds and "Golden" is reachable.
+  - Hardening: `transfer_border_cells` panic-fix; `extract.rs` + closure unit tests.
+  - **Deferred polish** (in `docs/tuning_log.md` § 4k): hero-saga sentence
+    variety, megabeast 100% kill rate, finer age epithets.
 
 Phase 3e (spec + polish), the web-frontend MVP, and the multi-scale BACKLOG
 track are all complete. Deferred render item: a hand-authored

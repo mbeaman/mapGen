@@ -441,6 +441,46 @@ artifact that justified the pick, and the commit that landed the value.
 * **Source:** Phase 4j; `loops/mearsheimer.rs` (`STAKES_REF`), `loops/hero.rs`,
   `loops/schism.rs`.
 
+### Review-driven uplevel (4k) — phrasing, novelty discount, arc/age weave
+
+A deep multi-agent review after Phase 4 flagged the *presentation* layer
+(repetitive reel, mislabeled arcs, monotone ages). The substrate (correctness,
+determinism, schema, fmath) was clean. Changes, all keeping the loop *dynamics*
+intact:
+
+* **Battle/siege phrasing** (`mearsheimer.rs`) now varies with the victory margin
+  (narrow → "narrowly bested"; rout → "crushed/routed/shattered") and reflects
+  defender upsets ("repelled the invasion"); conquest size scales with
+  decisiveness (4..=8 holdings, was a fixed 6). Kills the "X defeated Y in the
+  field" monotony.
+* **Salience novelty discount** (`lib.rs::refine_salience`, `REPEAT_DECAY = 0.6`):
+  a verbatim-repeated summary is discounted by `0.6^prior`, so the first instance
+  headlines and identical repeats recede. Keyed on the summary *text* (a hegemon's
+  serial battles span many rulers but render identically); distinct events keep
+  unique text. This is the post-sim pass 4j deferred. seed 42 major-event count
+  96 → 61 (4j) → 39 (4k).
+* **Arc weave** (`extract.rs` + `hero.rs` + `schism.rs`): the hero cassette is
+  causally chained (rise→ascension→slaying→artifact→prophecy) so HeroSaga arcs
+  form (were 0). HolyWar now requires an actual `Schism` event in the thread — a
+  *war of religion* is orthodox-vs-sect (the schism→war cause edge weaves them),
+  not any inter-faith border war, which dropped seed-42 HolyWars 4 → 1 (accurate).
+  New `ArcKind::Conquest` catches plain expansion wars (was Chronicle). Arc bar:
+  a thread must span years or be a ≥4-event cluster (no lone one-year skirmishes).
+  Titles disambiguated with regnal numerals. seed 42: 52 → 20 well-classified arcs.
+* **Mythic ages** (`extract.rs::frame_ages`): classified *relative to the
+  timeline's own average* (above-mean catastrophe → Dark, above-mean heroism →
+  Heroic, quiet → Golden). Absolute thresholds had pinned every age the same;
+  "Dark" now counts only acute catastrophes (realms falling / plague / migration),
+  not baseline war/famine. Golden is reachable (seed 1: Founding/Golden/Dark/Heroic);
+  seed 42 reads all-Dark because it genuinely is a conquest-grim world.
+* **Deferred (noted, not built):** hero-saga summary phrasing variety (the
+  "X slew the beast Y" lines are still templated — the arc layer groups them, but
+  the sentences repeat on monster-heavy seeds); megabeasts have a 100% kill rate
+  (lower `SLAY_PROB` to leave standing threats); finer age epithets within a motif
+  (a grim seed shows "Age of Strife" thrice). All low-priority polish.
+* **Source:** Phase 4k; `loops/{mearsheimer,hero,schism}.rs`, `lib.rs`,
+  `extract.rs`, `entities.rs`/`history.rs` (schema v12 Megabeast, v13 Conquest).
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on
