@@ -329,8 +329,12 @@ fn transfer_border_cells(world: &mut WorldData, winner: usize, loser: usize, k: 
     let frontier: Vec<usize> = (0..n)
         .filter(|&c| world.society.control.get(c).copied().flatten() == Some(loser as u32))
         .filter(|&c| {
-            world.mesh.neighbors[c].iter().any(|&nb| {
-                world.society.control.get(nb as usize).copied().flatten() == Some(winner as u32)
+            // `.get(c)` (not `neighbors[c]`) to match `share_border` and stay
+            // panic-free on a mesh where `neighbors.len() < cell_count()`.
+            world.mesh.neighbors.get(c).is_some_and(|nbrs| {
+                nbrs.iter().any(|&nb| {
+                    world.society.control.get(nb as usize).copied().flatten() == Some(winner as u32)
+                })
             })
         })
         .take(k)
@@ -339,4 +343,40 @@ fn transfer_border_cells(world: &mut WorldData, winner: usize, loser: usize, k: 
         world.society.control[*c] = Some(winner as u32);
     }
     frontier.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mapgen_core::Nation;
+
+    #[test]
+    fn transfer_border_cells_is_panic_free_without_neighbors() {
+        // Regression: this used to index `neighbors[c]` directly and panic on a
+        // mesh where `neighbors.len() < cell_count()` (e.g. a synthetic world).
+        // It must mirror `share_border`'s safe `.get()` and simply find no
+        // frontier rather than crashing.
+        let mut w = WorldData::default();
+        w.mesh.sites = vec![[0.0, 0.0]; 4]; // cell_count() == 4, neighbors empty
+        w.society.nations = vec![
+            Nation {
+                name: "A".into(),
+                capital_cell: 0,
+                color: [0, 0, 0],
+            },
+            Nation {
+                name: "B".into(),
+                capital_cell: 2,
+                color: [0, 0, 0],
+            },
+        ];
+        w.society.control = vec![Some(0), Some(0), Some(1), Some(1)];
+        let moved = transfer_border_cells(&mut w, 0, 1, 6);
+        assert_eq!(moved, 0, "no adjacency ⇒ no frontier, and no panic");
+        assert_eq!(
+            w.society.control,
+            vec![Some(0), Some(0), Some(1), Some(1)],
+            "control must be untouched when nothing transfers"
+        );
+    }
 }
