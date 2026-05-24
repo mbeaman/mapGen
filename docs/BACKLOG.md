@@ -72,6 +72,202 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
+## Scale & level-of-detail
+
+The generator works at one scale today: a single continent at ~15k cells
+(a cell is ≈ tens of km across). This category is about generating the
+*same* world at other zoom bands — a planet-wide view above, and local
+urban/rural views below — plus the machinery that keeps them mutually
+consistent.
+
+The unifying idea is **nested deterministic refinement**: each finer level
+is generated on demand, conditioned on its parent's boundary values, with a
+child seed derived from the parent seed + sector id, such that *coarsening
+the child reproduces the parent*. Get that contract right once and every
+scale composes; skip it and each zoom level is an unrelated random map that
+contradicts the one above it.
+
+**The ladder** (current scale in bold): World → **Continental / regional**
+→ [Provincial] → [District / hinterland] → Local-urban / Local-rural. The
+two bracketed intermediates are the answer to "are layers between these
+useful?" — they're real (the hinterland is the bridge that connects a city
+interior to the surrounding countryside), but the recommendation is to treat
+them as *zoom depths within the framework*, not separate generation passes,
+until a concrete need forces otherwise. See the framework entry's design
+note.
+
+### Nested multi-scale refinement framework
+
+- **Why deferred.** It's the keystone every other scale entry depends on,
+  and it's pure infrastructure with no visible output on its own. The MVP
+  (Phase 4 history, Phase 5 Claude) isn't done; building scale machinery
+  before the single-scale world is fully lored fails the "ships value vs.
+  intellectually satisfies" test. This is post-MVP work.
+- **Design note (the hard part).** Add a `level` axis alongside `Stage` in
+  the RNG model: `child_seed = blake3(parent_seed, level, sector_id)`. Per
+  stage, define a boundary-condition contract — a child sector inherits its
+  parent cells' elevation envelope, river entry/exit points on its edges,
+  coastline crossings, biome, and settlement positions as *fixed
+  constraints*, then fills sub-cell detail so that down-sampling the child
+  reproduces the parent within tolerance. On-demand and stateless: never
+  persist the planet at local resolution; regenerate any sector from seeds.
+  Intermediate layers (provincial, district/hinterland) are expressed as
+  refinement *depths*, not distinct pipelines — one mechanism, not five.
+  Must be purely additive: existing single-scale golden hashes must not
+  change.
+- **Trigger for revival.** The first concrete consumer of a second zoom band
+  — the user wants a map at a scale other than the current continental one
+  (a planet view, a city interior, or a countryside tile). Not before the
+  Phase 4–5 MVP closes.
+- **Cost.** 1–2 weeks for the framework alone. The boundary-condition
+  contract and its property tests are the real work, not the seed plumbing.
+- **Origin.** This session, 2026-05-24, multi-scale (world / regional /
+  local) request.
+
+### World / planet scale (zoom out)
+
+- **Why deferred.** Needs the refinement framework above *and* multi-
+  continent generation (see Geography & geology → "Multi-continent worlds").
+  No narrative today spans more than one continent.
+- **Design note.** The planet as the root level: multiple continents, ocean
+  basins, planetary tectonic plates, and the global climate belts /
+  ocean-current gyres the climate stage already models but currently only
+  over one continent. The present continental map becomes one child sector of
+  this root. Projection / distortion at the planetary edge is the new render
+  problem the Multi-continent item already flags.
+- **Trigger for revival.** User wants to seed / see the whole planet rather
+  than one continent; or narratives need inter-continental trade, migration,
+  or colonization; or several regional maps must share one consistent globe.
+- **Cost.** ~1 week on top of the framework + multi-continent generation.
+- **Origin.** This session; extends Geography & geology → "Multi-continent
+  worlds" (that entry is the *generation* of >1 continent; this is the
+  zoom-out *view* of it).
+
+### Local rural / hinterland maps (zoom in, countryside)
+
+- **Why deferred.** Framework prerequisite; and the regional map's settlement
+  dots + biome fills are enough until someone needs to *stand inside* a
+  region.
+- **Design note.** Refine one non-urban sector to field-and-farmstead
+  resolution: open-field strips vs. enclosures vs. terraces vs. paddies vs.
+  vineyards keyed to parent biome + culture + era; hamlets and farmsteads;
+  mills on the streams; fords and bridges where roads cross water; lanes and
+  tracks branching off the parent road; woodlots, pasture, and the local
+  stream network refined from the parent river's entry/exit points; plus any
+  `LorePatch` features in the sector (sacred groves, ruins, mine mouths). The
+  "similar detail to urban" mandate means this gets the *same* render-polish
+  vocabulary the city map gets (labels, glyphs, hatching, contour/hachure
+  relief, edge-burn) — countryside is not a green blob.
+- **Trigger for revival.** A region or settlement needs a travel-map or
+  VTT-usable local view; or lore references a specific village / ford / grove
+  that should be drawable.
+- **Cost.** 1–2 weeks (fine-terrain refinement + field- and
+  settlement-scatter algorithms + render at the new zoom).
+- **Origin.** This session, 2026-05-24, multi-scale request.
+
+### Local urban maps (settlement interiors)
+
+- **Why deferred.** Framework prerequisite; and it's a different algorithm
+  family from terrain generation — procedural city layout (road networks,
+  parcel subdivision, walls), i.e. substantial new work, not reuse. The
+  settlement glyphs on the regional map suffice until users want to "enter" a
+  city.
+- **Design note.** Refine a settlement cell to street-and-district
+  resolution: street network (organic-medieval vs. orthogonal grid vs. radial,
+  keyed to culture/era, via tensor-field or agent road growth); districts /
+  quarters; walls + gates + towers sized to population; citadel / keep /
+  temple-precinct; market squares; river or harbor frontage; extramural
+  suburbs; cemeteries — with the approaches stitched to the hinterland map's
+  roads. Population, culture, religion, and polity already live on the parent
+  settlement, so the city is *earned* by the regional sim rather than dropped
+  in. Same render vocabulary as the rural map, so the atlas reads as one work
+  at different zooms.
+- **Trigger for revival.** A specific city needs an interior map for a game
+  or chronicle illustration; or the web frontend wants a "zoom into a
+  settlement" interaction.
+- **Cost.** 2–3 weeks. Procedural urban generation is its own discipline;
+  culture/era variants multiply it.
+- **Origin.** This session, 2026-05-24, multi-scale request.
+
+### Seamless inter-scale navigation (research brief)
+
+- **Why deferred.** Depends on the refinement framework plus at least one
+  local scale existing — there's nothing to navigate *between* yet. And the
+  right interaction model is itself an open question that wants a research
+  pass before any code: an ornate hand-drawn atlas is traditionally a set of
+  discrete plates with inset cross-references, not a continuous slippy
+  surface, so forcing Google-Maps-style continuous zoom may fight the
+  aesthetic — that tension needs deciding, not assuming.
+- **The problem.** Two seams have to disappear for movement between scales to
+  feel earned rather than like flipping between unrelated pictures. (1) The
+  **temporal seam** as the user zooms: representations must transition without
+  "pop-in," labels must fade/declutter sensibly, and which features appear
+  must change with scale (a continent shows mountain ranges; a district shows
+  individual hills). (2) The **spatial seam** between two independently
+  generated adjacent sectors: their shared edge must agree on terrain height,
+  river crossings, and road continuation. The generation-side half of the
+  spatial seam is the refinement framework's boundary-condition contract; this
+  entry owns the *navigation, rendering, and streaming* half.
+- **Deep-research instructions.** When picked up, run a focused research pass
+  that answers each question below with cited prior art, and ends in a short
+  ADR-style recommendation (interaction model + render pipeline + transition
+  technique + trade-offs) *before* implementation:
+  1. **Interaction model.** Continuous geometric/semantic zoom (slippy map)
+     vs. discrete atlas-plate drill-in vs. overview+detail / focus+context.
+     Which fits an ornate atlas *and* an on-demand backend that costs seconds
+     (not milliseconds) per sector? Study: Shneiderman's mantra (overview
+     first, zoom & filter, details on demand); focus+context (fisheye,
+     DOITrees); Google/Mapbox slippy zoom; Dwarf Fortress world → embark →
+     local-map drill-in; 4X strategic-vs-tactical view swaps.
+  2. **LOD transition / anti-popping.** How to morph between representations
+     without a visible jump. Study: terrain LOD geomorphing (geometric
+     clipmaps, chunked LOD, geomipmapping / ROAM); Mapbox GL vector-tile
+     cross-fade; the CSS-scale-then-swap trick between integer zoom levels.
+  3. **Cartographic generalization** — what to show / hide / simplify /
+     aggregate per scale. Study: Töpfer's Radical Law (feature count vs.
+     scale); the generalization operators (selection, simplification,
+     aggregation, displacement, typification); Douglas–Peucker and
+     Visvalingam–Whyatt line simplification; scale-dependent stylesheets
+     (Mapbox GL style-spec zoom expressions).
+  4. **Labels across zoom** — fade in/out, per-level collision/declutter,
+     anchored persistence. Study: Mapbox GL label collision + fade; Imhof's
+     label rules (we already use his SA placement); priority / scale-rank
+     labeling.
+  5. **Spatial-seam consistency** between adjacent generated sectors. Study:
+     constrained boundary generation, ghost/halo cells, Wang tiles / corner
+     tiles, blue-noise tile stitching, marching-squares contour continuity
+     across tile borders. Cross-reference the framework entry's
+     boundary-condition contract.
+  6. **Streaming / prefetch.** Our sectors cost seconds to generate, so
+     generate-ahead matters far more than for millisecond tile fetches.
+     Study: slippy-map tile prefetch (adjacent + next-zoom), velocity-
+     predictive loading, a background WebWorker generation queue, and
+     progressive coarse-first rendering (show the upscaled parent instantly,
+     swap in the refined child when ready).
+  7. **Vector vs. raster pipeline.** Our renders are ornate SVG. Decide:
+     render vector per sector on demand, or bake a raster tile pyramid
+     (resvg → PNG tiles) for fast pan/zoom and render vector only at the
+     active focus? Study: vector tiles (MVT) vs. raster tile pyramids, hybrid
+     approaches, and in-browser SVG performance ceilings.
+  8. **Determinism of the journey.** The same pan/zoom path must yield the
+     same intermediate states. Confirm the framework's
+     `child_seed = blake3(parent_seed, level, sector_id)` gives stable
+     sectors regardless of the path taken to reach them, and define how
+     fractional zoom resolves (snap to nearest generated level + interpolate,
+     or generate a true intermediate).
+- **Trigger for revival.** The framework + at least one second zoom band have
+  landed and we want the web frontend to let users move between scales
+  *interactively*, rather than generating each scale as a standalone export.
+- **Cost.** Research pass: 2–3 days to produce the recommendation.
+  Implementation: scoped by that recommendation — a discrete drill-in is
+  days; a continuous geomorphing slippy renderer over on-demand generation is
+  weeks.
+- **Origin.** This session, 2026-05-24; multi-scale request, follow-up on
+  cross-scale continuity ("how they flow together as the user moves between
+  scales").
+
+---
+
 ## Geography & geology
 
 ### Hot-spot tracks + abyssal-age subsidence
@@ -139,6 +335,9 @@ guess at value-per-day. Re-prioritize freely.
   continents, not just a continent.
 - **Cost.** A week. Mesh + plate model already supports it; the work is in
   rendering and labeling.
+- **See also.** Scale & level-of-detail → "World / planet scale" — that
+  entry is the zoom-out *view*; this is the *generation* of >1 continent it
+  builds on.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
 ---
