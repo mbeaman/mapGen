@@ -8,9 +8,9 @@
 //! Turchin's structural-demographic theory (Turchin & Nefedov, *Secular
 //! Cycles*, 2009); the fiscal / elite-overproduction half lands in 4d.
 
-use mapgen_core::{CellId, Event, EventId, EventKind, WorldData};
-use smallvec::SmallVec;
+use mapgen_core::EventKind;
 
+use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
 use crate::unit_f32;
 
@@ -94,14 +94,14 @@ impl CausalLoop for Turchin {
                 k
             };
             if drought {
-                emit(
-                    ctx.world,
+                Emit::new(
                     year,
                     EventKind::Drought,
                     cell,
                     0.40,
                     format!("A drought parched the lands of {name}."),
-                );
+                )
+                .push(ctx.world);
             }
 
             // Malthusian famine when population presses on (drought-reduced)
@@ -111,26 +111,26 @@ impl CausalLoop for Turchin {
                 let mortality = (0.12 + 0.5 * (stress - FAMINE_STRESS)).clamp(0.05, 0.35);
                 p *= 1.0 - mortality;
                 let salience = (0.45 + 0.5 * mortality).clamp(0.0, 1.0);
-                emit(
-                    ctx.world,
+                Emit::new(
                     year,
                     EventKind::Famine,
                     cell,
                     salience,
                     format!("Famine gripped {name}."),
-                );
+                )
+                .push(ctx.world);
             } else {
                 let density = p / k.max(EPS);
                 if unit_f32(ctx.rng) < PLAGUE_DENSITY_PROB * density {
                     p *= 1.0 - PLAGUE_MORTALITY;
-                    emit(
-                        ctx.world,
+                    Emit::new(
                         year,
                         EventKind::Plague,
                         cell,
                         0.55,
                         format!("A plague swept through {name}."),
-                    );
+                    )
+                    .push(ctx.world);
                 }
             }
 
@@ -161,31 +161,31 @@ impl CausalLoop for Turchin {
                 // Secular crisis: the state fragments — settlements emptied,
                 // people displaced, an elite faction purged. Population, elites,
                 // and treasury crash; instability vents.
-                emit(
-                    ctx.world,
+                Emit::new(
                     year,
                     EventKind::CityAbandoned,
                     cell,
                     0.62,
                     format!("A settlement of {name} was abandoned amid the upheaval."),
-                );
-                emit(
-                    ctx.world,
+                )
+                .push(ctx.world);
+                Emit::new(
                     year,
                     EventKind::Migration,
                     cell,
                     0.5,
                     format!("Famine and strife drove people from {name}."),
-                );
+                )
+                .push(ctx.world);
                 if overproduction > 0.0 {
-                    emit(
-                        ctx.world,
+                    Emit::new(
                         year,
                         EventKind::Exile,
                         cell,
                         0.55,
                         format!("A defeated faction was cast out of {name}."),
-                    );
+                    )
+                    .push(ctx.world);
                 }
                 p *= 1.0 - CRISIS_POP_LOSS;
                 elites *= 1.0 - CRISIS_ELITE_LOSS;
@@ -196,14 +196,14 @@ impl CausalLoop for Turchin {
                 && unit_f32(ctx.rng) < EXPAND_PROB
             {
                 // Expansion in quiet, growing years.
-                emit(
-                    ctx.world,
+                Emit::new(
                     year,
                     EventKind::CityFounded,
                     cell,
                     0.32,
                     format!("A new town was founded in {name} during the long peace."),
-                );
+                )
+                .push(ctx.world);
             }
 
             ctx.state.elites[pid] = elites;
@@ -212,28 +212,4 @@ impl CausalLoop for Turchin {
             ctx.state.population[pid] = p.max(MIN_POPULATION);
         }
     }
-}
-
-/// Append a located, salience-scored event to the log. `actors`/`patients`
-/// are empty in 4b — named characters arrive in 4c, causal links in 4i.
-fn emit(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    summary: String,
-) {
-    world.events.push(Event {
-        id: EventId(0), // overwritten by EventLog::push
-        year,
-        kind,
-        actors: SmallVec::new(),
-        patients: SmallVec::new(),
-        location: Some(CellId(cell)),
-        cause_ids: SmallVec::new(),
-        salience,
-        casus_belli: None,
-        summary_canonical: summary,
-    });
 }

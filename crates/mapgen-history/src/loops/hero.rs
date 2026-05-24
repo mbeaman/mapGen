@@ -8,13 +8,10 @@
 //! start on 4i's causal chaining). Mythic-age framing lands in 4i with the
 //! `HistoryData` side-table.
 
-use mapgen_core::ids::CellId;
-use mapgen_core::{
-    generate_name, Artifact, Character, Entity, EntityId, Event, EventId, EventKind, Sex, WorldData,
-};
+use mapgen_core::{generate_name, Artifact, Character, Entity, EventKind, Sex, WorldData};
 use rand_chacha::{rand_core::RngCore, ChaCha8Rng};
-use smallvec::SmallVec;
 
+use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
 use crate::unit_f32;
 
@@ -41,17 +38,15 @@ impl CausalLoop for Hero {
         // 1. A prophecy is foretold (queued until a deed fulfils it).
         if unit_f32(ctx.rng) < PROPHECY_PROB {
             if let Some(cell) = random_capital(ctx) {
-                let ev = emit(
-                    ctx.world,
+                let ev = Emit::new(
                     year,
                     EventKind::ProphecyUttered,
                     cell,
                     0.5,
-                    &[],
-                    &[],
                     "A seer foretold that a great evil would rise, and a champion to end it."
                         .to_string(),
-                );
+                )
+                .push(ctx.world);
                 ctx.state.pending_prophecies.push(ev);
             }
         }
@@ -60,16 +55,14 @@ impl CausalLoop for Hero {
         if unit_f32(ctx.rng) < MEGABEAST_PROB {
             if let Some(cell) = random_capital(ctx) {
                 let name = legendary_name(ctx.world, ctx.rng);
-                let ev = emit(
-                    ctx.world,
+                let ev = Emit::new(
                     year,
                     EventKind::MegabeastRise,
                     cell,
                     0.7,
-                    &[],
-                    &[],
                     format!("{name}, a monstrous beast, rose to ravage the land."),
-                );
+                )
+                .push(ctx.world);
                 ctx.state.active_megabeasts.push((cell, ev, name));
             }
         }
@@ -100,51 +93,49 @@ impl CausalLoop for Hero {
                 birth_event: None,
                 death_event: None,
             }));
-            emit(
-                ctx.world,
+            Emit::new(
                 year,
                 EventKind::Ascension,
                 cell,
                 0.7,
-                &[hero],
-                &[],
                 format!("{hero_name} arose as a champion of the age."),
-            );
-            emit_caused(
-                ctx.world,
+            )
+            .actors(&[hero])
+            .push(ctx.world);
+            Emit::new(
                 year,
                 EventKind::MegabeastSlain,
                 cell,
                 0.85,
-                &[hero],
-                &[rise_ev],
                 format!("{hero_name} slew the beast {beast}."),
-            );
+            )
+            .actors(&[hero])
+            .causes(&[rise_ev])
+            .push(ctx.world);
             let artifact_name = legendary_name(ctx.world, ctx.rng);
             let artifact = ctx.world.entities.insert(Entity::Artifact(Artifact {
                 name: artifact_name.clone(),
             }));
-            emit(
-                ctx.world,
+            Emit::new(
                 year,
                 EventKind::ArtifactForged,
                 cell,
                 0.6,
-                &[hero, artifact],
-                &[],
                 format!("{hero_name} forged {artifact_name} from the beast's remains."),
-            );
+            )
+            .actors(&[hero, artifact])
+            .push(ctx.world);
             if let Some(uttered) = ctx.state.pending_prophecies.pop() {
-                emit_caused(
-                    ctx.world,
+                Emit::new(
                     year,
                     EventKind::ProphecyFulfilled,
                     cell,
                     0.72,
-                    &[hero],
-                    &[uttered],
                     format!("The old prophecy was fulfilled in {hero_name}'s triumph."),
-                );
+                )
+                .actors(&[hero])
+                .causes(&[uttered])
+                .push(ctx.world);
             }
         }
     }
@@ -170,84 +161,4 @@ fn legendary_name(world: &WorldData, rng: &mut ChaCha8Rng) -> String {
         Some(lang) => generate_name(lang, rng),
         None => "the Nameless".to_string(),
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    patients: &[EntityId],
-    summary: String,
-) -> EventId {
-    emit_inner(
-        world,
-        year,
-        kind,
-        cell,
-        salience,
-        actors,
-        patients,
-        &[],
-        summary,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit_caused(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    causes: &[EventId],
-    summary: String,
-) -> EventId {
-    emit_inner(
-        world,
-        year,
-        kind,
-        cell,
-        salience,
-        actors,
-        &[],
-        causes,
-        summary,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit_inner(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    patients: &[EntityId],
-    causes: &[EventId],
-    summary: String,
-) -> EventId {
-    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
-    a.extend(actors.iter().copied());
-    let mut p: SmallVec<[EntityId; 4]> = SmallVec::new();
-    p.extend(patients.iter().copied());
-    let mut c: SmallVec<[EventId; 4]> = SmallVec::new();
-    c.extend(causes.iter().copied());
-    world.events.push(Event {
-        id: EventId(0),
-        year,
-        kind,
-        actors: a,
-        patients: p,
-        location: Some(CellId(cell)),
-        cause_ids: c,
-        salience,
-        casus_belli: None,
-        summary_canonical: summary,
-    })
 }

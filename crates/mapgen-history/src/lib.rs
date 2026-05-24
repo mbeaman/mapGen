@@ -11,6 +11,7 @@
 //! `tests` below and `mapgen-world/tests/history_spec.rs`.
 
 pub mod agent;
+pub(crate) mod emit;
 pub mod loops;
 
 use mapgen_core::{splitmix64, EntityId, EventId, WorldData};

@@ -12,12 +12,9 @@
 //! change the map; a realm conquered to 0 cells is marked dissolved (4h.5
 //! hardening) and stops warring / being warred.
 
-use mapgen_core::{
-    CasusBelli, CellId, Claim, DiplomaticPattern, Entity, EntityId, Event, EventId, EventKind,
-    WorldData,
-};
-use smallvec::SmallVec;
+use mapgen_core::{CasusBelli, Claim, DiplomaticPattern, Entity, EventKind, WorldData};
 
+use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
 use crate::{polity_capacity, polity_cell_count, polity_military, unit_f32, SimState};
 
@@ -187,17 +184,15 @@ fn assert_claim(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     let cell = ctx.world.society.nations[a].capital_cell;
     let name_a = ctx.world.society.nations[a].name.clone();
     let name_b = ctx.world.society.nations[b].name.clone();
-    emit(
-        ctx.world,
+    Emit::new(
         year,
         EventKind::ClaimAsserted,
         cell,
         0.4,
-        &[ruler_a],
-        &[],
-        None,
         format!("{name_a} pressed a claim upon the throne of {name_b}."),
-    );
+    )
+    .actors(&[ruler_a])
+    .push(ctx.world);
     ctx.world.entities.insert(Entity::Claim(Claim {
         claimant: ruler_a,
         target: title_b,
@@ -232,17 +227,16 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         CasusBelli::FrontierIncident
     };
 
-    emit(
-        ctx.world,
+    Emit::new(
         year,
         EventKind::WarDeclared,
         cell,
         0.72,
-        &[ruler_a, ruler_b],
-        &[],
-        Some(casus),
         format!("{name_a} declared war upon {name_b}."),
-    );
+    )
+    .actors(&[ruler_a, ruler_b])
+    .casus(casus)
+    .push(ctx.world);
 
     // Battle: stronger side, perturbed by fortune, prevails.
     let la = pa * (0.7 + 0.6 * unit_f32(ctx.rng));
@@ -257,31 +251,29 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     // only the largest wars read as "major" (≥ 0.8).
     let stakes = ((pa + pb) / STAKES_REF).clamp(0.0, 1.0);
     let battle_sal = (0.58 + 0.4 * stakes).clamp(0.0, 1.0);
-    emit(
-        ctx.world,
+    Emit::new(
         year,
         EventKind::BattleFought,
         cell,
         battle_sal,
-        &[w_ruler],
-        &[l_ruler],
-        None,
         format!("{w_name} defeated {l_name} in the field."),
-    );
+    )
+    .actors(&[w_ruler])
+    .patients(&[l_ruler])
+    .push(ctx.world);
 
     let moved = transfer_border_cells(ctx.world, w_pid, l_pid, TRANSFER_CELLS);
     if moved > 0 {
-        emit(
-            ctx.world,
+        Emit::new(
             year,
             EventKind::Siege,
             cell,
             (battle_sal * 0.9).clamp(0.0, 1.0),
-            &[w_ruler],
-            &[l_ruler],
-            None,
             format!("{w_name} wrested {moved} settlements from {l_name}."),
-        );
+        )
+        .actors(&[w_ruler])
+        .patients(&[l_ruler])
+        .push(ctx.world);
         // Borders moved — Turchin's capacity must track the new territory.
         ctx.state.capacity[w_pid] = polity_capacity(ctx.world, w_pid);
         ctx.state.capacity[l_pid] = polity_capacity(ctx.world, l_pid);
@@ -289,33 +281,30 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         // If that conquest took the loser's last land, the realm is no more.
         if !ctx.state.dissolved[l_pid] && polity_cell_count(ctx.world, l_pid) == 0 {
             ctx.state.dissolved[l_pid] = true;
-            emit(
-                ctx.world,
+            Emit::new(
                 year,
                 EventKind::CityAbandoned,
                 cell,
                 0.82,
-                &[w_ruler],
-                &[l_ruler],
-                None,
                 format!(
                     "The realm of {l_name} was extinguished; {w_name} seized its last holdings."
                 ),
-            );
+            )
+            .actors(&[w_ruler])
+            .patients(&[l_ruler])
+            .push(ctx.world);
         }
     }
 
-    emit(
-        ctx.world,
+    Emit::new(
         year,
         EventKind::TreatySigned,
         cell,
         0.42,
-        &[w_ruler, l_ruler],
-        &[],
-        None,
         format!("{w_name} and {l_name} made peace."),
-    );
+    )
+    .actors(&[w_ruler, l_ruler])
+    .push(ctx.world);
 }
 
 /// Reassign up to `k` of the loser's cells that border the winner's territory
@@ -336,34 +325,4 @@ fn transfer_border_cells(world: &mut WorldData, winner: usize, loser: usize, k: 
         world.society.control[*c] = Some(winner as u32);
     }
     frontier.len()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    patients: &[EntityId],
-    casus_belli: Option<CasusBelli>,
-    summary: String,
-) -> EventId {
-    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
-    a.extend(actors.iter().copied());
-    let mut p: SmallVec<[EntityId; 4]> = SmallVec::new();
-    p.extend(patients.iter().copied());
-    world.events.push(Event {
-        id: EventId(0),
-        year,
-        kind,
-        actors: a,
-        patients: p,
-        location: Some(CellId(cell)),
-        cause_ids: SmallVec::new(),
-        salience,
-        casus_belli,
-        summary_canonical: summary,
-    })
 }

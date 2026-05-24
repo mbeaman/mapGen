@@ -11,14 +11,13 @@
 //! Phase 4c models *orderly* succession (eldest living child). Contested
 //! successions and succession wars layer on top in 4f, reading this lineage.
 
-use mapgen_core::ids::CellId;
 use mapgen_core::{
-    generate_name, CasusBelli, Character, Claim, Dynasty, Entity, EntityId, Event, EventId,
-    EventKind, House, RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
+    generate_name, CasusBelli, Character, Claim, Dynasty, Entity, EntityId, EventKind, House,
+    RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
 };
 use rand_chacha::{rand_core::RngCore, ChaCha8Rng};
-use smallvec::SmallVec;
 
+use crate::emit::Emit;
 use crate::{unit_f32, SimState};
 
 /// Age a founder is assumed to have reached at accession (so their `born_year`
@@ -133,15 +132,15 @@ fn found_dynasty(
         h.founder = Some(ruler_id);
     }
 
-    let cor = emit(
-        world,
+    let cor = Emit::new(
         year,
         EventKind::Coronation,
         cell,
         0.55,
-        &[ruler_id],
         format!("{ruler_name} was crowned, founding the {dyn_name} dynasty of {nation}."),
-    );
+    )
+    .actors(&[ruler_id])
+    .push(world);
     if let Some(Entity::Title(t)) = world.entities.by_id.get_mut(&title_id) {
         t.created_event = Some(cor);
     }
@@ -197,15 +196,15 @@ fn marry(world: &mut WorldData, state: &mut SimState, pid: usize, year: i32, rng
 
     let rname = char_name(world, ruler_id);
     let cname = char_name(world, consort_id);
-    emit(
-        world,
+    Emit::new(
         year,
         EventKind::Marriage,
         cell,
         0.35,
-        &[ruler_id, consort_id],
         format!("{rname} wed {cname}."),
-    );
+    )
+    .actors(&[ruler_id, consort_id])
+    .push(world);
 
     let court = &mut state.courts[pid];
     court.married = true;
@@ -262,15 +261,15 @@ fn maybe_birth(
         death_event: None,
     }));
     let rname = char_name(world, ruler_id);
-    let ev = emit(
-        world,
+    let ev = Emit::new(
         year,
         EventKind::Birth,
         cell,
         0.15,
-        &[child_id],
         format!("{name} was born to {rname}."),
-    );
+    )
+    .actors(&[child_id])
+    .push(world);
     if let Some(Entity::Character(c)) = world.entities.by_id.get_mut(&child_id) {
         c.birth_event = Some(ev);
     }
@@ -296,15 +295,15 @@ fn succeed(
     let cell = world.society.nations[pid].capital_cell;
     let reign = state.courts[pid].reign_len;
     let rname = char_name(world, ruler_id);
-    let death_ev = emit(
-        world,
+    let death_ev = Emit::new(
         year,
         EventKind::Death,
         cell,
         0.45,
-        &[ruler_id],
         format!("{rname} died after a reign of {reign} years."),
-    );
+    )
+    .actors(&[ruler_id])
+    .push(world);
     if let Some(Entity::Character(c)) = world.entities.by_id.get_mut(&ruler_id) {
         c.died_year = Some(year);
         c.death_event = Some(death_ev);
@@ -358,27 +357,27 @@ fn contested_succession(
     let fav_name = char_name(world, favorite);
     let cha_name = char_name(world, challenger);
 
-    emit(
-        world,
+    Emit::new(
         year,
         EventKind::Succession,
         cell,
         0.7,
-        &[favorite, challenger],
         format!(
             "A disputed succession set {fav_name} against {cha_name} for the throne of {nation}."
         ),
-    );
-    emit_war(
-        world,
+    )
+    .actors(&[favorite, challenger])
+    .push(world);
+    Emit::new(
         year,
         EventKind::WarDeclared,
         cell,
         0.68,
-        &[favorite, challenger],
-        Some(CasusBelli::DynasticClaim),
         format!("{fav_name} and {cha_name} went to war over the throne of {nation}."),
-    );
+    )
+    .actors(&[favorite, challenger])
+    .casus(CasusBelli::DynasticClaim)
+    .push(world);
 
     // The favourite (eldest) holds the advantage, but fortune can upset it.
     let fav_strength = 0.6 + 0.4 * unit_f32(rng);
@@ -388,27 +387,27 @@ fn contested_succession(
     } else {
         (challenger, favorite, cha_name, fav_name)
     };
-    emit(
-        world,
+    Emit::new(
         year,
         EventKind::BattleFought,
         cell,
         0.66,
-        &[winner],
         format!("{w_name} prevailed in the war of succession over {l_name}."),
-    );
+    )
+    .actors(&[winner])
+    .push(world);
 
     crown_heir(world, state, pid, winner, year, rng);
 
-    emit(
-        world,
+    Emit::new(
         year,
         EventKind::Exile,
         cell,
         0.5,
-        &[loser],
         format!("{l_name}, the defeated claimant, was driven into exile."),
-    );
+    )
+    .actors(&[loser])
+    .push(world);
     // The exiled claimant's grievance lingers as a dormant claim on the throne.
     if let Some(title) = state.courts[pid].title {
         world.entities.insert(Entity::Claim(Claim {
@@ -432,15 +431,15 @@ fn crown_heir(
     let title_id = state.courts[pid].title;
     let reign_len = REIGN_MIN + (rng.next_u32() as i32).rem_euclid(REIGN_MAX - REIGN_MIN + 1);
     let hname = char_name(world, heir_id);
-    let cor = emit(
-        world,
+    let cor = Emit::new(
         year,
         EventKind::Coronation,
         cell,
         0.5,
-        &[heir_id],
         format!("{hname} ascended the throne."),
-    );
+    )
+    .actors(&[heir_id])
+    .push(world);
     if let Some(tid) = title_id {
         if let Some(Entity::Character(c)) = world.entities.by_id.get_mut(&heir_id) {
             c.titles.push(TitleHolding {
@@ -514,59 +513,4 @@ fn add_rel(world: &mut WorldData, from: EntityId, to: EntityId, kind: RelationKi
             since_year: year,
         });
     }
-}
-
-fn emit(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    summary: String,
-) -> EventId {
-    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
-    a.extend(actors.iter().copied());
-    world.events.push(Event {
-        id: EventId(0),
-        year,
-        kind,
-        actors: a,
-        patients: SmallVec::new(),
-        location: Some(CellId(cell)),
-        cause_ids: SmallVec::new(),
-        salience,
-        casus_belli: None,
-        summary_canonical: summary,
-    })
-}
-
-/// Like [`emit`] but carries a casus belli — for the war of a contested
-/// succession (every `WarDeclared` must cite one). (4i will unify the emit
-/// helpers across the history crate.)
-#[allow(clippy::too_many_arguments)]
-fn emit_war(
-    world: &mut WorldData,
-    year: i32,
-    kind: EventKind,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    casus_belli: Option<CasusBelli>,
-    summary: String,
-) -> EventId {
-    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
-    a.extend(actors.iter().copied());
-    world.events.push(Event {
-        id: EventId(0),
-        year,
-        kind,
-        actors: a,
-        patients: SmallVec::new(),
-        location: Some(CellId(cell)),
-        cause_ids: SmallVec::new(),
-        salience,
-        casus_belli,
-        summary_canonical: summary,
-    })
 }

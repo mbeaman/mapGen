@@ -8,12 +8,9 @@
 //! chronicle, and religious difference between polities drives `ReligiousSchism`
 //! wars in the Mearsheimer loop.
 
-use mapgen_core::ids::CellId;
-use mapgen_core::{
-    generate_name, Entity, EntityId, Event, EventId, EventKind, Religion, WorldData,
-};
-use smallvec::SmallVec;
+use mapgen_core::{generate_name, Entity, EntityId, EventKind, Religion, WorldData};
 
+use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
 use crate::unit_f32;
 
@@ -83,18 +80,19 @@ fn schism(ctx: &mut TickCtx, ri: usize, year: i32) {
     }
 
     let cell = parent.sacred_sites.first().copied().unwrap_or(0);
-    emit(
-        ctx.world,
+    Emit::new(
         year,
+        EventKind::Schism,
         cell,
         0.6,
-        &[splinter_id],
-        &[parent_id],
         format!(
             "The {} faith was riven by schism; the {name} sect broke away.",
             parent.name
         ),
-    );
+    )
+    .actors(&[splinter_id])
+    .patients(&[parent_id])
+    .push(ctx.world);
 }
 
 /// Mint (once) an `Entity::Religion` mirror of the original religion at index
@@ -129,31 +127,4 @@ fn religion_name(
         Some(lang) => generate_name(lang, rng),
         None => "Sect".to_string(),
     }
-}
-
-fn emit(
-    world: &mut WorldData,
-    year: i32,
-    cell: u32,
-    salience: f32,
-    actors: &[EntityId],
-    patients: &[EntityId],
-    summary: String,
-) -> EventId {
-    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
-    a.extend(actors.iter().copied());
-    let mut p: SmallVec<[EntityId; 4]> = SmallVec::new();
-    p.extend(patients.iter().copied());
-    world.events.push(Event {
-        id: EventId(0),
-        year,
-        kind: EventKind::Schism,
-        actors: a,
-        patients: p,
-        location: Some(CellId(cell)),
-        cause_ids: SmallVec::new(),
-        salience,
-        casus_belli: None,
-        summary_canonical: summary,
-    })
 }
