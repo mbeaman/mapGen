@@ -112,6 +112,10 @@ pub enum RelationKind {
     Parent = 0,
     Child = 1,
     Spouse = 2,
+    /// A standing antagonism (Phase 4i).
+    Rival = 3,
+    /// A grievance worth killing over — e.g., a defeated succession claimant.
+    BloodFeud = 4,
 }
 
 /// A heritable office bound to a polity (the throne of a kingdom). One per

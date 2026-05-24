@@ -715,6 +715,74 @@ fn narrative_arcs_and_ages_are_well_formed() {
 }
 
 #[test]
+fn contested_successions_breed_blood_feuds() {
+    // 4i.4: a disputed succession leaves a BloodFeud between victor and exile.
+    use mapgen_core::RelationKind;
+    let world = generate_full(fixed(42));
+    let feuds = world
+        .entities
+        .by_id
+        .values()
+        .filter_map(|e| match e {
+            Entity::Character(c) => Some(c),
+            _ => None,
+        })
+        .flat_map(|c| c.relationships.iter())
+        .filter(|r| matches!(r.kind, RelationKind::BloodFeud))
+        .count();
+    // Seed 42 has contested successions (pinned elsewhere), so at least one
+    // reciprocal feud (2 directed edges) must exist.
+    assert!(
+        feuds >= 2,
+        "expected blood feuds from contested successions, got {feuds}"
+    );
+}
+
+#[test]
+fn phase5_boundary_api_is_well_formed() {
+    // 4i.4: the lore-engine accessors (unused until Phase 5) return sound data.
+    use mapgen_history::lore_api::{arc_event_closure, entity_brief, ner_lexicon};
+    let world = generate_full(fixed(42));
+
+    // NER lexicon: closed, non-empty, and includes every arc title (so the
+    // chronicler may name its threads) and is free of empties.
+    let lex = ner_lexicon(&world);
+    assert!(!lex.is_empty(), "NER lexicon should not be empty");
+    assert!(
+        !lex.contains(""),
+        "NER lexicon must not contain empty strings"
+    );
+    for arc in &world.history.arcs {
+        assert!(
+            lex.contains(&arc.title),
+            "arc title missing from NER lexicon"
+        );
+    }
+
+    // entity_brief resolves for a real character.
+    let a_character = world
+        .entities
+        .by_id
+        .iter()
+        .find(|(_, e)| matches!(e, Entity::Character(_)))
+        .map(|(id, _)| *id)
+        .expect("a character exists");
+    assert!(entity_brief(&world, a_character).is_some());
+
+    // arc closure ⊇ the arc's members.
+    if let Some(arc) = world.history.arcs.first() {
+        let closure: std::collections::HashSet<u32> =
+            arc_event_closure(&world, arc).iter().map(|e| e.0).collect();
+        for m in &arc.member_events {
+            assert!(
+                closure.contains(&m.0),
+                "arc closure must contain its members"
+            );
+        }
+    }
+}
+
+#[test]
 fn history_produces_major_events() {
     // Extended MVP exit criterion: at least three high-salience events
     // (major battles / collapses) for chronicles to anchor on.

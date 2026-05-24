@@ -416,6 +416,9 @@ fn contested_succession(
     )
     .actors(&[loser])
     .push(world);
+    // A blood feud is born between victor and exile (both ends, for traversal).
+    add_rel(world, loser, winner, RelationKind::BloodFeud, year);
+    add_rel(world, winner, loser, RelationKind::BloodFeud, year);
     // The exiled claimant's grievance lingers as a dormant claim on the throne.
     if let Some(title) = state.courts[pid].title {
         world.entities.insert(Entity::Claim(Claim {

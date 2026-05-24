@@ -14,6 +14,7 @@ pub mod agent;
 pub(crate) mod emit;
 pub mod extract;
 pub mod loops;
+pub mod lore_api;
 
 use mapgen_core::{splitmix64, EntityId, EventId, WorldData};
 use rand_chacha::{
