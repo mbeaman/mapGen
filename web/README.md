@@ -20,20 +20,30 @@ Browser frontend for the `mapgen` fantasy-map generator. Drives the
 
 ## One-time setup
 
+First install **Node 18+ and npm** (apt / brew / nvm — not
+cargo-installable). Then, from the repo root:
+
 ```sh
-# from repo root
+just web-setup    # installs wasm-pack (via cargo), runs npm install, builds web/pkg
+```
+
+Equivalent by hand:
+
+```sh
 cargo install wasm-pack    # if missing
 cd web
 npm install                # pnpm and yarn work identically
+npm run build:wasm
 ```
 
 ## Dev loop
 
 ```sh
-cd web
-npm run build:wasm         # build crates/mapgen-wasm → web/pkg
-npm run dev                # vite on http://localhost:5173
+just web-dev      # Vite dev server → http://localhost:5173
+just web-build    # rebuild web/pkg after Rust changes
 ```
+
+Or directly: `cd web && npm run dev` / `npm run build:wasm`.
 
 `build:wasm` runs `wasm-pack build --target web` against
 `crates/mapgen-wasm` and writes the ES module + .wasm into `web/pkg/`.

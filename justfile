@@ -46,6 +46,37 @@ render-42-png:
 perf:
     cargo run --release -p mapgen-world --example perf_baseline -- --check
 
+# Node 18+ and npm must already be installed — they are NOT cargo-installable;
+# see web/README.md for how to get Node (apt / brew / nvm).
+# One-time web-frontend setup: wasm-pack (via cargo) + npm deps + first wasm build.
+web-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v node >/dev/null 2>&1; then
+        echo "error: node not found. Install Node 18+ and npm first (apt / brew / nvm); see web/README.md." >&2
+        exit 1
+    fi
+    if command -v wasm-pack >/dev/null 2>&1; then
+        echo "==> wasm-pack already installed: $(wasm-pack --version)"
+    else
+        echo "==> installing wasm-pack via cargo"
+        cargo install wasm-pack
+    fi
+    cd web
+    echo "==> installing web dependencies (npm install)"
+    npm install
+    echo "==> building wasm package (web/pkg)"
+    npm run build:wasm
+    echo "==> web setup complete. Run 'just web-dev' to start the dev server."
+
+# Rebuild the wasm package the frontend consumes (run after Rust changes).
+web-build:
+    cd web && npm run build:wasm
+
+# Start the Vite dev server at http://localhost:5173 (run web-setup first).
+web-dev:
+    cd web && npm run dev
+
 # cargo clean (drop target/, reset build cache).
 clean:
     cargo clean

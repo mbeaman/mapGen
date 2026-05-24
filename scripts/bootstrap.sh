@@ -58,3 +58,7 @@ echo "  just              # list all recipes"
 echo "  just render-42    # render the canonical seed-42 ornate SVG"
 echo "  just render-42-png # same render as PNG via the sweep CLI"
 echo "  just perf         # check perf budget against docs/perf_baseline.md"
+echo
+echo "Browser frontend (web/): install Node 18+ and npm (not cargo-"
+echo "installable), then run 'just web-setup' (handles wasm-pack + deps"
+echo "+ first build) and 'just web-dev'. See web/README.md."
