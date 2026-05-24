@@ -10,6 +10,7 @@
 //! seed comes from the pipeline's `Stage::History` sub-stream. See
 //! `tests` below and `mapgen-world/tests/history_spec.rs`.
 
+pub mod agent;
 pub mod loops;
 
 use mapgen_core::{splitmix64, WorldData};
@@ -52,6 +53,9 @@ pub struct SimState {
     /// Per-polity aridity in `[0, 1]` (drought propensity), from mean
     /// territory precipitation. Computed once at start.
     pub aridity: Vec<f32>,
+    /// Per-polity ruling court (current ruler, dynasty, heirs). Advanced by the
+    /// agent layer each year; read by succession / power loops later.
+    pub courts: Vec<agent::Court>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -113,6 +117,7 @@ impl SimState {
             population,
             capacity,
             aridity,
+            courts: vec![agent::Court::default(); n_pol],
         }
     }
 }
@@ -172,12 +177,36 @@ pub fn loop_seed(sim_seed: u64, year: i32, loop_id: LoopId) -> u64 {
     splitmix64(year_seed, loop_id as u64)
 }
 
-/// Run `params.years` of deterministic history against `world` in place, using
-/// the six causal loops in canonical order. `rng` is the `Stage::History`
-/// sub-stream from the pipeline; its first draw fixes the sim's base seed, from
-/// which every per-year / per-loop seed is derived.
+/// Stream key for the agent layer's per-year RNG. Distinct from every
+/// [`LoopId`] (which start at 1) so the agent stream is independent of the
+/// causal loops — adding or removing a loop cannot perturb the dynasties.
+const AGENT_STREAM: u64 = 64;
+
+/// Run `params.years` of deterministic history against `world` in place: each
+/// year the agent layer advances the ruling dynasties, then the six causal
+/// loops run in canonical order. `rng` is the `Stage::History` sub-stream from
+/// the pipeline; its first draw fixes the sim's base seed, from which every
+/// per-year / per-loop / agent seed is derived.
 pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
-    run_with_loops(world, params, rng, default_loops());
+    let sim_seed = rng.next_u64();
+    let mut state = SimState::new(world);
+    let mut loops = default_loops();
+    for year in 0..params.years {
+        let year_seed = splitmix64(sim_seed, year as u64);
+        // Agent layer first, so the loops see the current rulers.
+        let mut arng = ChaCha8Rng::seed_from_u64(splitmix64(year_seed, AGENT_STREAM));
+        agent::advance(world, &mut state, year, &mut arng);
+        for lp in loops.iter_mut() {
+            let mut lrng = ChaCha8Rng::seed_from_u64(splitmix64(year_seed, lp.id() as u64));
+            let mut ctx = TickCtx {
+                world,
+                state: &mut state,
+                year,
+                rng: &mut lrng,
+            };
+            lp.tick(&mut ctx);
+        }
+    }
 }
 
 /// [`run`] with an injectable loop set — the seam tests use to count ticks and
@@ -338,9 +367,11 @@ mod tests {
     }
 
     fn run_synth(years: i32, seed: u64) -> WorldData {
+        // Loops-only (no agent layer) so these stay focused on the demographic
+        // backbone — the agent layer's dynastic events are covered separately.
         let mut w = synthetic_world(200);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        run(&mut w, HistoryParams { years }, &mut rng);
+        run_with_loops(&mut w, HistoryParams { years }, &mut rng, default_loops());
         w
     }
 

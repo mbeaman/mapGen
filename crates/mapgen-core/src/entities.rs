@@ -4,7 +4,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::EntityId;
+use crate::ids::{EntityId, EventId};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
@@ -20,6 +20,9 @@ pub enum Entity {
     Claim(Claim),
     Culture(Culture),
     Language(Language),
+    /// A heritable office (a throne / crown). Appended in Phase 4c —
+    /// append-only, never reorder.
+    Title(Title),
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -33,20 +36,106 @@ pub struct Polity {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Dynasty {
     pub name: String,
+    /// The founding character (Phase 4c). `None` on pre-v10 worlds.
+    #[serde(default)]
+    pub founder: Option<EntityId>,
+    /// In-world year the dynasty was founded.
+    #[serde(default)]
+    pub founded_year: i32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct House {
     pub name: String,
     pub dynasty: Option<EntityId>,
+    /// The founding character (Phase 4c).
+    #[serde(default)]
+    pub founder: Option<EntityId>,
+    #[serde(default)]
+    pub founded_year: i32,
 }
 
+/// Biological sex — needed by lineage and (later) succession. Append-only.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum Sex {
+    #[default]
+    Female = 0,
+    Male = 1,
+}
+
+/// A named historical figure. Phase 4c populates rulers, their consorts, and
+/// heirs; the `relationships` / `titles` / `*_event` fields are the lineage and
+/// rulership spine (all `#[serde(default)]`, so pre-v10 worlds — which have
+/// empty entity stores anyway — load cleanly).
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Character {
     pub name: String,
     pub born_year: i32,
     pub died_year: Option<i32>,
     pub house: Option<EntityId>,
+    /// Index into `world.cultures.cultures` — the culture this figure belongs
+    /// to (drives name language). `None` on pre-4c worlds.
+    #[serde(default)]
+    pub culture_id: Option<u16>,
+    #[serde(default)]
+    pub sex: Sex,
+    /// Typed ties to other characters (parent / child / spouse in 4c; rivalry
+    /// / feud edges arrive in 4i). Symmetric ties are written on both ends.
+    #[serde(default)]
+    pub relationships: Vec<Relationship>,
+    /// Offices this character has held, with the reign span.
+    #[serde(default)]
+    pub titles: Vec<TitleHolding>,
+    /// The `Birth` event that records this figure's birth.
+    #[serde(default)]
+    pub birth_event: Option<EventId>,
+    /// The `Death` event, once they die.
+    #[serde(default)]
+    pub death_event: Option<EventId>,
+}
+
+/// A directed, typed tie from one character to another. Phase 4c uses
+/// Parent / Child / Spouse; later phases append rivalry kinds.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Relationship {
+    pub other: EntityId,
+    pub kind: RelationKind,
+    pub since_year: i32,
+}
+
+/// Kind of inter-character tie. Append-only — discriminants are on-disk schema.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum RelationKind {
+    #[default]
+    Parent = 0,
+    Child = 1,
+    Spouse = 2,
+}
+
+/// A heritable office bound to a polity (the throne of a kingdom). One per
+/// polity in 4c. Stored as an `Entity::Title`; reigns are recorded as
+/// [`TitleHolding`]s on the holding characters.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Title {
+    pub name: String,
+    /// Index into `world.society.nations` — the polity this office rules.
+    pub polity: u16,
+    /// The event that created the office (the founder's coronation).
+    #[serde(default)]
+    pub created_event: Option<EventId>,
+}
+
+/// One character's tenure of a [`Title`]. `end_year` / `end_event` are `None`
+/// while the holder still reigns.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct TitleHolding {
+    pub title: EntityId,
+    pub start_year: i32,
+    pub end_year: Option<i32>,
+    pub start_event: Option<EventId>,
+    pub end_event: Option<EventId>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -402,6 +491,27 @@ mod tests {
             original, decoded,
             "Culture lost data through JSON round-trip; JSON shape was: {json}"
         );
+    }
+
+    #[test]
+    fn title_inside_entity_round_trips() {
+        // The appended `Entity::Title` variant must survive the `#[serde(tag =
+        // "kind")]` enum round-trip (Phase 4c schema addition).
+        let original = Entity::Title(Title {
+            name: "Throne of Aenor".to_string(),
+            polity: 3,
+            created_event: Some(EventId(42)),
+        });
+        let json = serde_json::to_string(&original).expect("serialize Entity::Title");
+        let decoded: Entity = serde_json::from_str(&json).expect("deserialize Entity::Title");
+        match (&original, &decoded) {
+            (Entity::Title(a), Entity::Title(b)) => {
+                assert_eq!(a.name, b.name);
+                assert_eq!(a.polity, b.polity);
+                assert_eq!(a.created_event, b.created_event);
+            }
+            _ => panic!("Entity variant changed across round-trip: {decoded:?}"),
+        }
     }
 
     #[test]

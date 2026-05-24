@@ -278,9 +278,9 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** derived (seed-42 spot check in `naming_spec`)
 * **Source:** Phase-3e polish; `naming.rs` step 6
 
-## History (Phase 4b demographic backbone) — `mapgen-history::loops::turchin`
+## History (Phase 4) — `mapgen-history`
 
-### `GROWTH_RATE` / `FAMINE_STRESS` / drought + plague knobs
+### Turchin demographic backbone (4b) — `loops::turchin`: `GROWTH_RATE` / `FAMINE_STRESS` / drought + plague knobs
 
 * **Current:** `GROWTH_RATE = 0.03` (logistic `r`); `FAMINE_STRESS = 0.85`
   (stress threshold for famine); `DROUGHT_BASE_PROB = 0.15` ×aridity,
@@ -300,6 +300,25 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** tuned against canonical seed 42 at 4k cells (event-kind mix +
   per-polity spread).
 * **Source:** Phase 4b; `loops/turchin.rs` + `SimState` in `lib.rs`.
+
+### Agent layer (4c) — `agent.rs`: reign / family knobs
+
+* **Current:** `FOUNDER_AGE = 30`; `REIGN_MIN = 16` / `REIGN_MAX = 44`;
+  `MARRY_AFTER = 3` (years into reign); `CHILD_INTERVAL = 4`;
+  `MAX_CHILDREN = 4`.
+* **Why these values:** reigns of 16–44 years (mean ~30) give ~12–18 rulers per
+  polity over 500 years — enough turnover for a readable king-list without
+  trivializing each reign. Marriage 3 years in, then a child every 4 years up to
+  4, means most reigns produce ≥1 heir, so dynasties usually persist with the
+  occasional line-failure → new dynasty (welcome variety). Seed 42: 4 dynasties,
+  241 characters, 68 coronations / 64 deaths / 169 births over 500 years — a
+  coherent genealogy on the first cut, **no retune required** (contrast 4b's
+  plague-spam). Heirs can be crowned young (no age/regency gate); that's a known
+  4c simplification — succession crises + minimum-age/regency land in 4f.
+* **Method:** derived; sanity-checked against seed 42 (king-list reads as a
+  plausible dynastic history; lineage reciprocity + chains asserted in
+  `history_spec`).
+* **Source:** Phase 4c; `agent.rs`.
 
 ## Open tuning questions (next sweep candidates)
 

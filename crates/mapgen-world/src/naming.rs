@@ -19,9 +19,9 @@
 //! is BACKLOGGED; MVP uses pure phonotactic.
 
 use mapgen_core::entities::{Language, Race};
+use mapgen_core::generate_name;
 use mapgen_core::world_data::MountainRange;
 use mapgen_core::WorldData;
-use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha8Rng;
 
 /// Tunables for the naming stage. Calibrated values land in
@@ -334,31 +334,6 @@ fn language_for_race(race: Race) -> Language {
     }
 }
 
-/// Generate a single phonotactic name from `lang`. The RNG must be
-/// advanced consistently to preserve determinism across runs of the
-/// same seed.
-pub fn generate_name(lang: &Language, rng: &mut ChaCha8Rng) -> String {
-    let span = lang.max_syllables - lang.min_syllables + 1;
-    let n_syllables = lang.min_syllables + (rng.next_u32() % span as u32) as u8;
-    let mut out = String::new();
-    for _ in 0..n_syllables {
-        let pat = &lang.syllable_patterns[(rng.next_u32() as usize) % lang.syllable_patterns.len()];
-        for ch in pat.chars() {
-            let picked = match ch {
-                'C' => lang.consonants[(rng.next_u32() as usize) % lang.consonants.len()],
-                'V' => lang.vowels[(rng.next_u32() as usize) % lang.vowels.len()],
-                literal => literal,
-            };
-            out.push(picked);
-        }
-    }
-    capitalize(&out)
-}
-
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(c) => c.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
+// `generate_name` now lives in `mapgen_core::naming` (imported above) so the
+// history crate can name characters from the same per-culture languages
+// without depending on `mapgen-world`. Behavior is unchanged.

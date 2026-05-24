@@ -345,15 +345,27 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
   **only** Famine/Plague/Drought kinds, valid id/year/salience/location). Schema
   `v8→v9`; **both goldens re-anchored**. `just check` green (156 tests).
 
-### Phase 4c — Agent layer: Characters, Houses, Dynasties, lineage, Titles
+### Phase 4c — Agent layer: Characters, Houses, Dynasties, lineage, Titles *(shipped)*
 
-- [ ] (1d) Per-polity ruling Characters (`born/died_year`, names via the Phase-3d
-  language engine in `naming.rs`), Houses→Dynasties, parent/child via
-  `Relationship`, one `Title` per polity + `TitleHolding`. Emits `Birth`/`Death`/
-  `Coronation`/`Marriage`.
-- [ ] (4h) Spec: `born_year ≤ died_year`; ruler→House→Dynasty chains valid; lineage
-  acyclic; coronation follows death; title-holdings have start/end events;
-  determinism pin. Re-anchor.
+- [x] Agent layer (`mapgen-history/src/agent.rs`) runs each year *before* the
+  six causal loops (own RNG stream, keeps "six loops" intact). Per polity: a
+  founder establishes a Dynasty + House + Throne, rulers marry a consort, bear
+  heirs, die, and are succeeded by their eldest living child — or a new dynasty
+  when the line fails. Lineage via `Relationship` (Parent/Child/Spouse), reigns
+  via `TitleHolding`. Names from the founding culture's `Language`. Emits
+  `Birth`/`Marriage`/`Coronation`/`Death`. Seed 42: **498 events** (68
+  coronations, 169 births, 64 deaths, 68 marriages + the 4b crises), **253
+  entities** (4 dynasties/houses/titles, 241 characters) — coherent lineage,
+  no tuning needed.
+- [x] Name generation moved to `mapgen-core::naming` (behavior-preserving) so
+  the history crate names characters without depending on `mapgen-world`.
+- [x] Spec: `history_spec.rs` (entities populated, kinds demographic-or-dynastic,
+  `born≤died`, ruler→House→Dynasty chains, title-holdings reference Titles +
+  have coronation events, coronation/death name an actor, parent/child
+  reciprocity, multi-seed well-formedness) + `Entity::Title` round-trip.
+  Schema `v9→v10` (Entity::Title + Character/Dynasty/House fields + Sex /
+  Relationship / TitleHolding); **both goldens re-anchored**. `just check`
+  green (161 tests). Knobs in `docs/tuning_log.md`.
 
 ### Phase 4d — Turchin fiscal half + Khaldun asabiyyah *(promotes Khaldun from Phase 6)*
 

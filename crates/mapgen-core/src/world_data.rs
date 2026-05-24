@@ -35,7 +35,12 @@ use crate::{
 ///   demographic backbone → Famine / Plague / Drought). No struct change
 ///   (the `events` field already existed); both goldens re-anchor for the
 ///   `schema_version` byte and `seed42_full` additionally for the events.
-pub const SCHEMA_VERSION: u32 = 9;
+/// * v10 — Phase 4c: agent layer. New `Entity::Title` variant + additive
+///   `#[serde(default)]` fields on `Character` / `Dynasty` / `House`
+///   (lineage, titles, sex, culture). History populates `WorldData::entities`
+///   with rulers / houses / dynasties / titles. Both goldens re-anchor for
+///   the `schema_version` byte; `seed42_full` additionally for the entities.
+pub const SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
