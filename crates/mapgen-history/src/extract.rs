@@ -104,11 +104,15 @@ fn extract_arcs(world: &WorldData) -> Vec<NarrativeArc> {
             })
             .expect("non-empty");
 
-        // Key characters: actors across members, most-involved first.
+        // Key characters: the most-involved *people* across members. Filtered to
+        // Characters — actors can also be beasts / religions / artifacts (e.g. a
+        // megabeast on its `MegabeastRise`), which are not part of the human cast.
         let mut freq: BTreeMap<u32, usize> = BTreeMap::new();
         for &i in &members {
             for a in &evs[i].actors {
-                *freq.entry(a.0).or_default() += 1;
+                if matches!(world.entities.by_id.get(a), Some(Entity::Character(_))) {
+                    *freq.entry(a.0).or_default() += 1;
+                }
             }
         }
         let mut ranked: Vec<(u32, usize)> = freq.into_iter().collect();

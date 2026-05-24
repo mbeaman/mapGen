@@ -636,7 +636,10 @@ fn causal_links_are_acyclic_and_follow_the_grammar() {
         matches!(
             (e.as_str(), c.as_str()),
             ("MegabeastSlain", "MegabeastRise")
+                | ("Ascension", "MegabeastRise")
+                | ("ArtifactForged", "MegabeastSlain")
                 | ("ProphecyFulfilled", "ProphecyUttered")
+                | ("ProphecyFulfilled", "MegabeastSlain")
                 | ("BattleFought", "WarDeclared")
                 | ("BattleFought", "Succession")
                 | ("Siege", "BattleFought")

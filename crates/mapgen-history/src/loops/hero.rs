@@ -100,6 +100,9 @@ impl CausalLoop for Hero {
                 birth_event: None,
                 death_event: None,
             }));
+            // The cassette is causally chained so it weaves into one HeroSaga
+            // arc: the beast's rise summons the champion (ascension), who slays
+            // it, forges a relic from the spoils, and fulfils the old prophecy.
             Emit::new(
                 year,
                 EventKind::Ascension,
@@ -108,8 +111,9 @@ impl CausalLoop for Hero {
                 format!("{hero_name} arose as a champion of the age."),
             )
             .actors(&[hero])
+            .causes(&[rise_ev])
             .push(ctx.world);
-            Emit::new(
+            let slain_ev = Emit::new(
                 year,
                 EventKind::MegabeastSlain,
                 cell,
@@ -132,6 +136,7 @@ impl CausalLoop for Hero {
                 format!("{hero_name} forged {artifact_name} from the beast's remains."),
             )
             .actors(&[hero, artifact])
+            .causes(&[slain_ev])
             .push(ctx.world);
             if let Some(uttered) = ctx.state.pending_prophecies.pop() {
                 Emit::new(
@@ -142,7 +147,7 @@ impl CausalLoop for Hero {
                     format!("The old prophecy was fulfilled in {hero_name}'s triumph."),
                 )
                 .actors(&[hero])
-                .causes(&[uttered])
+                .causes(&[uttered, slain_ev])
                 .push(ctx.world);
             }
         }
