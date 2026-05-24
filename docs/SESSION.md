@@ -12,11 +12,11 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `cec14b2 docs(backlog): add multi-scale generation track + inter-scale research brief` |
-| Tree | clean, synced to origin |
-| Tests | 129 across 31 test binaries, 0 failures |
-| Gate | fmt + clippy clean, wasm release builds |
-| Schema | v8 |
+| Latest commit | `87333ac feat(history): Phase 4a — CausalLoop trait + tick driver + pipeline wiring` (committed, **not pushed**; cec14b2 and earlier are on origin) |
+| Tree | clean; ahead of origin by 1 (87333ac) |
+| Tests | 150 across the workspace, 0 failures |
+| Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` advisory only on this box — see gotcha below |
+| Schema | v8 (Phase 4 bumps to v9 at 4b/4c, when events/entity fields first persist) |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger) |
 
 ---
@@ -34,7 +34,7 @@ fast; the others are stable.
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
 | 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
-| 4 history sim | not started | — |
+| 4 history sim | **in progress (4a shipped)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring. `4a` foundation = `87333ac` (CausalLoop trait + tick driver + sub-seeding + pipeline wiring; six no-op loops; no schema/golden change). `4b`–`4j` pending — see `docs/TASKS.md` `## Phase 4` + plan `.claude/plans/cosmic-dreaming-comet.md`. |
 
 ---
 
@@ -61,27 +61,29 @@ git log -8 --oneline
 
 ## Currently in flight
 
-**Phase 4 (history sim) is planned and drafted — `4a` is next to code.**
+**Phase 4 (history sim) is in progress — `4a` shipped, `4b` is next.**
 The full task list is in `docs/TASKS.md` (`## Phase 4`); plan of record is
-`.claude/plans/cosmic-dreaming-comet.md`. Scope was expanded past the locked
-MVP to **all six causal loops + an uplevel layer** (user directive 2026-05-24,
-"time is not a factor" + "uplevel the output"); wiring is **Option B** (History
-becomes a `PipelineStage`, so it shows in the web live build-up and re-anchors
-`seed42_full` per output-changing substage). No Phase-4 code written yet — start
-at `4a` (schema v9 + `CausalLoop` trait + tick driver + pipeline wiring +
-determinism spec). Promoting Khaldun/succession/schism/hero and amending LOCKED
-ARCHITECTURE §2/§4 is task `4j`.
+`.claude/plans/cosmic-dreaming-comet.md`. Scope: **all six causal loops + an
+uplevel layer** (user directive 2026-05-24, "time is not a factor" + "uplevel
+the output"), which amends the locked MVP (recorded at `4j`); **Option-B**
+wiring (History is a `PipelineStage`, shows in the web live build-up).
+
+- **`4a` done (`87333ac`, not pushed).** `CausalLoop` trait + `LoopId`
+  (stable discriminants, fixed `ORDER`) + `TickCtx` + `SimState` + tick driver
+  with hierarchical sub-seeding (`loop_seed = splitmix64(splitmix64(sim,year),
+  loop)`); `splitmix64` exposed from `mapgen-core`; six no-op loop skeletons;
+  pipeline wiring. **Refinement vs. plan:** schema v9 moved out of 4a to its
+  consumers (4b/4c) — no-op loops leave `generate_full` byte-identical, so 4a
+  needed no schema bump and no golden re-anchor. `just check` green.
+- **`4b` next:** Turchin demographic backbone → first events (Famine/Plague/
+  Drought). Bumps schema to v9, re-anchors `seed42_full`, populates `events`.
+- Then 4c (characters/dynasties/lineage) → 4d (Khaldun) → 4e (wars) → 4f
+  (succession) → 4g (schism) → 4h (heroes/ages) → 4i (uplevel capstone) → 4j
+  (CLI + docs + ARCHITECTURE §2/§4 amendment + perf re-anchor).
 
 Phase 3e (spec + polish), the web-frontend MVP, and the multi-scale BACKLOG
 track are all complete. Deferred render item: a hand-authored
 `target_aesthetic.svg` (taste reference; user-deferred).
-
-- **Phase 4 (history sim) — full plan.** Six causal loops (Turchin secular cycles
-  + Khaldun dynasty decline + Mearsheimer offensive realism +
-  Succession crises + Schism splits + Hero events). 500-year
-  deterministic agent-based sim. Reads cultures + religions +
-  polities; writes to `WorldData.events` (already in schema, empty).
-  ARCHITECTURE.md estimates ~2 weeks of focused work.
 
 - **Web frontend hardening.** The MVP shipped (generate/render/style/
   pan-zoom/export/permalinks). Setup is now codified in `just web-setup`
@@ -97,6 +99,14 @@ track are all complete. Deferred render item: a hand-authored
 
 Specific traps that have bitten work before. None are bugs to fix
 (yet); each is a "watch out" with the rationale.
+
+- **`just perf` is advisory on this box.** The dev box changed and is
+  ~1.6× slower than the `perf_baseline` anchor (Ryzen 9 5950X), so the
+  30k-cell case reports OVER budget (~220ms vs 200ms) on clean,
+  regression-free code. `just check` is the real gate. Decision
+  (2026-05-24): leave the baseline untouched through 4b–4i, re-anchor
+  once at `4j` with the final history-sim cost. Don't chase the 30k
+  overage as a regression here.
 
 - **Float-determinism.** Route every transcendental through
   `mapgen_core::fmath::*`. Direct `f32::sin` etc. breaks the
