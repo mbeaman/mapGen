@@ -584,11 +584,22 @@ note.
 
 ### Cataclysm clock (Sanderson-style Desolations)
 
-- **Why deferred.** Substantial addition to history sim. MVP gets
-  Turchin + Mearsheimer; cataclysms come with the other four loops.
-- **Trigger for revival.** Phase 4 history sim is mature; lore engine
-  wants mythic-age transitions to narrate.
-- **Cost.** 2-3 days.
+- **Why deferred.** A *recurring, world-scale* catastrophe on a fixed
+  mythic clock (Desolation every N centuries, with a build-up the
+  chronicle anticipates) was never part of Phase 4. Phase 4 shipped all
+  six causal loops — including the four originally deferred here
+  (Khaldun, succession, schism, hero) at commits `52c709f`/`4c2348e`/
+  `858e9d4`/`26df4a3` — plus *local, emergent* cataclysm-flavored events
+  (`Megabeast`/`Plague`/`Famine`/`Drought`) and `HistoryData.ages`
+  (fixed-window mythic ages). What's still missing is the *clock*: a
+  scheduled, escalating, civilization-resetting Desolation that ages
+  partition around rather than being framed by quartiles.
+- **Trigger for revival.** Phase-4 loops are live and mature (✓); the
+  lore engine (Phase 5) wants a recurring apocalyptic beat to narrate
+  toward, or the user asks for Sanderson-style epoch resets.
+- **Cost.** 2-3 days. A 7th loop (or a driver-level scheduler) that
+  injects a periodic high-salience cataclysm, resets affected polity
+  `SimState`, and re-anchors `ages` to the Desolation cadence.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
 ---

@@ -6,17 +6,18 @@ hybrid simulation + LLM lore engine (planned).
 
 ## Status
 
-**Phase 2 + 2.5 + 3a/b/c/d + 3e (per architecture spec) shipped.** The
-full geography + society + naming pipeline runs end-to-end on any seed
-and produces deterministic worlds with cultures, religions, polities,
-settlements, roads, and phonotactic in-world names. The ornate-antique
-render style covers every Phase 3e architecture-spec item: parchment,
-roughr-perturbed coastlines (4 ripples), Tolkien mountains, biome-keyed
-forest scatter, culture × architecture × tier settlement glyphs,
-bundled Cinzel / IM Fell English / EB Garamond typography, compass
-rose, corner cartouche, edge-burn vignette. A browser frontend
-(`web/`) drives the wasm build with live generation, pan/zoom, export,
-and permalinks. Phase 4 (history sim) is the next major arc.
+**Phase 2 + 2.5 + 3a/b/c/d + 3e + 4 (per architecture spec) shipped.** The
+full geography + society + naming + **history** pipeline runs end-to-end on
+any seed and produces deterministic worlds with cultures, religions, polities,
+settlements, roads, phonotactic in-world names, and a causally-linked 500-year
+chronicle (dynasties, wars, schisms, heroes, mythic ages, narrative arcs). The
+ornate-antique render style covers every Phase 3e architecture-spec item:
+parchment, roughr-perturbed coastlines (4 ripples), Tolkien mountains,
+biome-keyed forest scatter, culture × architecture × tier settlement glyphs,
+bundled Cinzel / IM Fell English / EB Garamond typography, compass rose, corner
+cartouche, edge-burn vignette. A browser frontend (`web/`) drives the wasm build
+with live generation, pan/zoom, export, and permalinks. Phase 5 (Claude-narrated
+chronicles over the event log) is the next major arc.
 
 Project docs:
 
@@ -52,6 +53,15 @@ Project docs:
   `crates/mapgen-world/data/race_archetypes.csv`. Weighted Voronoi BFS
   assignment writes `culture_id` per land cell; iterative culling drops
   cultures below the 0.3 mean-fitness floor (ARCHITECTURE.md §4 Phase 3a).
+- **History stage (Phase 4)** — a deterministic 500-year simulation: a
+  system-dynamics backbone (per-polity population / carrying capacity / fiscal
+  health / instability / asabiyyah) drives six causal loops (Turchin demographic
+  + fiscal, Ibn Khaldun asabiyyah, Mearsheimer power-transition wars, succession,
+  religious schism, hero/megabeast sagas) over an agent layer of named
+  Characters, Houses, and Dynasties with lineage and blood feuds. Writes an
+  append-only, causally-chained `EventLog` plus `HistoryData` (mythic ages +
+  classified narrative arcs); wars mutate the political map the renderer reads.
+  Inspect with `mapgen events --in world.json.gz`.
 - **Four render styles:** `greyscale` (heightmap), `biomes` (Phase-2 data view),
   `cultures` (Phase-3a data view), and `ornate_antique` (Phase-3e marquee —
   parchment, `roughr` pen-jitter coastlines (4 ripples), faint ocean
@@ -71,12 +81,11 @@ Project docs:
   (needs Node + npm + `wasm-pack`; not covered by `scripts/bootstrap.sh`,
   which bootstraps the Rust core only).
 
-**Not yet:** history simulation (Phase 4), Claude-narrated chronicles
-(Phase 5). The Phase-3e render-polish pass is complete; the only
-deferred render item is a hand-authored `docs/target_aesthetic.svg`
-(a taste reference, revisited only when starting a new style variant).
-All tracked in `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and
-`docs/BACKLOG.md`.
+**Not yet:** Claude-narrated chronicles (Phase 5) that read the now-populated
+event log. The Phase-3e render-polish pass is complete; the only deferred render
+item is a hand-authored `docs/target_aesthetic.svg` (a taste reference, revisited
+only when starting a new style variant). All tracked in `docs/ARCHITECTURE.md`,
+`docs/TASKS.md`, and `docs/BACKLOG.md`.
 
 ## First-time setup
 
@@ -149,6 +158,15 @@ cargo run --release -p mapgen-cli -- generate --seed 42 --cells 4000 \
     --out worlds/w42.json.gz
 ```
 
+Read the generated world's chronicle — mythic ages, the most salient events,
+and the narrative arcs the simulation wove:
+```sh
+cargo run --release -p mapgen-cli -- events --in worlds/w42.json.gz
+```
+
+`--min-salience <0..1>` (default 0.8) sets the major-event threshold and
+`--limit <n>` caps how many are printed.
+
 ## Parameter sweep (manual tuning)
 
 Render N maps with one knob varied across a range, plus an `index.html` grid
@@ -191,8 +209,8 @@ when fmt / clippy / wasm aren't relevant.
 | ---------------- | -------------------------------------------------------------- |
 | `mapgen-core`    | Entity schema, event log types, RNG harness, libm shim, LorePatch |
 | `mapgen-geom`    | Voronoi mesh, Poisson-disk sampling, Lloyd relaxation          |
-| `mapgen-world`   | Full pipeline: plates → erosion → hydrology → climate → biomes → cultures → religions → polities → naming |
-| `mapgen-history` | Agent-based history simulation + append-only event log (stub)  |
+| `mapgen-world`   | Full pipeline: plates → erosion → hydrology → climate → biomes → cultures → religions → polities → naming → history |
+| `mapgen-history` | 500-year deterministic history sim: agent layer (dynasties/lineage) + six causal loops (Turchin/Khaldun/Mearsheimer/succession/schism/hero) → causal-chained event log, narrative arcs + mythic ages |
 | `mapgen-render`  | SVG renderer with pluggable style modules                      |
 | `mapgen-lore`    | Claude integration, native only (stub)                         |
 | `mapgen-cli`     | Native dev binary (`mapgen generate / render / sweep`)         |
@@ -219,11 +237,8 @@ seed
  ├─► religions (founder culture × alignment spread) [implemented]
  ├─► polities (capital + towns + Dijkstra roads)   [implemented]
  ├─► naming (phonotactic per-language generator)   [implemented]
- ├─► religions (founder culture × spread)          [planned: Phase 3b]
- ├─► polities (Christaller k=4 hierarchy + roads)  [planned: Phase 3c]
- ├─► naming (phonotactic + Markov)                 [planned: Phase 3d]
- ├─► history (Turchin + Mearsheimer loops, 500y)   [planned: Phase 4]
- ├─► ornate SVG render                             [planned: Phase 3e]
+ ├─► history (6 causal loops + agents, 500y)        [implemented]
+ ├─► ornate SVG render                             [implemented]
  └─► Claude-narrated chronicles (NER-validated)    [planned: Phase 5]
 ```
 

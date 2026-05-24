@@ -35,9 +35,14 @@ const ISOLATIONIST_MULT: f32 = 0.3;
 const HONORBOUND_MULT: f32 = 1.4;
 /// Border cells the victor seizes from the loser.
 const TRANSFER_CELLS: usize = 6;
-/// Combined-power reference for battle salience: only wars whose stakes
-/// approach this read as "major" (salience ≥ 0.8).
-const STAKES_REF: f32 = 300.0;
+/// Combined-power reference for battle salience: the stakes at which a battle
+/// reads as maximally consequential. Calibrated to the high end of the observed
+/// combined-power distribution on the canonical seeds (range ≈ 250–2200, median
+/// ≈ 630) so that battle salience *spreads* across that range instead of pinning
+/// at the ceiling — only the top tier of wars (combined power ≳ 1100) clear the
+/// 0.8 "major" bar. The earlier 300.0 saturated ~75% of battles at 0.98, which
+/// drowned the chronicle's rarer marquee moments. See `docs/tuning_log.md`.
+const STAKES_REF: f32 = 2000.0;
 const EPS: f32 = 1e-3;
 
 /// Mearsheimer power-balance loop.

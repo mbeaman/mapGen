@@ -8,26 +8,28 @@ instead of hidden in compounding latency.
 
 ## Numbers
 
-Captured 2026-05-17 on `claude/fantasy-map-generator-1du5B` at commit
-`eacba95`. Release build, three seeds (1/2/3) per size, one untimed warmup
-at the smallest size. Values below are median across three full runs of
-the harness (so 9 worlds per size); seed-to-seed variance was ≤5% within a
-run, run-to-run variance ≤5%.
+**Re-anchored 2026-05-24 (Phase 4j)** to the current dev box for the *full*
+pipeline including the Phase-4 history sim (mesh → … → biomes → cultures →
+religions → polities → naming → **history**). The original 2026-05-17 anchor
+(17/66/133 ms on a Ryzen 9 5950X at commit `eacba95`) is retired: that machine
+is gone, the current box is ~1.6× slower, and the pipeline has since grown the
+500-year history stage.
 
-| target cells | median | scaling vs. 4k |
-|--------------|-------:|----------------|
-|        4,000 |  17 ms | 1.00×          |
-|       15,000 |  66 ms | 3.88×          |
-|       30,000 | 133 ms | 7.82×          |
+| target cells | median | vs. old Ryzen anchor |
+|--------------|-------:|----------------------|
+|        4,000 |  26 ms | 17 ms                |
+|       15,000 | 111 ms | 66 ms                |
+|       30,000 | 259 ms | 133 ms               |
 
-Roughly linear in cell count. 30k vs. 15k is 2.02× time for 2× cells; the
-slight super-linearity at small sizes is the fixed cost of mesh
-construction + Lloyd relaxation amortizing in.
+Release build, three seeds (1/2/3) per size, one untimed warmup. History adds a
+modest, war-count-bounded cost (per-war O(cells) capacity recompute) on top of
+the machine difference. Still roughly linear in cell count.
 
 ### Environment
 
-- CPU: AMD Ryzen 9 5950X (16 cores, 32 threads)
-- OS: Linux 6.17.0-29-generic, x86_64
+- The current dev box (replaced the Ryzen 9 5950X; ~1.6× slower) — see the
+  `perf-baseline-machine-gap` project note. `just perf` is the source of truth.
+- OS: Linux, x86_64
 - Rust: 1.95.0
 - Profile: `release` (workspace default)
 
@@ -38,9 +40,9 @@ baseline median on the same hardware class.** Budget table:
 
 | target cells | baseline | budget (1.5×) |
 |--------------|---------:|--------------:|
-|        4,000 |    17 ms |         26 ms |
-|       15,000 |    66 ms |         99 ms |
-|       30,000 |   133 ms |        200 ms |
+|        4,000 |    26 ms |         39 ms |
+|       15,000 |   111 ms |        166 ms |
+|       30,000 |   259 ms |        388 ms |
 
 1.5× was chosen to absorb normal CPU/run noise (~5% × normal hardware
 spread × measurement count) while still flagging any single stage that

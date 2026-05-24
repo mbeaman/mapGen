@@ -84,7 +84,7 @@ fn schism(ctx: &mut TickCtx, ri: usize, year: i32) {
         year,
         EventKind::Schism,
         cell,
-        0.6,
+        0.85,
         format!(
             "The {} faith was riven by schism; the {name} sect broke away.",
             parent.name

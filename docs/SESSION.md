@@ -12,12 +12,12 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `87333ac feat(history): Phase 4a — CausalLoop trait + tick driver + pipeline wiring` (committed, **not pushed**; cec14b2 and earlier are on origin) |
-| Tree | clean; ahead of origin by 1 (87333ac) |
-| Tests | 150 across the workspace, 0 failures |
-| Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` advisory only on this box — see gotcha below |
-| Schema | v8 (Phase 4 bumps to v9 at 4b/4c, when events/entity fields first persist) |
-| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger) |
+| Latest commit | **HEAD** = `feat(history): Phase 4j — events CLI + salience recalibration + docs/perf re-anchor (closes Phase 4)` (run `git log -1` for the hash) |
+| Tree | clean |
+| Tests | 177 across the workspace, 0 failures |
+| Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** — re-anchored to this box at 4j (26/111/259 ms medians vs 39/166/388 budgets) |
+| Schema | v11 (Phase 4 landed v9 at 4b, v10 at 4c, v11 at 4i.3 `HistoryData`) |
+| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** to record the six-loop Phase-4 scope (trigger: the "time is not a factor" + "uplevel" directive) |
 
 ---
 
@@ -34,21 +34,21 @@ fast; the others are stable.
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
 | 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
-| 4 history sim | **in progress (4a shipped)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring. `4a` foundation = `87333ac` (CausalLoop trait + tick driver + sub-seeding + pipeline wiring; six no-op loops; no schema/golden change). `4b`–`4j` pending — see `docs/TASKS.md` `## Phase 4` + plan `.claude/plans/cosmic-dreaming-comet.md`. |
+| 4 history sim | **done** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` (this closer). See `docs/TASKS.md` `## Phase 4`. |
 
 ---
 
 ## Recently shipped (most recent first)
 
 ```
-75c685c feat: named mountain ranges + spine labels (schema v8)
-4f893fa docs: mark Phase-3e render polish complete (README + SESSION)
-a309159 feat(render): Imhof simulated-annealing settlement-label placement
-8dcd888 feat(render): label major rivers (textPath) + lakes
-be1469b feat(world): name major rivers + lakes (schema v7)
-e77e95e feat(render): per-pantheon sacred-site glyphs
-d5d5b48 feat(render): polity border lines + trunk/branch road weighting
-11a4470 feat(render): irregular edge-burn stains + faint ocean hatching
+(HEAD) Phase 4j — events CLI + salience recalibration + docs/perf re-anchor
+532444c feat(history): 4i.4 — blood feuds + Phase-5 boundary API (completes 4i)
+980f461 feat(history): 4i.3 — HistoryData (v11): narrative arcs + mythic ages
+ab119b0 feat(history): 4i.2 — causal-chain grammar (populate cause_ids across loops)
+66b7f17 refactor(history): 4i.1 — unify 8 emit() helpers into one Emit builder
+ae5c90e fix(history): pre-4i hardening — dissolve conquered realms, de-spam wars
+26df4a3 feat(history): Phase 4h — hero/megabeast/artifact/prophecy sagas + fmath guard
+858e9d4 feat(history): Phase 4g — religious schism + wars of religion
 ```
 
 Regenerate this list when stale:
@@ -61,25 +61,29 @@ git log -8 --oneline
 
 ## Currently in flight
 
-**Phase 4 (history sim) is in progress — `4a` shipped, `4b` is next.**
-The full task list is in `docs/TASKS.md` (`## Phase 4`); plan of record is
-`.claude/plans/cosmic-dreaming-comet.md`. Scope: **all six causal loops + an
-uplevel layer** (user directive 2026-05-24, "time is not a factor" + "uplevel
-the output"), which amends the locked MVP (recorded at `4j`); **Option-B**
-wiring (History is a `PipelineStage`, shows in the web live build-up).
+**Phase 4 (history sim) is complete (4j closes it).** Nothing else is mid-flight.
+**Phase 5 (Claude-narrated chronicles) is the next major arc** but is *not yet
+started or requested* — it reads the now-populated event log via the
+`mapgen-history` boundary API (`ner_lexicon` / `entity_brief` / `arc_event_closure`
+in `lore_api.rs`) landed at 4i.4.
 
-- **`4a` done (`87333ac`, not pushed).** `CausalLoop` trait + `LoopId`
-  (stable discriminants, fixed `ORDER`) + `TickCtx` + `SimState` + tick driver
-  with hierarchical sub-seeding (`loop_seed = splitmix64(splitmix64(sim,year),
-  loop)`); `splitmix64` exposed from `mapgen-core`; six no-op loop skeletons;
-  pipeline wiring. **Refinement vs. plan:** schema v9 moved out of 4a to its
-  consumers (4b/4c) — no-op loops leave `generate_full` byte-identical, so 4a
-  needed no schema bump and no golden re-anchor. `just check` green.
-- **`4b` next:** Turchin demographic backbone → first events (Famine/Plague/
-  Drought). Bumps schema to v9, re-anchors `seed42_full`, populates `events`.
-- Then 4c (characters/dynasties/lineage) → 4d (Khaldun) → 4e (wars) → 4f
-  (succession) → 4g (schism) → 4h (heroes/ages) → 4i (uplevel capstone) → 4j
-  (CLI + docs + ARCHITECTURE §2/§4 amendment + perf re-anchor).
+What Phase 4 delivered (plan of record: `.claude/plans/cosmic-dreaming-comet.md`;
+task list: `docs/TASKS.md` `## Phase 4`): a deterministic 500-year history sim,
+wired as `PipelineStage::History` after `Naming` (Option B), running a
+system-dynamics backbone (per-polity `SimState`) under six causal loops
+(Turchin demographic + fiscal, Khaldun asabiyyah, Mearsheimer wars, succession,
+schism, hero) over an agent layer (Characters/Houses/Dynasties, lineage, blood
+feuds). Output: a causally-chained `EventLog` (~808 events on seed 42 across 24
+kinds) + `HistoryData` (mythic ages + classified narrative arcs); wars mutate the
+political map the renderer reads. Inspect via `mapgen events`.
+
+- **4j (this closer):** `mapgen events` subcommand; README/ARCHITECTURE/SESSION/
+  BACKLOG/tuning-log roll-ups; perf re-anchored to this box (now green). **Plus a
+  phase-end salience recalibration** (the formal 4j holistic review): the
+  `events --major` reel was 96 near-identical battles pinned at 0.98 while rare
+  marquee events (schism/prophecy/hero) sat below the bar. Fixed `STAKES_REF`
+  300 → 2000 (battles now spread) and lifted the rare world-shaping kinds into the
+  major band. Re-anchored `seed42_full`. See `docs/tuning_log.md` § Salience.
 
 Phase 3e (spec + polish), the web-frontend MVP, and the multi-scale BACKLOG
 track are all complete. Deferred render item: a hand-authored
@@ -100,13 +104,14 @@ track are all complete. Deferred render item: a hand-authored
 Specific traps that have bitten work before. None are bugs to fix
 (yet); each is a "watch out" with the rationale.
 
-- **`just perf` is advisory on this box.** The dev box changed and is
-  ~1.6× slower than the `perf_baseline` anchor (Ryzen 9 5950X), so the
-  30k-cell case reports OVER budget (~220ms vs 200ms) on clean,
-  regression-free code. `just check` is the real gate. Decision
-  (2026-05-24): leave the baseline untouched through 4b–4i, re-anchor
-  once at `4j` with the final history-sim cost. Don't chase the 30k
-  overage as a regression here.
+- **`just perf` was re-anchored to this box at 4j (2026-05-24) and is
+  green again.** The Ryzen 9 5950X anchor (17/66/133 ms) is retired; the
+  current box is ~1.6× slower and the pipeline now includes the 500-year
+  history sim, so the baseline is 26/111/259 ms (4k/15k/30k) with a 1.5×
+  budget (39/166/388 ms). It is **no longer advisory** — treat an OVER as
+  a real regression. Numbers live in `perf_baseline.rs` `BASELINES` +
+  `docs/perf_baseline.md` (keep them in sync). `just check` is still the
+  CI-enforced gate; `just perf` is run manually after science-pipeline work.
 
 - **Float-determinism.** Route every transcendental through
   `mapgen_core::fmath::*`. Direct `f32::sin` etc. breaks the
@@ -157,15 +162,23 @@ Specific traps that have bitten work before. None are bugs to fix
 Where to look when working in a given area:
 
 - `crates/mapgen-world/src/lib.rs` — `generate_full_with` pipeline
-  (the full mesh → naming sequence).
+  (the full mesh → naming → history sequence).
 - `crates/mapgen-world/src/{cultures,religions,polities,naming}.rs` —
   per-substage implementations.
-- `crates/mapgen-world/tests/*_spec.rs` — contract pins per phase.
+- `crates/mapgen-history/src/lib.rs` — history `run` driver + `SimState`
+  + sub-seeding; `loops/{turchin,khaldun,mearsheimer,succession,schism,
+  hero}.rs` the six loops; `agent.rs` dynasties/lineage; `emit.rs` the
+  `Emit` event builder; `extract.rs` arc/age extraction; `lore_api.rs`
+  the Phase-5 boundary API.
+- `crates/mapgen-world/tests/*_spec.rs` — contract pins per phase
+  (`history_spec.rs` is the Phase-4 contract; `pipeline_spec.rs` holds
+  the `seed42_full` golden).
+- `crates/mapgen-cli/src/main.rs` — CLI; `events` subcommand reads the log.
 - `crates/mapgen-render/src/style/ornate_antique.rs` — the marquee
   render.
 - `crates/mapgen-render/tests/svg_invariants.rs` — render contract.
-- `docs/tuning_log.md` — knob values per stage.
-- `docs/perf_baseline.md` — 17/72/149 ms perf budget (4k/15k/30k).
+- `docs/tuning_log.md` — knob values per stage (incl. Phase-4 loops + salience).
+- `docs/perf_baseline.md` — 26/111/259 ms baseline, 39/166/388 budget (4k/15k/30k).
 
 ---
 

@@ -536,52 +536,42 @@ coherence blockers in a hardening pass before 4i:
   side-table that 4i creates alongside narrative arcs (both post-sim
   scaffolding).
 
-### Phase 4i — Uplevel capstone: causal chains + salience + rivalries + arcs
+### Phase 4i — Uplevel capstone *(shipped — 4i.1 `66b7f17`, 4i.2 `ab119b0`, 4i.3 `980f461`, 4i.4 `532444c`)*
 
-- [ ] (1h) **(review #3) Unify the three `emit()` helpers** (turchin / agent /
-  mearsheimer each build `Event`) into one `lib.rs` event-builder — causal
-  chaining touches every emit site anyway, so do it here.
-- [ ] (1d) **Causal chaining grammar** populated inline at emission, validated by a
-  debug check: fixed small cause-set per effect kind (war→casus event;
-  battle/siege→war; succession→death+claim; prophecy-fulfilled→uttered;
-  city-abandoned→siege/plague/famine/megabeast). Roots cite nothing. Fan-in cap 1-2.
-- [ ] (4h) **Persistent rivalries** — `BloodFeud`/`Rival` edges inherited across
-  generations preserving `origin_event`; **minimal first**: binary inherited-or-not,
-  dies on house extinction.
-- [ ] (4h) **Salience post-sim pass** — `clamp01(0.30·kind_weight + 0.25·actor_
-  prestige + 0.15·scale + 0.15·causal_depth + 0.10·rarity + 0.05·first_of_kind)`.
-  Fixed linear combo — **no tunable optimizer** (Refinery anti-pattern). Guarantees
-  ≥3 events ≥0.8.
-- [ ] (1d) **Narrative-arc extraction** → `HistoryData.arcs`: weakly-connected
-  components of the salience-floored cause-DAG sharing an actor/house/title/artifact
-  → `NarrativeArc{title,kind,start/climax/end_event,member_events,key_characters,
-  theme_tags,peak_salience}`. **3 arc kinds first** (HolyWar/HeroSaga/
-  DynasticConflict), rest = generic `Chronicle`.
-- [ ] (4h) **Phase-5 boundary API** in `mapgen-history` (unused until Phase 5):
-  `entity_brief`, `arc_slice` (events + transitive `cause_ids` closure),
-  `ner_lexicon` (closed proper-noun set; exact because all names are deterministic).
-- [ ] (2h) Spec: cause graph acyclic; ≥X% of wars have non-empty `cause_ids`; ≥3
-  events ≥0.8; a rivalry persists ≥2 generations on some seed; `extract_arcs(42)`
-  returns ≥1 multi-event arc; arc/age extraction is a pure function of the log.
-  Re-anchor.
+- [x] **4i.1 emit-unify** — 8 per-loop `emit()` helpers → one chainable
+  `crate::emit::Emit` builder (actors/patients/causes/casus). Behavior-preserving
+  (goldens unchanged).
+- [x] **4i.2 causal-chain grammar** — `cause_ids` populated across loops
+  (battle←war, siege←battle, treaty←war, city-abandoned←siege, coronation←death,
+  succession←death, war←succession/claim, slain←rise, fulfilled←uttered). Test:
+  acyclic + grammar-conformant. seed 42: 179/739 linked.
+- [x] **4i.3 `HistoryData` (schema v11)** — narrative-arc extraction (union-find
+  over the cause-DAG → classified, titled threads; seed 42: 33 arcs) + mythic
+  ages (4 windows). Salience: the per-loop values discriminate well; a unified
+  recompute was judged unnecessary (deferred).
+- [x] **4i.4 rivalries + Phase-5 API** — `RelationKind::{Rival,BloodFeud}`;
+  contested successions breed a reciprocal blood feud. `lore_api`: `ner_lexicon`
+  (closed proper-noun set) / `entity_brief` / `arc_event_closure` (member +
+  transitive cause closure). Cross-generation feud inheritance deferred.
 
-### Phase 4j — CLI + docs + perf + architecture amendment *(phase "D")*
+### Phase 4j — CLI + docs + perf + architecture amendment *(shipped — phase "D")*
 
-- [ ] (2h) `mapgen events --in world.json.gz --major` subcommand (MVP exit
-  criterion) in `mapgen-cli/src/main.rs`.
-- [ ] (2h) README pipeline diagram → 11 stages; check off this list;
-  `docs/tuning_log.md` Phase-4 section (growth rate, asabiyyah decay, war-ignition
-  power ratio, salience weights, arc/age thresholds); `docs/perf_baseline.md`
-  history-stage entry.
-- [ ] (1h) **Amend LOCKED `docs/ARCHITECTURE.md` §2/§4** — record six-loop scope +
-  the 2026-05-24 trigger (promotion of the four Phase-6 loops). Update
-  `docs/SESSION.md`. Update `docs/BACKLOG.md` (cataclysm-clock item's relation to
-  the now-live four loops).
+- [x] `mapgen events --in world.json.gz` subcommand — prints mythic ages, major
+  events (`--min-salience`, default 0.8), and narrative arcs. The MVP-exit
+  demonstration.
+- [x] README pipeline → 11 stages incl. history; `mapgen-history` crate role
+  updated. `docs/tuning_log.md` Phase-4 sections landed per-substage.
+- [x] `docs/perf_baseline.md` + `perf_baseline.rs` **re-anchored to this box**
+  (26/111/259 ms, budget 1.5×; the Ryzen anchor is retired and history is now
+  included). `just perf` green again.
+- [x] **Amended LOCKED `docs/ARCHITECTURE.md` §2/§4** — recorded the six-loop
+  scope + 2026-05-24 trigger; updated `docs/SESSION.md`.
 
-**Phase-4 acceptance (extended MVP exit):** `mapgen events --major` lists ≥3
-`salience ≥ 0.8` events; ≥200 events with populated `cause_ids`; `extract_arcs`
-returns named multi-event arcs; `render-42` shows the **post-history** political
-map; determinism pins prove byte-identical logs across runs and native↔wasm.
+**Phase-4 acceptance (extended MVP exit) — met:** `mapgen events` lists mythic
+ages, major events (≥3 at salience ≥ 0.8), and named multi-event arcs; ≥200
+events with populated `cause_ids`; `render-42` shows the **post-history**
+political map; the full-pipeline golden + determinism units pin reproducibility
+(native↔wasm cross-platform pin remains the project-wide BACKLOG item).
 
 **Risk register (from the plan's DA):** 4a is the foundation — review sub-seeding
 before 4b. 4h is the most speculative (strongest cut candidate; ship minimal).

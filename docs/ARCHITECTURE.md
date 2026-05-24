@@ -61,7 +61,14 @@ mapgen/
 **IN:**
 - Single continent, ~15k cells, deterministic from a `u64` seed.
 - 6–12 nations (default 8), placed via Christaller k=4 hierarchy with capital + 2–4 secondary settlements each.
-- 500 years of simulated history with **two of six** causal loops live: **Turchin demographic-fiscal** (rise/collapse) + **Mearsheimer power-balance** (Thucydides-trap wars). Other four (Khaldun frontier, succession, schism, hero/megabeast) stubbed as no-op trait impls so they can be slotted in later without touching callers.
+- 500 years of simulated history. **Scope amended 2026-05-24** (trigger: user
+  directive "time is not a factor" + "uplevel the output" — see `docs/TASKS.md`
+  Phase 4): **all six** causal loops are now live — Turchin demographic-fiscal,
+  Khaldun asabiyyah, Mearsheimer power-balance, succession crises, religious
+  schism, hero/megabeast — plus an agent layer (named dynasties / rulers /
+  lineage) and an uplevel capstone (causal chains, narrative arcs, mythic ages,
+  rivalries). *(Originally locked at two loops live + four stubbed; the four were
+  promoted in Phase 4d–4h.)*
 - Event log with ≥200 events; ≥3 tagged `salience >= 0.8` (major wars/collapses).
 - One ornate SVG (`ornate_antique` style): parchment, perturbed coast (4 offset ripples), mountain icons, forest scatter, river network (√flow width), labeled nations + capitals, compass rose, corner cartouche, vignette aging.
 - One Claude round-trip: CLI subcommand renders one major-war event into a ~300-word chronicle, NER-validated against the world bible, persisted back as a `Work` entity.
@@ -167,9 +174,16 @@ Now split into substages, each with its own spec file:
 
 Exit: the screenshot you show people — a continent with named regions, distinctively-drawn settlements per culture (dwarven gates in the mountains, elven spires in old-growth forest, human castles on rivers), pilgrimage roads marked, sacred-site icons at appropriate biomes, a single ruined-city patch from a Cataclysm event, ornately framed.
 
-**Phase 4 — History sim + event log** (7–10 days)
-`mapgen-history` event log; Turchin demographic-fiscal loop; Mearsheimer power-balance loop; 500-year run; nation borders evolve and the final-year snapshot drives the render. Other four loops stubbed.
-Exit: `worlds/w42.json.gz` contains ≥200 events; `mapgen events --in world.json.gz --major` lists major wars; rendered map shows the *post-history* political map.
+**Phase 4 — History sim + event log** (done; scope expanded — see §2 amendment)
+`mapgen-history`: a deterministic 500-year sim — an agent layer (dynasties /
+rulers / lineage / succession) plus **all six** causal loops (Turchin, Khaldun,
+Mearsheimer, succession, schism, hero/megabeast) — then an uplevel capstone
+(causal `cause_ids` chains, narrative arcs, mythic ages, rivalries, and the
+Phase-5 boundary API). Nation borders evolve via conquest; the final-year
+snapshot drives the render. Shipped in substages 4a–4j (see `docs/TASKS.md`).
+Exit (met): `worlds/w42.json.gz` has ≥200 events with populated `cause_ids`;
+`mapgen events --in world.json.gz` lists mythic ages, major events, and arcs;
+the rendered map shows the *post-history* political map.
 
 **Phase 5 — Claude integration + WASM frontend** (5–7 days)
 `mapgen-lore` with three-layer prompt structure: cached WORLD_BIBLE (built once per world, prompt-cached at top) + ENTITY_CONTEXT (transitive closure of `event.cause_ids`) + focal EVENT_SLICE + VOICE_CARD. Strict JSON output schema with `references: [event_id]`. NER validator rejects any proper noun in `body` not present in supplied context; retry once with violation reported; second failure falls back to template. Accepted chronicles persisted as `Work` entities.

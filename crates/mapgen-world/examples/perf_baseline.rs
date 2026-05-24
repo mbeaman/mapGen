@@ -18,7 +18,11 @@ use mapgen_world::{generate_full, GenerateParams};
 
 /// (target cell count, baseline median ms, 1.5× budget ms).
 /// Updated when `docs/perf_baseline.md` is re-anchored.
-const BASELINES: &[(usize, u64, u64)] = &[(4_000, 17, 26), (15_000, 66, 99), (30_000, 133, 200)];
+///
+/// Re-anchored 2026-05-24 (Phase 4j) to the current dev box — ~1.6× slower than
+/// the original Ryzen 9 5950X anchor (now gone) and now including the full
+/// Phase-4 history sim. Prior Ryzen anchor was 17/66/133 ms.
+const BASELINES: &[(usize, u64, u64)] = &[(4_000, 26, 39), (15_000, 111, 166), (30_000, 259, 388)];
 
 const SEEDS: &[u64] = &[1, 2, 3];
 

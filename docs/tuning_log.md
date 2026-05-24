@@ -410,6 +410,37 @@ artifact that justified the pick, and the commit that landed the value.
   cause links asserted in `history_spec`.
 * **Source:** Phase 4h; `loops/hero.rs`.
 
+### Salience calibration (4j) — `STAKES_REF` + per-kind salience floors
+
+* **Current:** `STAKES_REF = 2000.0` (was `300.0`); rare marquee events lifted into
+  the "major" band (salience ≥ 0.8): `Schism 0.6 → 0.85`, `ProphecyFulfilled
+  0.72 → 0.86`, `MegabeastSlain 0.85 → 0.88`, `MegabeastRise 0.7 → 0.80`, hero
+  `Ascension 0.7 → 0.82`. High-frequency churn (Birth/Marriage/Death/Coronation/
+  WarDeclared/routine battles/famine) deliberately stays below 0.8.
+* **Why:** the phase-end review of `mapgen events --major` on seed 42 found the
+  highlight reel was **96 near-identical field battles all pinned at 0.98**, while
+  the genre's rare turning points (schisms, fulfilled prophecies, hero deeds) sat
+  *below* the major bar. Two causes: (1) `STAKES_REF = 300` was far under the real
+  combined-power distribution (probe on seed 42: range ≈ 251–2197, median ≈ 634),
+  so `stakes = (Pa+Pb)/REF` saturated at 1.0 for ~75% of battles → flat 0.98.
+  Re-anchoring `REF` to the high end (≈ 2000) makes battle salience *spread* across
+  the range so only the top tier of wars clears 0.8. (2) the rare world-shaping
+  events were undervalued relative to ubiquitous battles. Guiding rule, now
+  documented in code: **salience ≈ consequence × rarity** — rare, world-altering
+  events headline; common churn does not.
+* **Effect on seed 42:** major-event count 96 → 61, now a *gradient* (0.86–0.98)
+  rather than a flat wall, and megabeast slayings / prophecies fulfilled / schisms
+  appear in the reel. The residual battle density is one expansionist hegemon
+  (Uedihi) genuinely dominating the late era — a real historical pattern, left
+  intact. **Deliberately not built:** a tunable multi-factor salience optimizer
+  (the plan's "Refinery anti-pattern"); a first-of-kind/novelty discount that would
+  de-rank repeated identical battle summaries — deferred, would need the post-sim
+  pass that 4i left out.
+* **Method:** instrumented `resolve_war` with a throwaway combined-power probe to
+  measure the real distribution, then chose `REF` ≈ its max; eyeballed the reel.
+* **Source:** Phase 4j; `loops/mearsheimer.rs` (`STAKES_REF`), `loops/hero.rs`,
+  `loops/schism.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

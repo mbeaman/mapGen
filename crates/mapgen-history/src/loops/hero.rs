@@ -59,7 +59,7 @@ impl CausalLoop for Hero {
                     year,
                     EventKind::MegabeastRise,
                     cell,
-                    0.7,
+                    0.80,
                     format!("{name}, a monstrous beast, rose to ravage the land."),
                 )
                 .push(ctx.world);
@@ -97,7 +97,7 @@ impl CausalLoop for Hero {
                 year,
                 EventKind::Ascension,
                 cell,
-                0.7,
+                0.82,
                 format!("{hero_name} arose as a champion of the age."),
             )
             .actors(&[hero])
@@ -106,7 +106,7 @@ impl CausalLoop for Hero {
                 year,
                 EventKind::MegabeastSlain,
                 cell,
-                0.85,
+                0.88,
                 format!("{hero_name} slew the beast {beast}."),
             )
             .actors(&[hero])
@@ -130,7 +130,7 @@ impl CausalLoop for Hero {
                     year,
                     EventKind::ProphecyFulfilled,
                     cell,
-                    0.72,
+                    0.86,
                     format!("The old prophecy was fulfilled in {hero_name}'s triumph."),
                 )
                 .actors(&[hero])

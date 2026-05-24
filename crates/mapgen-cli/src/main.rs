@@ -90,6 +90,18 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Summarize a generated world's history: mythic ages, major events, and
+    /// the narrative arcs woven from them.
+    Events {
+        #[arg(long, value_name = "WORLD")]
+        r#in: PathBuf,
+        /// Only show events at or above this salience (0.8 = the "major" bar).
+        #[arg(long, default_value_t = 0.8)]
+        min_salience: f32,
+        /// Cap on events printed (highest-salience first).
+        #[arg(long, default_value_t = 40)]
+        limit: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -154,6 +166,60 @@ fn main() -> Result<()> {
             out,
         } => {
             sweep::run(seed, &knob, &range, steps, cells, &style, &out)?;
+        }
+        Cmd::Events {
+            r#in,
+            min_salience,
+            limit,
+        } => {
+            let world = read_world(&r#in)?;
+            let h = &world.history;
+            if !h.ages.is_empty() {
+                println!("Mythic ages:");
+                for age in &h.ages {
+                    println!("  {:>4}–{:<4}  {}", age.start_year, age.end_year, age.name);
+                }
+                println!();
+            }
+
+            let mut major: Vec<_> = world
+                .events
+                .events
+                .iter()
+                .filter(|e| e.salience >= min_salience)
+                .collect();
+            major.sort_by(|a, b| {
+                b.salience
+                    .partial_cmp(&a.salience)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.year.cmp(&b.year))
+            });
+            println!(
+                "{} major events (salience ≥ {:.2}; {} total in the log):",
+                major.len(),
+                min_salience,
+                world.events.events.len()
+            );
+            for e in major.iter().take(limit) {
+                println!(
+                    "  y{:>4}  s{:.2}  {}",
+                    e.year, e.salience, e.summary_canonical
+                );
+            }
+
+            if !h.arcs.is_empty() {
+                println!("\n{} narrative arcs:", h.arcs.len());
+                let mut arcs: Vec<_> = h.arcs.iter().collect();
+                arcs.sort_by_key(|a| std::cmp::Reverse(a.member_events.len()));
+                for a in arcs.iter().take(12) {
+                    println!(
+                        "  [{:?}] {} — {} events",
+                        a.kind,
+                        a.title,
+                        a.member_events.len()
+                    );
+                }
+            }
         }
     }
     Ok(())
