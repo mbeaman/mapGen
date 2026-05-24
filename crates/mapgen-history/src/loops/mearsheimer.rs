@@ -13,6 +13,7 @@
 //! hardening) and stops warring / being warred.
 
 use mapgen_core::{CasusBelli, Claim, DiplomaticPattern, Entity, EventKind, WorldData};
+use rand_chacha::rand_core::RngCore;
 
 use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
@@ -33,8 +34,6 @@ const WAR_COOLDOWN: i32 = 12;
 const EXPANSIONIST_MULT: f32 = 2.5;
 const ISOLATIONIST_MULT: f32 = 0.3;
 const HONORBOUND_MULT: f32 = 1.4;
-/// Border cells the victor seizes from the loser.
-const TRANSFER_CELLS: usize = 6;
 /// Combined-power reference for battle salience: the stakes at which a battle
 /// reads as maximally consequential. Calibrated to the high end of the observed
 /// combined-power distribution on the canonical seeds (range ≈ 250–2200, median
@@ -248,39 +247,72 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     }
     let war_ev = war.push(ctx.world);
 
-    // Battle: stronger side, perturbed by fortune, prevails.
+    // Battle: the stronger side, perturbed by fortune, usually prevails — but an
+    // upset can hand the defender the day. Phrasing varies with the margin (a
+    // rout vs. a narrow win) and with whether the aggressor's invasion was
+    // repelled, so the chronicle isn't one verb on endless repeat.
     let la = pa * (0.7 + 0.6 * unit_f32(ctx.rng));
     let lb = pb * (0.7 + 0.6 * unit_f32(ctx.rng));
     let a_wins = la >= lb;
+    let defender_won = !a_wins;
     let (w_pid, l_pid, w_ruler, l_ruler, w_name, l_name) = if a_wins {
         (a, b, ruler_a, ruler_b, name_a.clone(), name_b.clone())
     } else {
         (b, a, ruler_b, ruler_a, name_b.clone(), name_a.clone())
     };
+    // Decisiveness ∈ [0,1]: 0 = razor-thin, 1 = a ≥2× rout.
+    let (lw, ll) = if la >= lb { (la, lb) } else { (lb, la) };
+    let dec = ((lw / ll.max(EPS)) - 1.0).clamp(0.0, 1.0);
+    let pick = ctx.rng.next_u32();
+    let battle_line = if defender_won {
+        match pick % 3 {
+            0 => format!("{w_name} repelled the invasion of {l_name}."),
+            1 => format!("The assault of {l_name} upon {w_name} was thrown back."),
+            _ => format!("{w_name} turned back the host of {l_name}."),
+        }
+    } else if dec >= 0.6 {
+        match pick % 3 {
+            0 => format!("{w_name} crushed {l_name} in the field."),
+            1 => format!("{w_name} routed the host of {l_name}."),
+            _ => format!("{w_name} shattered the army of {l_name}."),
+        }
+    } else if dec >= 0.25 {
+        match pick % 2 {
+            0 => format!("{w_name} defeated {l_name} in the field."),
+            _ => format!("{w_name} overcame {l_name} in open battle."),
+        }
+    } else {
+        match pick % 2 {
+            0 => format!("{w_name} narrowly bested {l_name}."),
+            _ => format!("{w_name} prevailed over {l_name} after a hard-fought day."),
+        }
+    };
     // Salience scales with the stakes (combined power) against a reference, so
     // only the largest wars read as "major" (≥ 0.8).
     let stakes = ((pa + pb) / STAKES_REF).clamp(0.0, 1.0);
     let battle_sal = (0.58 + 0.4 * stakes).clamp(0.0, 1.0);
-    let battle_ev = Emit::new(
-        year,
-        EventKind::BattleFought,
-        cell,
-        battle_sal,
-        format!("{w_name} defeated {l_name} in the field."),
-    )
-    .actors(&[w_ruler])
-    .patients(&[l_ruler])
-    .causes(&[war_ev])
-    .push(ctx.world);
+    let battle_ev = Emit::new(year, EventKind::BattleFought, cell, battle_sal, battle_line)
+        .actors(&[w_ruler])
+        .patients(&[l_ruler])
+        .causes(&[war_ev])
+        .push(ctx.world);
 
-    let moved = transfer_border_cells(ctx.world, w_pid, l_pid, TRANSFER_CELLS);
+    // A more decisive victory seizes more land (4..=8 border holdings, vs. the
+    // old fixed 6); `moved` is the real count, capped by the loser's frontier.
+    let take = 4 + (4.0 * dec).round() as usize;
+    let moved = transfer_border_cells(ctx.world, w_pid, l_pid, take);
     if moved > 0 {
+        let siege_line = match ctx.rng.next_u32() % 3 {
+            0 => format!("{w_name} wrested {moved} settlements from {l_name}."),
+            1 => format!("{w_name} seized {moved} towns along the frontier of {l_name}."),
+            _ => format!("{w_name} overran {moved} holdings of {l_name}."),
+        };
         let siege_ev = Emit::new(
             year,
             EventKind::Siege,
             cell,
             (battle_sal * 0.9).clamp(0.0, 1.0),
-            format!("{w_name} wrested {moved} settlements from {l_name}."),
+            siege_line,
         )
         .actors(&[w_ruler])
         .patients(&[l_ruler])
