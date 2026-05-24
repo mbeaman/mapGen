@@ -257,9 +257,12 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   scales with per-cell road-traversal count (`class="roads"`).
 - [x] Sacred sites differentiated by pantheon — 6 per-pantheon glyphs
   (cross / sun / split-disc / leaf / tablet / ring), `class="sacred X"`.
-- [ ] Major-river + lake names (needs naming-stage extension).
-- [ ] Curve-along-feature labels (rivers / mountain ranges).
-- [ ] Lake labels.
+- [x] Major-river + lake names — naming stage labels major rivers
+  (≥8 cells) + sizeable lakes (≥3 cells); schema v7.
+- [x] Curve-along-feature labels (rivers) — names follow the channel
+  via `<textPath>` (`class="river-labels"`). Mountain-range labels
+  remain in BACKLOG (need peak clustering + range naming first).
+- [x] Lake labels — centroid point labels (`class="lake-labels"`).
 - [ ] Imhof simulated-annealing label placement.
 
 ---

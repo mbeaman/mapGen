@@ -112,6 +112,7 @@ pub fn render(world: &WorldData) -> String {
     render_polity_labels(world, &mut out);
     render_settlement_labels(world, &mut out);
     render_sacred_site_labels(world, &mut out);
+    render_feature_labels(world, &mut out);
 
     // Decorative top-of-stack overlays. The edge-burn overlay darkens
     // the periphery (intentionally fading edge labels into "aged"
@@ -1254,6 +1255,89 @@ fn render_sacred_site_labels(world: &WorldData, out: &mut String) {
         .unwrap();
     }
     out.push_str("</g>");
+}
+
+/// Names for major natural features. River names follow the channel via
+/// `<textPath>` over a constructed (invisible) path so the label curves
+/// with the water; lake names sit at the lake centroid. Both use the
+/// IM Fell English italic in a watery blue, with a parchment halo so
+/// they stay legible over the sea fill and ocean hatching. Only features
+/// the naming stage labeled (major rivers / sizeable lakes) appear.
+fn render_feature_labels(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+
+    // Rivers — emit one invisible path per named river, then a textPath
+    // label group referencing them by id.
+    let named_rivers: Vec<(usize, &mapgen_core::world_data::River)> = world
+        .hydrology
+        .rivers
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !r.name.is_empty() && r.cells.len() >= 2)
+        .collect();
+
+    if !named_rivers.is_empty() {
+        for (i, r) in &named_rivers {
+            write!(
+                out,
+                r##"<path id="riverlbl-{i}" fill="none" stroke="none" d=""##
+            )
+            .unwrap();
+            for (k, &c) in r.cells.iter().enumerate() {
+                let p = mesh.sites[c as usize];
+                write!(
+                    out,
+                    "{}{:.1},{:.1}",
+                    if k == 0 { "M" } else { " L" },
+                    p[0],
+                    p[1]
+                )
+                .unwrap();
+            }
+            out.push_str(r##""/>"##);
+        }
+        out.push_str(
+            r##"<g class="river-labels" font-family='"IM Fell English", Georgia, serif' font-style="italic" font-size="9" fill="#33597d" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.4" stroke-linejoin="round">"##,
+        );
+        for (i, r) in &named_rivers {
+            write!(
+                out,
+                r##"<text><textPath href="#riverlbl-{i}" startOffset="45%">{}</textPath></text>"##,
+                xml_escape(&r.name),
+            )
+            .unwrap();
+        }
+        out.push_str("</g>");
+    }
+
+    // Lakes — centroid point labels.
+    let has_named_lake = world.hydrology.lakes.iter().any(|l| !l.name.is_empty());
+    if has_named_lake {
+        out.push_str(
+            r##"<g class="lake-labels" font-family='"IM Fell English", Georgia, serif' font-style="italic" font-size="9" text-anchor="middle" fill="#33597d" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.4" stroke-linejoin="round">"##,
+        );
+        for lake in &world.hydrology.lakes {
+            if lake.name.is_empty() || lake.cells.is_empty() {
+                continue;
+            }
+            let (mut sx, mut sy) = (0.0_f32, 0.0_f32);
+            for &c in &lake.cells {
+                let p = mesh.sites[c as usize];
+                sx += p[0];
+                sy += p[1];
+            }
+            let n = lake.cells.len() as f32;
+            write!(
+                out,
+                r##"<text x="{:.1}" y="{:.1}">{}</text>"##,
+                sx / n,
+                sy / n,
+                xml_escape(&lake.name),
+            )
+            .unwrap();
+        }
+        out.push_str("</g>");
+    }
 }
 
 fn xml_escape(s: &str) -> String {

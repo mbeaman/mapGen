@@ -433,21 +433,22 @@ guess at value-per-day. Re-prioritize freely.
 - **Origin.** ARCHITECTURE.md §Phase 3e (post-MVP). Discussed in
   `.local/sessionstate.md` Phase 3e polish list.
 
-### Curve-along-feature labels (rivers, mountain ranges)
+### Curve-along-feature labels for mountain ranges
 
-- **Why deferred.** Rivers and mountain ranges are unlabeled today.
-  Adding names along a polyline (river) or spanning a peak chain
-  (mountain) requires `<textPath>` with a constructed path element +
-  font-metric-aware breaking. Settlements, polities, and sacred sites
-  carry all the load-bearing labels; rivers/mountains are decorative.
-- **Trigger for revival.** Naming stage starts generating river /
-  mountain names (today it only names settlements, polities,
-  religions). Or user feedback that the map needs more named
-  features.
-- **Cost.** ~1 day for rivers (path-along-polyline is straightforward
-  SVG); mountain ranges harder because they're a discrete set of
-  cells, not a polyline — need a clustering pass first.
-- **Origin.** Session-state Phase 3e polish list.
+- **Why deferred.** River labels shipped (the naming stage names major
+  rivers; the renderer lays each name along the channel via
+  `<textPath>`). Mountain ranges remain unlabeled because they're a
+  discrete set of peak cells, not a polyline — labeling them needs (a)
+  a clustering pass that groups adjacent ALPINE/SNOW cells into named
+  ranges, (b) a naming-stage extension that generates range names
+  (today it names settlements, polities, religions, rivers, lakes —
+  not orography), and (c) a spine-fitting pass to lay the name across
+  the cluster.
+- **Trigger for revival.** Naming stage starts generating mountain-
+  range names, or user feedback that the map needs named ranges.
+- **Cost.** ~1 day (cluster + name + spine fit).
+- **Origin.** Session-state Phase 3e polish list; rivers shipped in the
+  river/lake-label commit.
 
 ### Hand-authored `docs/target_aesthetic.svg`
 
@@ -466,32 +467,6 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** ~2h of hand-drawing in Inkscape / Affinity / etc.
 - **Origin.** ARCHITECTURE.md §Phase 3e "Day 1" recommendation;
   noted as never done in session-state.
-
-### Major-river + lake names
-
-- **Why deferred.** The Phase 3d naming stage generates settlements
-  + polities + religions, but rivers and lakes stay unnamed. Major
-  rivers / lakes are visually prominent and would carry naming well
-  (think "Anduin," "Mirrormere"). Adding them needs (a) a "major
-  river" / "major lake" filter (rank by length / area / drainage
-  basin), (b) per-feature name generation hooked into the existing
-  Language pools, and (c) curve-along-feature labels (see above).
-- **Trigger for revival.** Either curve-along-feature labels lands
-  (then river/lake names become useful), or a user export needs to
-  reference specific rivers/lakes by name.
-- **Cost.** ~half-day for naming + filter; full day combined with
-  curve labels.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
-### Lake labels
-
-- **Why deferred.** Lakes go through Priority-Flood extraction and
-  carry a `cells` + `level` field, but no names. Settlements /
-  polities / religions are the load-bearing labels today.
-- **Trigger for revival.** Naming stage extends to natural features
-  (paired with the major-river-names item above).
-- **Cost.** ~1h after naming stage extends.
-- **Origin.** Phase 3e polish brainstorm, current session.
 
 ---
 

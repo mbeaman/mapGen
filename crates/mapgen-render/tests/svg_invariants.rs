@@ -627,6 +627,42 @@ fn synthetic_world_for_glyph_matrix() -> mapgen_core::WorldData {
 }
 
 #[test]
+fn ornate_antique_labels_major_rivers_along_their_course() {
+    // BACKLOG "Major-river names" + "Curve-along-feature labels": named
+    // rivers (from the naming stage) render as <textPath> labels that
+    // follow the channel. Lakes get centroid labels (same code path).
+    let world = generate_full(ref_params());
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    let named: Vec<&str> = world
+        .hydrology
+        .rivers
+        .iter()
+        .filter(|r| !r.name.is_empty())
+        .map(|r| r.name.as_str())
+        .collect();
+    assert!(
+        !named.is_empty(),
+        "reference world has no named rivers to label"
+    );
+    assert!(
+        svg.contains(r#"class="river-labels""#),
+        "river-label group missing"
+    );
+    assert!(
+        svg.contains("<textPath "),
+        "river labels should follow the channel via <textPath>"
+    );
+    assert!(
+        svg.contains(r#"id="riverlbl-"#),
+        "river-label path defs (referenced by textPath) missing"
+    );
+    for name in &named {
+        assert!(svg.contains(name), "river name {name:?} not rendered");
+    }
+}
+
+#[test]
 fn ornate_antique_textures_ocean_and_burns_edges() {
     // Two BACKLOG render-polish items: faint horizontal ocean hatching,
     // and irregular dark stains layered onto the edge-burn vignette so
