@@ -23,6 +23,11 @@ pub enum Entity {
     /// A heritable office (a throne / crown). Appended in Phase 4c —
     /// append-only, never reorder.
     Title(Title),
+    /// A named legendary monster (Phase 4k). Appended — append-only. Minting it
+    /// as an entity (rather than a bare summary string) puts its name in the
+    /// NER lexicon and lets its `MegabeastRise` / `MegabeastSlain` events
+    /// reference it as actor / patient.
+    Megabeast(Megabeast),
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -231,6 +236,15 @@ pub struct Deity {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Artifact {
+    pub name: String,
+}
+
+/// A named legendary monster minted by the hero/megabeast loop (Phase 4k).
+/// Kept minimal (the name is the only consumed field today — it anchors the
+/// NER lexicon and the beast's Rise/Slain event references); enrich only when a
+/// consumer needs more.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Megabeast {
     pub name: String,
 }
 
@@ -514,6 +528,21 @@ mod tests {
                 assert_eq!(a.polity, b.polity);
                 assert_eq!(a.created_event, b.created_event);
             }
+            _ => panic!("Entity variant changed across round-trip: {decoded:?}"),
+        }
+    }
+
+    #[test]
+    fn megabeast_inside_entity_round_trips() {
+        // The appended `Entity::Megabeast` variant must survive the
+        // `#[serde(tag = "kind")]` enum round-trip (Phase 4k schema addition).
+        let original = Entity::Megabeast(Megabeast {
+            name: "Vharzûl".to_string(),
+        });
+        let json = serde_json::to_string(&original).expect("serialize Entity::Megabeast");
+        let decoded: Entity = serde_json::from_str(&json).expect("deserialize Entity::Megabeast");
+        match (&original, &decoded) {
+            (Entity::Megabeast(a), Entity::Megabeast(b)) => assert_eq!(a.name, b.name),
             _ => panic!("Entity variant changed across round-trip: {decoded:?}"),
         }
     }

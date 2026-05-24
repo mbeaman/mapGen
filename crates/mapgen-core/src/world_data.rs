@@ -44,7 +44,12 @@ use crate::{
 ///   narrative arcs woven from the causal event graph). `skip`-elided when
 ///   empty; both goldens re-anchor for the `schema_version` byte, `seed42_full`
 ///   additionally for the arcs/ages.
-pub const SCHEMA_VERSION: u32 = 11;
+/// * v12 — Phase 4k: new `Entity::Megabeast` variant. The hero loop now mints
+///   the beast as a named entity (so it enters the NER lexicon) and references
+///   it as actor/patient on its `MegabeastRise` / `MegabeastSlain` events. Both
+///   goldens re-anchor for the `schema_version` byte; `seed42_full` additionally
+///   for the new entities + event actor refs.
+pub const SCHEMA_VERSION: u32 = 12;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {

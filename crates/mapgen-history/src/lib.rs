@@ -87,9 +87,10 @@ pub struct SimState {
     /// `world.religions.religions`), minted lazily by the schism loop so
     /// `Schism` events can reference the parent faith. `None` until minted.
     pub religion_entities: Vec<Option<EntityId>>,
-    /// Megabeasts currently ravaging the world: `(cell, rise_event, name)`.
-    /// A `MegabeastSlain` cites the stored rise event (foreshadow→payoff).
-    pub active_megabeasts: Vec<(u32, EventId, String)>,
+    /// Megabeasts currently ravaging the world: `(cell, rise_event, beast_entity,
+    /// name)`. A `MegabeastSlain` cites the stored rise event (foreshadow→payoff)
+    /// and names the beast entity as its patient.
+    pub active_megabeasts: Vec<(u32, EventId, EntityId, String)>,
     /// `ProphecyUttered` event ids awaiting fulfillment; a heroic deed fulfils
     /// the oldest, and any still pending at sim end are Phase-5 lacunae.
     pub pending_prophecies: Vec<EventId>,

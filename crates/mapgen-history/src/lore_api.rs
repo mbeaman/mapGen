@@ -21,6 +21,12 @@ pub fn ner_lexicon(world: &WorldData) -> BTreeSet<String> {
             Entity::Religion(r) => &r.name,
             Entity::Artifact(a) => &a.name,
             Entity::Title(t) => &t.name,
+            Entity::Megabeast(m) => &m.name,
+            // Polity/Site/Deity/Claim/Culture/Language: the history sim mints
+            // none of these as entities (polity names reach the set via
+            // `world.society.nations` below). If a future phase mints a *named*
+            // one and writes it into an event summary, add its arm here — the
+            // `summaries_use_only_lexicon_names` spec will flag the omission.
             _ => continue,
         };
         set.insert(name.clone());
@@ -52,6 +58,7 @@ pub fn entity_brief(world: &WorldData, id: EntityId) -> Option<String> {
         Entity::Religion(r) => format!("the {} faith", r.name),
         Entity::Artifact(a) => format!("the artifact {}", a.name),
         Entity::Title(t) => t.name.clone(),
+        Entity::Megabeast(m) => format!("the beast {}", m.name),
         _ => return None,
     })
 }

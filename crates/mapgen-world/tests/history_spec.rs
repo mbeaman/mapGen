@@ -783,6 +783,56 @@ fn phase5_boundary_api_is_well_formed() {
 }
 
 #[test]
+fn event_summaries_use_only_lexicon_proper_nouns() {
+    // Phase-5 NER acid test (4k): every proper noun appearing in an event's
+    // canonical summary must be coverable by `ner_lexicon`. If not, the strict
+    // NER validator planned for Phase 5 would falsely reject a *correct*
+    // chronicle. This is the property the boundary contract actually hinges on —
+    // and the one whose absence let the missing-megabeast-names gap ship green.
+    use mapgen_history::lore_api::ner_lexicon;
+    use std::collections::BTreeSet;
+
+    // Capitalized words that legitimately open or punctuate a sentence in the
+    // event-summary templates and are not names (compared case-insensitively).
+    // Kept deliberately tight: a NEW template word surfacing here is a wanted
+    // signal to revisit this list, not noise.
+    const STOPWORDS: &[&str] = &["the", "a", "famine"];
+
+    for seed in [42u64, 7, 11] {
+        let world = generate_full(fixed(seed));
+        let lex = ner_lexicon(&world);
+        // Decompose every lexicon entry into whitespace tokens so a multi-word
+        // name (e.g. "House Varn") validates token-by-token.
+        let allowed: BTreeSet<&str> = lex.iter().flat_map(|n| n.split_whitespace()).collect();
+
+        for ev in &world.events.events {
+            for raw in ev.summary_canonical.split_whitespace() {
+                // Strip surrounding punctuation, then a possessive suffix.
+                let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+                let w = w.strip_suffix("'s").unwrap_or(w);
+                let Some(first) = w.chars().next() else {
+                    continue;
+                };
+                // Only proper-noun candidates: capitalized, purely alphabetic,
+                // not a known sentence word.
+                if !first.is_uppercase()
+                    || !w.chars().all(|c| c.is_alphabetic())
+                    || STOPWORDS.contains(&w.to_lowercase().as_str())
+                {
+                    continue;
+                }
+                assert!(
+                    allowed.contains(w),
+                    "seed {seed}: proper noun {w:?} appears in summary {:?} but is \
+                     absent from ner_lexicon — Phase-5 NER would falsely reject it",
+                    ev.summary_canonical
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn history_produces_major_events() {
     // Extended MVP exit criterion: at least three high-salience events
     // (major battles / collapses) for chronicles to anchor on.

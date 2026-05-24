@@ -8,7 +8,9 @@
 //! start on 4i's causal chaining). Mythic-age framing lands in 4i with the
 //! `HistoryData` side-table.
 
-use mapgen_core::{generate_name, Artifact, Character, Entity, EventKind, Sex, WorldData};
+use mapgen_core::{
+    generate_name, Artifact, Character, Entity, EventKind, Megabeast, Sex, WorldData,
+};
 use rand_chacha::{rand_core::RngCore, ChaCha8Rng};
 
 use crate::emit::Emit;
@@ -55,6 +57,10 @@ impl CausalLoop for Hero {
         if unit_f32(ctx.rng) < MEGABEAST_PROB {
             if let Some(cell) = random_capital(ctx) {
                 let name = legendary_name(ctx.world, ctx.rng);
+                let beast = ctx
+                    .world
+                    .entities
+                    .insert(Entity::Megabeast(Megabeast { name: name.clone() }));
                 let ev = Emit::new(
                     year,
                     EventKind::MegabeastRise,
@@ -62,8 +68,9 @@ impl CausalLoop for Hero {
                     0.80,
                     format!("{name}, a monstrous beast, rose to ravage the land."),
                 )
+                .actors(&[beast])
                 .push(ctx.world);
-                ctx.state.active_megabeasts.push((cell, ev, name));
+                ctx.state.active_megabeasts.push((cell, ev, beast, name));
             }
         }
 
@@ -74,7 +81,7 @@ impl CausalLoop for Hero {
                 i += 1;
                 continue;
             }
-            let (cell, rise_ev, beast) = ctx.state.active_megabeasts.remove(i);
+            let (cell, rise_ev, beast_id, beast) = ctx.state.active_megabeasts.remove(i);
             let hero_name = legendary_name(ctx.world, ctx.rng);
             let sex = if ctx.rng.next_u32() & 1 == 0 {
                 Sex::Female
@@ -110,6 +117,7 @@ impl CausalLoop for Hero {
                 format!("{hero_name} slew the beast {beast}."),
             )
             .actors(&[hero])
+            .patients(&[beast_id])
             .causes(&[rise_ev])
             .push(ctx.world);
             let artifact_name = legendary_name(ctx.world, ctx.rng);
