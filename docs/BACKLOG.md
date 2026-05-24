@@ -483,38 +483,6 @@ guess at value-per-day. Re-prioritize freely.
   curve labels.
 - **Origin.** Phase 3e polish brainstorm, current session.
 
-### Polity border lines
-
-- **Why deferred.** Today polity extent is shown only by `<rect>`
-  territorial fill via `world.society.control` (which the biomes /
-  cultures debug renders use). The ornate style relies on the
-  capital glyph + scattered town glyphs + the centroid polity name
-  label to suggest territory. Real antique maps draw thin dashed
-  border lines between adjacent polities — would clarify
-  spheres-of-control without dominating the aesthetic.
-- **Trigger for revival.** Multi-polity worlds where territorial
-  ambiguity is user-visible (e.g., "which polity owns this
-  peninsula?"). Or a "political map" alternative render style
-  (where borders are the focus).
-- **Cost.** ~half-day. Trace shared edges between cells with
-  different `control[]` values, draw as a dashed polyline group.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
-### Roads differentiated by trunk vs branch
-
-- **Why deferred.** `pick_towns` builds trunk-and-branch road
-  topology (the Dijkstra reuse discount makes overlapping segments
-  effectively a trunk), but the renderer draws all roads with the
-  same dashed russet stroke. Differentiating by traversal frequency
-  (count how many town→capital paths share each cell, scale stroke
-  by sqrt of count) would highlight the trunk roads.
-- **Trigger for revival.** Maps with ≥6 towns per polity start
-  feeling "all roads look the same." Or render needs to support a
-  "trade routes" view.
-- **Cost.** ~half-day. Add per-cell traversal count when building
-  roads, expose as `Road::weight: f32`, scale stroke width.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
 ### Sacred sites differentiated by pantheon
 
 - **Why deferred.** All sacred sites currently render as a gold

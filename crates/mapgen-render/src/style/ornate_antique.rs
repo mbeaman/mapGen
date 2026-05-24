@@ -106,6 +106,7 @@ pub fn render(world: &WorldData) -> String {
     render_mountains(world, &mut out);
     render_forest_scatter(world, &mut out);
     render_roads(world, &mut out);
+    render_polity_borders(world, &mut out);
     render_settlements(world, &mut out);
     render_sacred_sites(world, &mut out);
     render_polity_labels(world, &mut out);
@@ -518,24 +519,93 @@ fn render_forest_scatter(world: &WorldData, out: &mut String) {
     out.push_str("</g>");
 }
 
+/// Roads, drawn per-segment with stroke width scaled by how many roads
+/// share each cell. The polities stage builds town→capital paths with a
+/// reuse discount, so cells near a capital sit on many overlapping
+/// paths; counting per-cell road membership recovers that trunk-and-
+/// branch structure and renders trunk segments visibly thicker than the
+/// branches that feed them — without a schema change (the count is
+/// derived from the existing `Road.cells`).
 fn render_roads(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+
+    // Per-cell traversal frequency across all roads.
+    let mut traversal: HashMap<u32, u32> = HashMap::new();
+    for road in &world.society.roads {
+        for &c in &road.cells {
+            *traversal.entry(c).or_default() += 1;
+        }
+    }
+    let weight = |c: u32| traversal.get(&c).copied().unwrap_or(1);
+
     out.push_str(
-        r##"<g stroke="#6b4423" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 2" stroke-opacity="0.8">"##,
+        r##"<g class="roads" stroke="#6b4423" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 2" stroke-opacity="0.8">"##,
     );
     for road in &world.society.roads {
         if road.cells.len() < 2 {
             continue;
         }
-        out.push_str(r##"<polyline points=""##);
-        for (k, &c) in road.cells.iter().enumerate() {
-            let p = mesh.sites[c as usize];
-            if k > 0 {
-                out.push(' ');
-            }
-            write!(out, "{:.1},{:.1}", p[0], p[1]).unwrap();
+        for win in road.cells.windows(2) {
+            let a = mesh.sites[win[0] as usize];
+            let b = mesh.sites[win[1] as usize];
+            // A segment is trunk-like only if BOTH endpoints are
+            // heavily shared, so take the min — a spur joining a trunk
+            // stays thin until it merges.
+            let shared = weight(win[0]).min(weight(win[1]));
+            let sw = (1.0 + (shared as f32).sqrt() * 0.7).clamp(1.0, 4.5);
+            write!(
+                out,
+                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke-width="{sw:.2}"/>"##,
+                a[0], a[1], b[0], b[1],
+            )
+            .unwrap();
         }
-        out.push_str(r##""/>"##);
+    }
+    out.push_str("</g>");
+}
+
+/// Dashed political borders between adjacent polities. For every pair
+/// of neighboring land cells controlled by *different* polities, the
+/// shared Voronoi edge is drawn as a dash-dot line — the classic
+/// antique-map convention for a frontier. Coast and unclaimed-land
+/// edges are left to the coastline layer, so this draws only the
+/// genuine inter-polity boundaries that resolve "which realm owns this
+/// peninsula." Borders sit under settlements so glyphs stay on top.
+fn render_polity_borders(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let control = &world.society.control;
+    if control.is_empty() {
+        return;
+    }
+    out.push_str(
+        r##"<g class="polity-borders" stroke="#4a3520" stroke-width="1.1" fill="none" stroke-linecap="round" stroke-dasharray="5 3 1 3" stroke-opacity="0.7">"##,
+    );
+    for i in 0..mesh.cell_count() {
+        let Some(ci) = control.get(i).copied().flatten() else {
+            continue;
+        };
+        for &nj in &mesh.neighbors[i] {
+            let j = nj as usize;
+            if j <= i {
+                continue; // each undirected edge once
+            }
+            let Some(cj) = control.get(j).copied().flatten() else {
+                continue;
+            };
+            if ci == cj {
+                continue; // same polity — interior, no border
+            }
+            if let Some((va, vb)) = shared_edge(&mesh.cell_vertices[i], &mesh.cell_vertices[j]) {
+                let a = mesh.vertices[va as usize];
+                let b = mesh.vertices[vb as usize];
+                write!(
+                    out,
+                    r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                    a[0], a[1], b[0], b[1],
+                )
+                .unwrap();
+            }
+        }
     }
     out.push_str("</g>");
 }

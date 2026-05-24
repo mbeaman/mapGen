@@ -251,8 +251,10 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   the vignette (`class="edge-stain"`).
 - [x] Ocean hatching / contour texture — faint horizontal dashes on
   ~40% of sea cells (`class="ocean-hatch"`).
-- [ ] Polity border lines — trace shared edges across `control[]`.
-- [ ] Roads differentiated by trunk vs branch.
+- [x] Polity border lines — dashed frontier on shared edges across
+  `control[]` (`class="polity-borders"`).
+- [x] Roads differentiated by trunk vs branch — per-segment stroke
+  scales with per-cell road-traversal count (`class="roads"`).
 - [ ] Sacred sites differentiated by pantheon.
 - [ ] Major-river + lake names (needs naming-stage extension).
 - [ ] Curve-along-feature labels (rivers / mountain ranges).

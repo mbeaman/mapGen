@@ -700,6 +700,127 @@ fn ornate_antique_mountains_cast_a_depth_shadow() {
     );
 }
 
+/// Two land cells sharing one Voronoi edge, owned by different
+/// polities — the minimal case for an inter-polity border.
+fn world_with_two_adjacent_polities() -> mapgen_core::WorldData {
+    use mapgen_core::world_data::Nation;
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 40.0;
+    world.mesh.height = 20.0;
+    world.mesh.sites = vec![[5.0, 5.0], [15.0, 5.0]];
+    world.mesh.vertices = vec![
+        [0.0, 0.0],
+        [10.0, 0.0],
+        [10.0, 10.0],
+        [0.0, 10.0],
+        [20.0, 0.0],
+        [20.0, 10.0],
+    ];
+    // Cells share vertices 1 and 2 (the edge at x=10).
+    world.mesh.cell_vertices = vec![vec![0, 1, 2, 3], vec![1, 4, 5, 2]];
+    world.mesh.neighbors = vec![vec![1], vec![0]];
+    world.mesh.coast = vec![false, false];
+    world.terrain.elevation = vec![0.5, 0.5];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); 2];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![3, 3];
+    world.climate.temperature = vec![0.5, 0.5];
+    world.climate.precipitation = vec![0.5, 0.5];
+    world.society.control = vec![Some(0), Some(1)];
+    world.society.nations = vec![
+        Nation {
+            name: "A".into(),
+            capital_cell: 0,
+            color: [100, 80, 60],
+        },
+        Nation {
+            name: "B".into(),
+            capital_cell: 1,
+            color: [60, 80, 100],
+        },
+    ];
+    world
+}
+
+#[test]
+fn ornate_antique_draws_borders_between_adjacent_polities() {
+    // BACKLOG "Polity border lines": the shared edge between two cells
+    // owned by different polities renders as a dashed frontier so
+    // territorial adjacency is unambiguous.
+    let world = world_with_two_adjacent_polities();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    let start = svg
+        .find(r#"<g class="polity-borders""#)
+        .expect("polity-borders group missing");
+    let end = svg[start..].find("</g>").unwrap() + start;
+    assert!(
+        svg[start..end].contains("<line"),
+        "no border line drawn between two adjacent, differently-owned cells"
+    );
+}
+
+/// Five cells, two roads ([3,2,1,0] and [4,2,1,0]) sharing the trunk
+/// 2→1→0 — so the trunk segments are traversed twice and the spurs
+/// once.
+fn world_with_shared_road_trunk() -> mapgen_core::WorldData {
+    use mapgen_core::world_data::Road;
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 100.0;
+    world.mesh.height = 50.0;
+    world.mesh.sites = vec![
+        [10.0, 25.0],
+        [30.0, 25.0],
+        [50.0, 25.0],
+        [70.0, 10.0],
+        [70.0, 40.0],
+    ];
+    world.mesh.cell_vertices = vec![vec![]; 5];
+    world.mesh.neighbors = vec![vec![]; 5];
+    world.mesh.coast = vec![false; 5];
+    world.terrain.elevation = vec![0.5; 5];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); 5];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![3; 5];
+    world.climate.temperature = vec![0.5; 5];
+    world.climate.precipitation = vec![0.5; 5];
+    world.society.roads = vec![
+        Road {
+            cells: vec![3, 2, 1, 0],
+        },
+        Road {
+            cells: vec![4, 2, 1, 0],
+        },
+    ];
+    world
+}
+
+#[test]
+fn ornate_antique_roads_vary_width_by_traversal() {
+    // BACKLOG "Roads differentiated by trunk vs branch": segments shared
+    // by multiple town→capital paths render thicker than spurs. With two
+    // roads sharing the 2→1→0 trunk, the rendered road group must carry
+    // at least two distinct stroke widths.
+    let world = world_with_shared_road_trunk();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    let start = svg
+        .find(r#"<g class="roads""#)
+        .expect("roads group missing");
+    let end = svg[start..].find("</g>").unwrap() + start;
+    let group = &svg[start..end];
+    let needle = "stroke-width=\"";
+    let widths: std::collections::HashSet<&str> = group
+        .match_indices(needle)
+        .map(|(i, _)| {
+            let rest = &group[i + needle.len()..];
+            &rest[..rest.find('"').unwrap()]
+        })
+        .collect();
+    assert!(
+        widths.len() >= 2,
+        "roads rendered at a single width — trunk/branch not differentiated: {widths:?}"
+    );
+}
+
 #[test]
 fn ornate_antique_dispatches_glyph_for_every_icon_arch_tier_combination() {
     // The Phase 3e ornate render is contracted to derive settlement
