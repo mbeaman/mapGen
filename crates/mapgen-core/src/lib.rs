@@ -11,5 +11,5 @@ pub mod world_data;
 pub use entities::*;
 pub use event::*;
 pub use ids::*;
-pub use rng::{Stage, StageRng};
+pub use rng::{splitmix64, Stage, StageRng};
 pub use world_data::*;

@@ -9,6 +9,7 @@ description = "Geography pipeline: plates, noise, erosion, hydrology, climate, b
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
 mapgen-geom = { path = "../mapgen-geom" }
+mapgen-history = { path = "../mapgen-history" }
 noise = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }

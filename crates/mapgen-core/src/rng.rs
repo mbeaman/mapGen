@@ -53,9 +53,16 @@ impl StageRng {
     }
 }
 
+/// SplitMix64 finalizer over a `(seed, key)` pair. Pure, portable, and the
+/// single mixing primitive the whole project derives sub-streams with: the
+/// per-stage RNG above uses it as `splitmix64(master, stage)`, and the history
+/// sim uses it one level deeper (`splitmix64(sim_seed, year)` →
+/// `splitmix64(year_seed, loop_id)`) so re-rolling one loop in one year cannot
+/// perturb any other loop or year. Exposed so every crate mixes identically —
+/// determinism depends on there being exactly one such function.
 #[inline]
-fn splitmix64(master: u64, stage: u64) -> u64 {
-    let mut x = master.wrapping_add(stage.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+pub fn splitmix64(seed: u64, key: u64) -> u64 {
+    let mut x = seed.wrapping_add(key.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^= x >> 31;
@@ -107,6 +114,48 @@ mod tests {
                 "Stage::Cultures stream collides with Stage::{other:?} at seed 42"
             );
         }
+    }
+
+    #[test]
+    fn history_stage_has_an_independent_stream() {
+        // Phase 4 builds the history sim on `Stage::History = 11` and derives
+        // every per-year / per-loop sub-seed from it via `splitmix64`. Pin that
+        // the stage stream itself is distinct from every other stage at a fixed
+        // master seed — a discriminant collision would make history co-vary
+        // with another stage and silently break determinism.
+        let h = StageRng::new(42);
+        let history_first = h.stream(Stage::History).next_u64();
+        for other in [
+            Stage::Mesh,
+            Stage::Plates,
+            Stage::Noise,
+            Stage::Erosion,
+            Stage::Hydro,
+            Stage::Climate,
+            Stage::Capitals,
+            Stage::Hierarchy,
+            Stage::Roads,
+            Stage::Names,
+            Stage::Render,
+            Stage::Cultures,
+            Stage::Religions,
+        ] {
+            assert_ne!(
+                history_first,
+                h.stream(other).next_u64(),
+                "Stage::History stream collides with Stage::{other:?} at seed 42"
+            );
+        }
+    }
+
+    #[test]
+    fn splitmix64_is_pure_and_mixes_both_inputs() {
+        // The single mixing primitive the whole project derives sub-streams
+        // with (per-stage, and the history sim one level deeper). Pin purity
+        // and that both arguments actually affect the output.
+        assert_eq!(splitmix64(42, 7), splitmix64(42, 7));
+        assert_ne!(splitmix64(42, 7), splitmix64(43, 7));
+        assert_ne!(splitmix64(42, 7), splitmix64(42, 8));
     }
 
     #[test]

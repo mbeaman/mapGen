@@ -300,37 +300,34 @@ synthetic-passes-now / populate-RED-until-impl pattern (model:
 `seed42_full.blake3.txt`; `just check` green per commit, `just perf` within 1.5×
 after 4a and 4e.
 
-### Phase 4a — Schema v9 + `CausalLoop` trait + tick driver + pipeline wiring
+### Phase 4a — `CausalLoop` trait + tick driver + pipeline wiring *(shipped)*
 
-The foundation — over-invest in the determinism spec here; everything inherits it.
+The foundation — over-invested in the determinism spec; everything inherits it.
 
-- [ ] (1d) **Schema v9** (one bump, all additive, every field `#[serde(default)]`).
-  `mapgen-core/src/entities.rs`: new shared types `Trait` (repr(u8), append-only),
-  `Epithet{text,earned_year,source_event}`, `Relationship{other,kind:RelationKind,
-  since_year,origin_event,intensity,ended_year}`, `RelationKind`, appended
-  `Entity::Title` variant + `TitleHolding`. Extend `Character` (culture_id, sex,
-  traits, epithets, relationships, titles, birth/death_event, prestige),
-  `Dynasty`/`House` (founder, founded/extinct_year, culture_id, seat/cadet_of,
-  prestige), `Artifact`, `Claim`, `Site` (founding_event, founder), `Religion`
-  (founder_character, founding_event). `world_data.rs`: `WorldData.history:
-  HistoryData{ages, arcs, polity_relations}` + `SCHEMA_VERSION` 8→9. **Event struct
-  unchanged; `EventKind`/`CasusBelli` untouched (frozen).** Round-trip test for
-  `Entity::Title`.
-- [ ] (1d) **`CausalLoop` trait + tick driver** in `mapgen-history/src/lib.rs`:
-  `LoopId` enum (stable discriminants, fixed `ORDER`), `SimState` scratch (never
-  serialized), `HistoryParams{years:500,..}`, sub-seeding helpers, annual driver
-  looping `years` × loops in `ORDER`. Six **no-op** `impl CausalLoop` so it runs
-  500 empty years.
-- [ ] (2h) **Pipeline wiring (Option B).** `mapgen-world/Cargo.toml`: add
-  `mapgen-history` dep. `pipeline.rs`: `PipelineStage::History` after `Naming`;
-  `ORDER`→11; `id()/label()/weight()/run_stage()` arms; `run_stage` calls
-  `mapgen_history::run(&mut self.world, HistoryParams::default(), &mut
-  self.rng.stream(Stage::History))`.
-- [ ] (4h) **Determinism spec (the front-loaded risk).** Driver runs exactly
-  `years` ticks; `LoopId`/`year_seed`/`loop_seed` derivation deterministic **and
-  independent** (re-derive loop 3's seed, add a loop, loop 3 unchanged); extend the
-  `rng` test for `Stage::History` independence; fmath-purity check on
-  `mapgen-history`. Re-anchor `seed42_full` (schema byte; no events yet).
+**Refinement vs. plan:** schema v9 moved *out* of 4a to its consumers (4b events,
+4c entity fields), following the cultures-skeleton precedent (each substage lands
+*its* schema). With Option B + no-op loops, `generate_full` output is byte-identical,
+so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk foundation.
+
+- [x] **`CausalLoop` trait + tick driver** in `mapgen-history/src/lib.rs` +
+  `loops/mod.rs`: `LoopId` enum (stable append-only discriminants, fixed `ORDER`),
+  `TickCtx`, `SimState` scratch (never serialized), `HistoryParams{years:500}`,
+  hierarchical sub-seeding (`loop_seed` = `splitmix64(splitmix64(sim,year),loop)`),
+  annual driver + `run_with_loops` test seam. Six no-op `impl CausalLoop`. Runs 500
+  empty years.
+- [x] **Pipeline wiring (Option B).** `mapgen-world/Cargo.toml` gains the
+  `mapgen-history` dep; `pipeline.rs` `PipelineStage::History` after `Naming`
+  (`ORDER`→11, id/label/weight/run_stage arms); CLI `progressive_style` arm.
+  `mapgen-core` exposes `splitmix64` so the sim mixes identically.
+- [x] **Determinism spec.** `mapgen-history` unit tests: driver ticks each loop
+  once/year in order; `loop_seed` pure + distinct per loop/year; a loop's stream is
+  unaffected by adding other loops; `ORDER` matches `default_loops`. `mapgen-core`:
+  `Stage::History` independent stream + `splitmix64` purity. `mapgen-world/tests/
+  history_spec.rs`: History runs last, no-op emits nothing yet, deterministic.
+  Golden hashes pass **unchanged** (no re-anchor). `just check` green; `just perf`
+  30k +10% = known machine artifact (this box ≈1.6× the Ryzen anchor), not re-anchored.
+- [ ] **fmath-purity guard** — deferred to 4b/4d (the first loop that uses a
+  transcendental); 4a introduces no float math, so there's nothing to guard yet.
 
 ### Phase 4b — Turchin demographic backbone → first events *(visible-value milestone)*
 

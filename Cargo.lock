@@ -818,6 +818,7 @@ dependencies = [
  "libm",
  "mapgen-core",
  "mapgen-geom",
+ "mapgen-history",
  "noise",
  "proptest",
  "rand 0.8.6",

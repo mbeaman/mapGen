@@ -34,11 +34,12 @@ pub enum PipelineStage {
     Religions,
     Polities,
     Naming,
+    History,
 }
 
 impl PipelineStage {
     /// Canonical execution order.
-    pub const ORDER: [PipelineStage; 10] = [
+    pub const ORDER: [PipelineStage; 11] = [
         PipelineStage::Terrain,
         PipelineStage::Erosion,
         PipelineStage::Hydrology,
@@ -49,6 +50,7 @@ impl PipelineStage {
         PipelineStage::Religions,
         PipelineStage::Polities,
         PipelineStage::Naming,
+        PipelineStage::History,
     ];
 
     /// Number of stages in a full run.
@@ -75,6 +77,7 @@ impl PipelineStage {
             PipelineStage::Religions => "religions",
             PipelineStage::Polities => "polities",
             PipelineStage::Naming => "naming",
+            PipelineStage::History => "history",
         }
     }
 
@@ -91,11 +94,14 @@ impl PipelineStage {
             PipelineStage::Religions => "Founding religions",
             PipelineStage::Polities => "Drawing borders",
             PipelineStage::Naming => "Naming the world",
+            PipelineStage::History => "Simulating history",
         }
     }
 
     /// Static relative cost weight (calibrated from a 15k-cell run; no
-    /// runtime measurement). Erosion dominates. Weights sum to 100.
+    /// runtime measurement). Erosion dominates. Progress normalizes by the
+    /// sum, so the absolute values need not total 100. History is a forward
+    /// estimate (no-op until Phase 4b); recalibrate in 4j once the sim lands.
     pub fn weight(self) -> u16 {
         match self {
             PipelineStage::Terrain => 12,
@@ -108,6 +114,7 @@ impl PipelineStage {
             PipelineStage::Religions => 3,
             PipelineStage::Polities => 4,
             PipelineStage::Naming => 1,
+            PipelineStage::History => 8,
         }
     }
 }
@@ -316,6 +323,14 @@ impl Pipeline {
             PipelineStage::Naming => {
                 let mut r = self.rng.stream(Stage::Names);
                 naming::name_world(&mut self.world, naming::NamingParams::default(), &mut r);
+            }
+            PipelineStage::History => {
+                let mut r = self.rng.stream(Stage::History);
+                mapgen_history::run(
+                    &mut self.world,
+                    mapgen_history::HistoryParams::default(),
+                    &mut r,
+                );
             }
         }
     }

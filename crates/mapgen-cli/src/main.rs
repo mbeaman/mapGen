@@ -223,7 +223,7 @@ fn progressive_style(stage: PipelineStage) -> Style {
     match stage {
         Terrain | Erosion => Style::Greyscale,
         Hydrology | Ocean | Climate | Biomes => Style::Biomes,
-        Cultures | Religions | Polities | Naming => Style::Cultures,
+        Cultures | Religions | Polities | Naming | History => Style::Cultures,
     }
 }
 
