@@ -327,8 +327,35 @@ pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
         }
     }
 
-    // Post-sim: weave the causal event graph into narrative arcs + mythic ages.
+    // Post-sim: a beat repeated verbatim is less newsworthy each time, so the
+    // major-event reel isn't dominated by one rivalry's serial battles.
+    refine_salience(world);
+
+    // Weave the (refined) causal event graph into narrative arcs + mythic ages.
     world.history = extract::build(world);
+}
+
+/// Salience multiplier applied per *prior* verbatim recurrence of an event's
+/// canonical summary. 0.6 ⇒ a second identical line reads at 60% (dropping a
+/// major beat out of the ≥0.8 reel), a third at 36%, etc. Keying on the summary
+/// text — not actor entities — is deliberate: a hegemon's serial battles span
+/// many successive rulers but render as the *same* sentence, while genuinely
+/// distinct events (other polities, distinct hero sagas) keep unique text and
+/// are untouched.
+const REPEAT_DECAY: f32 = 0.6;
+
+/// Discount the salience of verbatim-repeated event summaries. Deterministic:
+/// events are processed in id order, so the *first* occurrence keeps full
+/// salience and later identical ones recede.
+fn refine_salience(world: &mut WorldData) {
+    let mut seen: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+    for e in world.events.events.iter_mut() {
+        let prior = seen.entry(e.summary_canonical.clone()).or_insert(0);
+        if *prior > 0 {
+            e.salience = (e.salience * REPEAT_DECAY.powi(*prior as i32)).clamp(0.0, 1.0);
+        }
+        *prior += 1;
+    }
 }
 
 /// [`run`] with an injectable loop set — the seam tests use to count ticks and
