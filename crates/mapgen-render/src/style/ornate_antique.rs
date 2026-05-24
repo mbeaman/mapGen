@@ -113,6 +113,7 @@ pub fn render(world: &WorldData) -> String {
     render_settlement_labels(world, &mut out);
     render_sacred_site_labels(world, &mut out);
     render_feature_labels(world, &mut out);
+    render_mountain_range_labels(world, &mut out);
 
     // Decorative top-of-stack overlays. The edge-burn overlay darkens
     // the periphery (intentionally fading edge labels into "aged"
@@ -1481,6 +1482,61 @@ fn render_feature_labels(world: &WorldData, out: &mut String) {
         }
         out.push_str("</g>");
     }
+}
+
+/// Mountain-range names laid across each range's spine. A range is a
+/// named cluster of peak cells; the label follows a west→east spine
+/// (westmost peak → centroid → eastmost peak) via `<textPath>`, in
+/// wide-tracked faded Cinzel italic — the classic antique convention of
+/// a range name stretched across the chain. Spaced and low-opacity so
+/// it sits behind the settlement labels in visual weight.
+fn render_mountain_range_labels(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let named: Vec<(usize, &mapgen_core::world_data::MountainRange)> = world
+        .mountain_ranges
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !r.name.is_empty() && r.cells.len() >= 2)
+        .collect();
+    if named.is_empty() {
+        return;
+    }
+
+    for (i, r) in &named {
+        let pts: Vec<[f32; 2]> = r.cells.iter().map(|&c| mesh.sites[c as usize]).collect();
+        let west = pts
+            .iter()
+            .copied()
+            .reduce(|a, b| if b[0] < a[0] { b } else { a })
+            .unwrap();
+        let east = pts
+            .iter()
+            .copied()
+            .reduce(|a, b| if b[0] > a[0] { b } else { a })
+            .unwrap();
+        let cx = pts.iter().map(|p| p[0]).sum::<f32>() / pts.len() as f32;
+        let cy = pts.iter().map(|p| p[1]).sum::<f32>() / pts.len() as f32;
+        // West→east so the baseline reads left-to-right (never inverted).
+        write!(
+            out,
+            r##"<path id="rangelbl-{i}" fill="none" stroke="none" d="M{:.1},{:.1} L{cx:.1},{cy:.1} L{:.1},{:.1}"/>"##,
+            west[0], west[1], east[0], east[1],
+        )
+        .unwrap();
+    }
+
+    out.push_str(
+        r##"<g class="range-labels" font-family='"Cinzel", Georgia, serif' font-style="italic" font-size="14" letter-spacing="4" fill="#5a4a32" fill-opacity="0.65" stroke="#f0e3bf" paint-order="stroke" stroke-width="1.6" stroke-linejoin="round">"##,
+    );
+    for (i, r) in &named {
+        write!(
+            out,
+            r##"<text text-anchor="middle"><textPath href="#rangelbl-{i}" startOffset="50%">{}</textPath></text>"##,
+            xml_escape(&r.name),
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
 }
 
 fn xml_escape(s: &str) -> String {

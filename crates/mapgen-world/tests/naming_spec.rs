@@ -390,3 +390,41 @@ fn major_rivers_are_named_and_minor_ones_are_not() {
         }
     }
 }
+
+#[test]
+fn major_mountain_ranges_are_named() {
+    // Phase-3e polish: the naming stage clusters ALPINE/SNOW cells into
+    // ranges and names the major ones. Contract: ≥1 named range on the
+    // reference world; every range clears the size floor; names are
+    // alphabetic + deterministic.
+    let world = generate_full(params(42));
+    assert!(
+        !world.mountain_ranges.is_empty(),
+        "no mountain ranges named on seed 42 — threshold too high?"
+    );
+    for r in &world.mountain_ranges {
+        assert!(
+            r.cells.len() >= 5,
+            "a {}-cell cluster was named a range ({:?})",
+            r.cells.len(),
+            r.name
+        );
+        assert!(
+            !r.name.is_empty() && r.name.chars().all(|c| c.is_ascii_alphabetic()),
+            "range name not non-empty alphabetic: {:?}",
+            r.name
+        );
+    }
+    let world2 = generate_full(params(42));
+    let n1: Vec<&str> = world
+        .mountain_ranges
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    let n2: Vec<&str> = world2
+        .mountain_ranges
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(n1, n2, "mountain-range names not deterministic across runs");
+}

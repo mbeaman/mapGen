@@ -19,6 +19,7 @@
 //! is BACKLOGGED; MVP uses pure phonotactic.
 
 use mapgen_core::entities::{Language, Race};
+use mapgen_core::world_data::MountainRange;
 use mapgen_core::WorldData;
 use rand_chacha::rand_core::RngCore;
 use rand_chacha::ChaCha8Rng;
@@ -147,7 +148,83 @@ pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha
         }
     }
 
+    // 7. Name *major* mountain ranges — connected clusters of ALPINE /
+    //    SNOW cells. Each range is named in the language of the culture
+    //    at its highest peak (fallback language 0). RNG is consumed
+    //    after the river/lake passes, so those names are unchanged.
+    let clusters = cluster_mountain_ranges(world);
+    let range_specs: Vec<(Vec<u32>, usize)> = clusters
+        .into_iter()
+        .filter(|c| c.len() >= MIN_NAMED_RANGE_CELLS)
+        .map(|cells| {
+            let peak = *cells
+                .iter()
+                .max_by(|&&a, &&b| {
+                    world.terrain.elevation[a as usize]
+                        .partial_cmp(&world.terrain.elevation[b as usize])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .expect("non-empty by the length guard");
+            (cells, culture_language(world, peak, last))
+        })
+        .collect();
+    let ranges: Vec<MountainRange> = range_specs
+        .into_iter()
+        .map(|(cells, idx)| MountainRange {
+            name: generate_name(&languages[idx], rng),
+            cells,
+        })
+        .collect();
+    world.mountain_ranges = ranges;
+
     world.languages = languages;
+}
+
+/// Minimum cluster size (in cells) for a mountain range to earn a name.
+const MIN_NAMED_RANGE_CELLS: usize = 5;
+
+/// Biome ids for high terrain (mirrors `mapgen-render`'s palette
+/// constants): SNOW = 0, ALPINE = 11.
+fn is_mountain_biome(b: u8) -> bool {
+    b == 0 || b == 11
+}
+
+/// Connected components of ALPINE/SNOW cells over the mesh neighbor
+/// graph — each is a candidate mountain range. Iterative DFS; component
+/// order is deterministic (ascending start-cell index).
+fn cluster_mountain_ranges(world: &WorldData) -> Vec<Vec<u32>> {
+    let biome = &world.climate.biome;
+    let n = world.mesh.cell_count();
+    let is_mtn = |i: usize| {
+        biome
+            .get(i)
+            .copied()
+            .map(is_mountain_biome)
+            .unwrap_or(false)
+    };
+
+    let mut visited = vec![false; n];
+    let mut ranges: Vec<Vec<u32>> = Vec::new();
+    for start in 0..n {
+        if visited[start] || !is_mtn(start) {
+            continue;
+        }
+        let mut stack = vec![start];
+        visited[start] = true;
+        let mut comp = Vec::new();
+        while let Some(c) = stack.pop() {
+            comp.push(c as u32);
+            for &nj in &world.mesh.neighbors[c] {
+                let j = nj as usize;
+                if !visited[j] && is_mtn(j) {
+                    visited[j] = true;
+                    stack.push(j);
+                }
+            }
+        }
+        ranges.push(comp);
+    }
+    ranges
 }
 
 /// Minimum river length (in cells) to earn a name — keeps minor

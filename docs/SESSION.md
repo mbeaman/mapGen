@@ -16,7 +16,7 @@ fast; the others are stable.
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
-| Schema | v7 |
+| Schema | v8 |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger) |
 
 ---
@@ -32,7 +32,7 @@ fast; the others are stable.
 | 3c polities | done | `e4d4c35` (skel) → `59e84bf` (spec) → `48957b8` |
 | 3d naming | done | `9aedddb` (skel) → `6ba0ff6` (spec) → `c74089f` |
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
-| 3e backlog polish | **done this session** | 8 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels. Remaining in BACKLOG: mountain-range labels (needs orography naming) + `target_aesthetic.svg`. |
+| 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | not started | — |
 
@@ -62,9 +62,9 @@ git log -8 --oneline
 ## Currently in flight
 
 Nothing. Phase 3e (per architecture spec), the web-frontend MVP, and
-the full Phase-3e render-polish pass are all complete. Two render items
-stay deferred in BACKLOG with triggers: mountain-range labels (needs an
-orography-naming pass) and a hand-authored `target_aesthetic.svg`. Next
+the full Phase-3e render-polish pass are all complete. Only one render
+item stays deferred in BACKLOG: a hand-authored `target_aesthetic.svg`
+(taste reference; user-deferred, revisit on a new style variant). Next
 direction is the user's call:
 
 - **Phase 4 (history sim).** Six causal loops (Turchin secular cycles

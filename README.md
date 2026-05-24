@@ -60,8 +60,8 @@ Project docs:
   scaled towns), dashed roads weighted trunk-vs-branch, dashed polity
   borders, per-pantheon sacred-site glyphs, embedded Cinzel / IM Fell /
   EB Garamond typography, compass rose, cartouche, irregular edge-burn,
-  and Imhof simulated-annealing labels — settlements plus river
-  (`textPath`) and lake names).
+  and Imhof simulated-annealing labels — settlements plus river,
+  lake, and mountain-range names (the last two via `textPath`)).
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 - **Browser frontend** (`web/`) — vanilla TypeScript + Vite driving the
@@ -73,9 +73,10 @@ Project docs:
 
 **Not yet:** history simulation (Phase 4), Claude-narrated chronicles
 (Phase 5). The Phase-3e render-polish pass is complete; the only
-deferred render items are mountain-range labels (needs an orography-
-naming pass) and a hand-authored `docs/target_aesthetic.svg`. All
-tracked in `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/BACKLOG.md`.
+deferred render item is a hand-authored `docs/target_aesthetic.svg`
+(a taste reference, revisited only when starting a new style variant).
+All tracked in `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and
+`docs/BACKLOG.md`.
 
 ## First-time setup
 

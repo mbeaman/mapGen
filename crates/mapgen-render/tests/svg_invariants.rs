@@ -1053,3 +1053,41 @@ fn ornate_antique_dispatches_glyph_for_every_icon_arch_tier_combination() {
         &missing[..missing.len().min(8)]
     );
 }
+
+#[test]
+fn ornate_antique_labels_mountain_ranges() {
+    // BACKLOG "Curve-along-feature labels for mountain ranges": a named
+    // range renders as a <textPath> label laid across its spine.
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 200.0;
+    world.mesh.height = 100.0;
+    world.mesh.sites = vec![[20.0, 50.0], [60.0, 55.0], [100.0, 50.0]];
+    world.mesh.cell_vertices = vec![vec![]; 3];
+    world.mesh.neighbors = vec![vec![]; 3];
+    world.mesh.coast = vec![false; 3];
+    world.terrain.elevation = vec![0.8; 3];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); 3];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![11; 3]; // ALPINE
+    world.climate.temperature = vec![0.2; 3];
+    world.climate.precipitation = vec![0.2; 3];
+    world.mountain_ranges = vec![mapgen_core::world_data::MountainRange {
+        cells: vec![0, 1, 2],
+        name: "Karagath".into(),
+    }];
+
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    assert!(
+        svg.contains(r#"class="range-labels""#),
+        "mountain-range label group missing"
+    );
+    assert!(
+        svg.contains(r#"id="rangelbl-0"#),
+        "range-label spine path missing"
+    );
+    assert!(
+        svg.contains("<textPath "),
+        "range label not following a spine via textPath"
+    );
+    assert!(svg.contains("Karagath"), "range name not rendered");
+}

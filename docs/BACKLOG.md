@@ -415,23 +415,6 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** Hours after `resvg` is wired for PNG.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
-### Curve-along-feature labels for mountain ranges
-
-- **Why deferred.** River labels shipped (the naming stage names major
-  rivers; the renderer lays each name along the channel via
-  `<textPath>`). Mountain ranges remain unlabeled because they're a
-  discrete set of peak cells, not a polyline — labeling them needs (a)
-  a clustering pass that groups adjacent ALPINE/SNOW cells into named
-  ranges, (b) a naming-stage extension that generates range names
-  (today it names settlements, polities, religions, rivers, lakes —
-  not orography), and (c) a spine-fitting pass to lay the name across
-  the cluster.
-- **Trigger for revival.** Naming stage starts generating mountain-
-  range names, or user feedback that the map needs named ranges.
-- **Cost.** ~1 day (cluster + name + spine fit).
-- **Origin.** Session-state Phase 3e polish list; rivers shipped in the
-  river/lake-label commit.
-
 ### Hand-authored `docs/target_aesthetic.svg`
 
 - **Why deferred.** ARCHITECTURE.md §Phase 3e recommends authoring a

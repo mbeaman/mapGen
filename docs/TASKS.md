@@ -259,9 +259,10 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   (cross / sun / split-disc / leaf / tablet / ring), `class="sacred X"`.
 - [x] Major-river + lake names — naming stage labels major rivers
   (≥8 cells) + sizeable lakes (≥3 cells); schema v7.
-- [x] Curve-along-feature labels (rivers) — names follow the channel
-  via `<textPath>` (`class="river-labels"`). Mountain-range labels
-  remain in BACKLOG (need peak clustering + range naming first).
+- [x] Curve-along-feature labels — river names follow the channel and
+  mountain-range names follow a west→east spine, both via `<textPath>`
+  (`class="river-labels"` / `"range-labels"`). Ranges are clustered +
+  named in the naming stage (schema v8).
 - [x] Lake labels — centroid point labels (`class="lake-labels"`).
 - [x] Imhof simulated-annealing label placement — settlement labels
   placed by SA over 8 candidate positions, minimizing label/glyph

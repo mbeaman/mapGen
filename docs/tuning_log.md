@@ -266,9 +266,10 @@ artifact that justified the pick, and the commit that landed the value.
 
 ## Naming — `mapgen-world::naming`
 
-### `MIN_NAMED_RIVER_CELLS` / `MIN_NAMED_LAKE_CELLS`
+### `MIN_NAMED_RIVER_CELLS` / `MIN_NAMED_LAKE_CELLS` / `MIN_NAMED_RANGE_CELLS`
 
-* **Current:** `8` cells (rivers) / `3` cells (lakes).
+* **Current:** `8` cells (rivers) / `3` cells (lakes) / `5` cells
+  (mountain ranges — connected ALPINE/SNOW clusters).
 * **Why this value:** Only *major* features earn a label, so the map
   isn't littered with names on every brook and pond. `8` river cells is
   roughly the long-river tier on seed 42 at 4k cells (verified: ≥1

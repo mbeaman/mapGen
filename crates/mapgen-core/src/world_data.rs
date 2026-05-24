@@ -28,7 +28,10 @@ use crate::{
 ///   features. Empty names are `skip_serializing_if`-elided, so the
 ///   on-disk shape of pre-v7 / unnamed worlds is unchanged (the Phase-2
 ///   golden hash is unaffected; only the full golden re-anchors).
-pub const SCHEMA_VERSION: u32 = 7;
+/// * v8 — Phase 3e polish: `WorldData::mountain_ranges` (named clusters
+///   of ALPINE/SNOW cells). `skip_serializing_if`-elided when empty;
+///   both goldens re-anchor for the `schema_version` byte itself.
+pub const SCHEMA_VERSION: u32 = 8;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -53,6 +56,11 @@ pub struct WorldData {
     /// `Culture::language_id`. Empty until the naming stage runs.
     #[serde(default)]
     pub languages: Vec<Language>,
+    /// Phase 3e — named major mountain ranges (connected clusters of
+    /// ALPINE/SNOW cells). Populated by the naming stage; `skip`-elided
+    /// when empty so unnamed worlds keep their on-disk shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mountain_ranges: Vec<MountainRange>,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -165,6 +173,14 @@ pub struct Lake {
     /// Generated name — set by the naming stage for sizeable lakes only;
     /// empty otherwise. See `River::name` for the serialization note.
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+}
+
+/// A named mountain range — a connected cluster of ALPINE/SNOW cells.
+/// Produced by the Phase 3e naming stage for *major* clusters only.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct MountainRange {
+    pub cells: Vec<u32>,
     pub name: String,
 }
 
