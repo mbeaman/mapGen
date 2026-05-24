@@ -1116,62 +1116,205 @@ fn draw_capital_pennant(cx: f32, cy: f32, s: f32, fill: &str, out: &mut String) 
     .unwrap();
 }
 
-/// Settlement name labels. Capitals get large serif text above-right of
-/// the glyph; towns get smaller text below. Basic positioning — no
-/// Imhof simulated-annealing optimization (architecture defers full SA
-/// to post-MVP). Accepts label overlap rather than silently dropping
-/// labels; the reader can usually disambiguate from glyph proximity.
+/// Axis-aligned box (top-left origin) used for label placement.
+#[derive(Copy, Clone)]
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl Rect {
+    fn centered(cx: f32, cy: f32, w: f32, h: f32) -> Self {
+        Rect {
+            x: cx - w * 0.5,
+            y: cy - h * 0.5,
+            w,
+            h,
+        }
+    }
+    /// Intersection area with another box (0 if disjoint).
+    fn overlap(&self, o: &Rect) -> f32 {
+        let ix = (self.x + self.w).min(o.x + o.w) - self.x.max(o.x);
+        let iy = (self.y + self.h).min(o.y + o.h) - self.y.max(o.y);
+        if ix > 0.0 && iy > 0.0 {
+            ix * iy
+        } else {
+            0.0
+        }
+    }
+}
+
+/// Per-label candidate offset directions, in Imhof preference order
+/// (upper-right best, then the other diagonals, then the cardinals).
+/// Lower index = more preferred; the SA cost adds a small penalty per
+/// index so ties break toward the cartographic convention.
+const LABEL_DIRS: [(f32, f32); 8] = [
+    (1.0, -1.0),
+    (-1.0, -1.0),
+    (1.0, 1.0),
+    (-1.0, 1.0),
+    (0.0, -1.4),
+    (0.0, 1.4),
+    (1.4, 0.0),
+    (-1.4, 0.0),
+];
+
+/// Settlement name labels with Imhof-style simulated-annealing
+/// placement. Each label has 8 candidate positions around its glyph; SA
+/// minimizes an energy summing label-label overlap, label-glyph overlap,
+/// and a small position-preference penalty, so on dense maps labels
+/// slide to open space instead of stacking. The anneal uses a fixed-seed
+/// xorshift and a no-exp (linear-cooling) acceptance rule, so placement
+/// is byte-identical across runs and free of transcendentals.
+///
+/// Capitals use Cinzel (display caps); towns/villages use EB Garamond.
 fn render_settlement_labels(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
-    // Capitals use Cinzel (display caps) so they read as monumental;
-    // towns/villages use EB Garamond for a softer body-text feel.
-    // System Georgia falls back if a render path can't resolve the
-    // embedded fonts.
-    out.push_str(
-        r##"<g fill="#1a140e" stroke="#f0e3bf" paint-order="stroke" stroke-width="2.0" stroke-linejoin="round">"##,
-    );
+
+    struct Spec {
+        ax: f32,
+        ay: f32,
+        text: String,
+        size: f32,
+        weight: &'static str,
+        family: &'static str,
+    }
+
+    let mut specs: Vec<Spec> = Vec::new();
     for s in &world.society.settlements {
         if s.name.is_empty() {
             continue;
         }
         let site = mesh.sites[s.cell as usize];
-        let (dx, dy, size, weight, family) = match s.tier {
-            SettlementTier::Capital => (
-                8.0_f32,
-                -10.0_f32,
-                15.0_f32,
-                "bold",
-                r##""Cinzel", Georgia, serif"##,
-            ),
-            SettlementTier::Town => (
-                0.0,
-                14.0,
-                10.0,
-                "normal",
-                r##""EB Garamond", Georgia, serif"##,
-            ),
-            SettlementTier::Village => (
-                0.0,
-                11.0,
-                8.0,
-                "normal",
-                r##""EB Garamond", Georgia, serif"##,
-            ),
+        let (size, weight, family) = match s.tier {
+            SettlementTier::Capital => (15.0_f32, "bold", r##""Cinzel", Georgia, serif"##),
+            SettlementTier::Town => (10.0, "normal", r##""EB Garamond", Georgia, serif"##),
+            SettlementTier::Village => (8.0, "normal", r##""EB Garamond", Georgia, serif"##),
         };
-        let anchor = match s.tier {
-            SettlementTier::Capital => "start",
-            _ => "middle",
-        };
+        specs.push(Spec {
+            ax: site[0],
+            ay: site[1],
+            text: xml_escape(&s.name),
+            size,
+            weight,
+            family,
+        });
+    }
+    if specs.is_empty() {
+        return;
+    }
+
+    // One glyph obstacle box per anchor + 8 candidate boxes per label.
+    let glyphs: Vec<Rect> = specs
+        .iter()
+        .map(|s| Rect::centered(s.ax, s.ay, 13.0, 13.0))
+        .collect();
+    let gap = 7.0_f32;
+    let candidates: Vec<Vec<Rect>> = specs
+        .iter()
+        .map(|s| {
+            let tw = s.text.chars().count() as f32 * s.size * 0.55;
+            let th = s.size;
+            LABEL_DIRS
+                .iter()
+                .map(|&(dx, dy)| {
+                    let cx = s.ax + dx * (tw * 0.5 + gap);
+                    let cy = s.ay + dy * (th * 0.5 + gap);
+                    Rect::centered(cx, cy, tw, th)
+                })
+                .collect()
+        })
+        .collect();
+
+    let chosen = anneal_labels(&candidates, &glyphs);
+
+    out.push_str(
+        r##"<g class="settlement-labels" fill="#1a140e" stroke="#f0e3bf" paint-order="stroke" stroke-width="2.0" stroke-linejoin="round" text-anchor="middle">"##,
+    );
+    for (i, s) in specs.iter().enumerate() {
+        let b = &candidates[i][chosen[i]];
         write!(
             out,
-            r##"<text x="{:.1}" y="{:.1}" font-family='{family}' font-size="{size:.1}" font-weight="{weight}" text-anchor="{anchor}">{}</text>"##,
-            site[0] + dx,
-            site[1] + dy,
-            xml_escape(&s.name),
+            r##"<text x="{:.1}" y="{:.1}" font-family='{family}' font-size="{size:.1}" font-weight="{weight}">{text}</text>"##,
+            b.x + b.w * 0.5,
+            b.y + b.h * 0.78,
+            family = s.family,
+            size = s.size,
+            weight = s.weight,
+            text = s.text,
         )
         .unwrap();
     }
     out.push_str("</g>");
+}
+
+/// Simulated-annealing assignment of one candidate index per label,
+/// minimizing total overlap energy. Deterministic: fixed-seed xorshift +
+/// linear-cooling acceptance (no `exp`). Returns the chosen index per
+/// label.
+fn anneal_labels(candidates: &[Vec<Rect>], glyphs: &[Rect]) -> Vec<usize> {
+    let n = candidates.len();
+    let mut state = vec![0usize; n]; // start at each label's preferred slot
+
+    // Energy contributed by label i: position preference + overlap with
+    // every other label's chosen box + overlap with all glyph obstacles
+    // except its own anchor.
+    let cost = |i: usize, state: &[usize]| -> f32 {
+        let bi = &candidates[i][state[i]];
+        let mut c = state[i] as f32 * 1.5;
+        for (g, gb) in glyphs.iter().enumerate() {
+            if g != i {
+                c += bi.overlap(gb) * 0.6;
+            }
+        }
+        for (j, cj) in candidates.iter().enumerate() {
+            if j != i {
+                c += bi.overlap(&cj[state[j]]) * 1.0;
+            }
+        }
+        c
+    };
+
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng
+    };
+
+    let mut t = 6.0_f32;
+    for _sweep in 0..240 {
+        for _ in 0..n {
+            let i = (next() % n as u64) as usize;
+            let slots = candidates[i].len();
+            if slots < 2 {
+                continue;
+            }
+            let old = state[i];
+            let cand = (next() % slots as u64) as usize;
+            if cand == old {
+                continue;
+            }
+            let before = cost(i, &state);
+            state[i] = cand;
+            let after = cost(i, &state);
+            let d = after - before;
+            if d > 0.0 {
+                // Linear-cooling acceptance: take a worse move only while
+                // it's smaller than the temperature, with probability
+                // (t - d)/t. No exp → deterministic + transcendental-free.
+                let r = (next() % 1000) as f32 / 1000.0;
+                if !(d < t && r < (t - d) / t) {
+                    state[i] = old; // reject
+                }
+            }
+        }
+        t *= 0.97;
+    }
+    state
 }
 
 /// Polity-name labels at the territorial centroid (computed from

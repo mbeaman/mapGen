@@ -910,6 +910,99 @@ fn ornate_antique_roads_vary_width_by_traversal() {
     );
 }
 
+/// Two capitals 4 px apart with equal-length names — naive fixed-offset
+/// placement would stack their labels; SA must pull them apart.
+fn world_with_two_crowded_capitals() -> mapgen_core::WorldData {
+    use mapgen_core::entities::{Settlement, SettlementTier};
+    use mapgen_core::world_data::Nation;
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 200.0;
+    world.mesh.height = 200.0;
+    world.mesh.sites = vec![[100.0, 100.0], [104.0, 100.0]];
+    world.mesh.cell_vertices = vec![vec![]; 2];
+    world.mesh.neighbors = vec![vec![]; 2];
+    world.mesh.coast = vec![false; 2];
+    world.terrain.elevation = vec![0.5, 0.5];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); 2];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![3, 3];
+    world.climate.temperature = vec![0.5, 0.5];
+    world.climate.precipitation = vec![0.5, 0.5];
+    world.society.nations = vec![
+        Nation {
+            name: "A".into(),
+            capital_cell: 0,
+            color: [100, 80, 60],
+        },
+        Nation {
+            name: "B".into(),
+            capital_cell: 1,
+            color: [60, 80, 100],
+        },
+    ];
+    world.society.settlements = vec![
+        Settlement {
+            name: "Aaaaaa".into(),
+            cell: 0,
+            tier: SettlementTier::Capital,
+            polity_id: 0,
+            population: 1.0,
+        },
+        Settlement {
+            name: "Bbbbbb".into(),
+            cell: 1,
+            tier: SettlementTier::Capital,
+            polity_id: 1,
+            population: 1.0,
+        },
+    ];
+    world
+}
+
+/// Pull the `x`/`y` of every `<text>` inside the first group matching
+/// `class_marker`.
+fn text_coords_in_group(svg: &str, class_marker: &str) -> Vec<(f32, f32)> {
+    let start = svg.find(class_marker).expect("label group missing");
+    let end = svg[start..].find("</g>").expect("label group unclosed") + start;
+    let group = &svg[start..end];
+    let mut coords = Vec::new();
+    for chunk in group.split("<text ").skip(1) {
+        let grab = |attr: &str| -> f32 {
+            let i = chunk.find(attr).unwrap() + attr.len();
+            let rest = &chunk[i..];
+            rest[..rest.find('"').unwrap()].parse().unwrap()
+        };
+        coords.push((grab(r#"x=""#), grab(r#"y=""#)));
+    }
+    coords
+}
+
+#[test]
+fn ornate_antique_label_placement_separates_crowded_labels() {
+    // BACKLOG "Imhof simulated-annealing label placement": two capitals
+    // whose labels would stack under fixed offsets must be pulled apart
+    // by the SA placer, and placement must be deterministic.
+    let world = world_with_two_crowded_capitals();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+
+    let coords = text_coords_in_group(&svg, r#"class="settlement-labels""#);
+    assert_eq!(coords.len(), 2, "expected exactly two settlement labels");
+    let dx = coords[0].0 - coords[1].0;
+    let dy = coords[0].1 - coords[1].1;
+    let dist = (dx * dx + dy * dy).sqrt();
+    assert!(
+        dist > 15.0,
+        "crowded capital labels were not separated by SA (dist {dist:.1}): {coords:?}"
+    );
+
+    // Determinism: SA uses a fixed seed, so a re-render is byte-identical.
+    let svg2 = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    assert_eq!(
+        svg, svg2,
+        "label placement is not deterministic across runs"
+    );
+}
+
 #[test]
 fn ornate_antique_dispatches_glyph_for_every_icon_arch_tier_combination() {
     // The Phase 3e ornate render is contracted to derive settlement

@@ -263,7 +263,9 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   via `<textPath>` (`class="river-labels"`). Mountain-range labels
   remain in BACKLOG (need peak clustering + range naming first).
 - [x] Lake labels — centroid point labels (`class="lake-labels"`).
-- [ ] Imhof simulated-annealing label placement.
+- [x] Imhof simulated-annealing label placement — settlement labels
+  placed by SA over 8 candidate positions, minimizing label/glyph
+  overlap (`anneal_labels`). Deterministic (fixed-seed xorshift, no exp).
 
 ---
 

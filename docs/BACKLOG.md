@@ -415,24 +415,6 @@ guess at value-per-day. Re-prioritize freely.
 - **Cost.** Hours after `resvg` is wired for PNG.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
-### Imhof simulated-annealing label placement
-
-- **Why deferred.** Today's settlement / polity / sacred-site labels
-  use fixed offsets per tier. On dense maps with clustered polities
-  the labels can overlap each other and overlap glyphs, but the
-  output is still readable — settlement label group uses `paint-order
-  ="stroke"` with a thick parchment halo so overlaps degrade
-  gracefully. Full Imhof-style SA optimization (per-label position
-  energy minimization across N positions × M neighbors) is a day of
-  focused work with a payoff that's only visible on dense renders.
-- **Trigger for revival.** A render at the canonical 15k-cell scale
-  has ≥2 visibly overlapping settlement labels that obscure each
-  other, OR the polity count rises above 8 (today's seed-42 ceiling
-  is 4–5 polities post-culling).
-- **Cost.** ~1 day.
-- **Origin.** ARCHITECTURE.md §Phase 3e (post-MVP). Discussed in
-  `.local/sessionstate.md` Phase 3e polish list.
-
 ### Curve-along-feature labels for mountain ranges
 
 - **Why deferred.** River labels shipped (the naming stage names major
