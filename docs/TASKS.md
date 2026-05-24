@@ -415,10 +415,35 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
   war actors/claims. No schema change (v10 holds; existing `Claim` reused);
   **`seed42_full` re-anchored**, phase2 untouched. `just check` green.
 
+### Phase 4 — holistic review log
+
+Cross-substage reviews (catch what per-substage gates miss: emergent coherence,
+balance drift, tech debt). Cadence: **post-4e (done below)** · **light pre-4i**
+(is the raw material coherent before the narrative capstone?) · **formal at 4j**
+(MVP acceptance + multi-seed + `/ultrareview` for independence).
+
+**Post-4e review (2026-05-24) — verdict: sound, no blockers.** Seed 42 + seeds
+1/2/3/7: no correctness absurdities (0 dead-ruler actors / overlapping reigns /
+self-wars / annihilated polities; lineage + refs resolve; 1/68 coronations at
+age 13 = the known no-regency case). Salience discriminates (all ≥0.8 are
+battles/sieges). Robust across seeds (16 kinds, ~700 events, no degenerate
+worlds). Crises hit every polity evenly — Turchin already checks the hegemon.
+Open findings folded into the substages below:
+
+- [ ] **(#1, pre-4i) Re-evaluate hegemon dominance.** Top-salience events skew to
+  the strongest realm; land-share 40–68% across seeds (seed 42 = 48%, multipolar;
+  seeds 3/7 ~66–68%). 4f/4g are the fragmenting forces — re-check after them; if
+  seeds still trend >65% hegemon, add a defender bonus / overextension penalty to
+  Mearsheimer.
+- [ ] **(#7, project-wide) Native↔wasm byte-identity** — reasoned (all
+  arithmetic), not machine-tested. Tracked in BACKLOG; not 4-specific.
+
 ### Phase 4f — Succession crises *(promotes succession from Phase 6)*
 
 - [ ] (1d) Ruler death + contested heirs (lineage from 4c, claims from 4e) →
   `Succession`, succession wars, dormant claims activating.
+- [ ] (4h) **(review #5) Minimum-age / regency** — 4c can crown a child (1/68 at
+  age 13 on seed 42); add a min-age gate with a regent, or skip-to-next-eligible.
 - [ ] (2h) Spec: every `Succession` follows a `Death`; contested cases reference ≥2
   claimants; `Claim.dormant` flips correctly; no succession without a prior
   coronation; determinism pin. Re-anchor.
@@ -434,6 +459,11 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
 
 ### Phase 4h — Hero/megabeast + Artifacts + Prophecy + mythic ages *(highest-risk; ship minimal)*
 
+- [ ] (20m) **(review #2) fmath-purity guard — do this first.** 4a–4e use only
+  arithmetic, but 4h may want transcendentals (decay curves, etc.). Add a
+  source-scan test asserting `mapgen-history` calls no raw `f32::{sin,cos,exp,
+  ln,powf,...}` — route any through `mapgen_core::fmath` to keep native↔wasm
+  identical.
 - [ ] (1-2d) `MegabeastRise`/`MegabeastSlain`, hero `Ascension`/`Return`,
   `ArtifactForged`/`Stolen`/`Destroyed` (ordered `provenance`),
   `ProphecyUttered`/`ProphecyFulfilled` (pending-prophecy queue; unfulfilled →
@@ -446,6 +476,9 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
 
 ### Phase 4i — Uplevel capstone: causal chains + salience + rivalries + arcs
 
+- [ ] (1h) **(review #3) Unify the three `emit()` helpers** (turchin / agent /
+  mearsheimer each build `Event`) into one `lib.rs` event-builder — causal
+  chaining touches every emit site anyway, so do it here.
 - [ ] (1d) **Causal chaining grammar** populated inline at emission, validated by a
   debug check: fixed small cause-set per effect kind (war→casus event;
   battle/siege→war; succession→death+claim; prophecy-fulfilled→uttered;
