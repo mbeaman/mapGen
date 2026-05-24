@@ -54,10 +54,14 @@ Project docs:
   cultures below the 0.3 mean-fitness floor (ARCHITECTURE.md §4 Phase 3a).
 - **Four render styles:** `greyscale` (heightmap), `biomes` (Phase-2 data view),
   `cultures` (Phase-3a data view), and `ornate_antique` (Phase-3e marquee —
-  parchment background, multi-offset coastline ripples, Tolkien triangular
-  mountain glyphs, biome-keyed forest scatter, polity-colored settlement
-  icons, dashed roads, sacred-site diamonds; MVP scope, `roughr` pen jitter +
-  embedded fonts + compass / cartouche + Imhof label placement deferred).
+  parchment, `roughr` pen-jitter coastlines (4 ripples), faint ocean
+  hatching, Tolkien mountains with depth shadows, biome-keyed forest
+  scatter, culture × architecture × tier settlement glyphs (population-
+  scaled towns), dashed roads weighted trunk-vs-branch, dashed polity
+  borders, per-pantheon sacred-site glyphs, embedded Cinzel / IM Fell /
+  EB Garamond typography, compass rose, cartouche, irregular edge-burn,
+  and Imhof simulated-annealing labels — settlements plus river
+  (`textPath`) and lake names).
 - Parameter sweep CLI for manual tuning of `erosion_rate`, `base_precip`,
   `lapse_rate`, `axial_tilt` — see [`docs/tuning_log.md`](docs/tuning_log.md).
 - **Browser frontend** (`web/`) — vanilla TypeScript + Vite driving the
@@ -68,9 +72,10 @@ Project docs:
   which bootstraps the Rust core only).
 
 **Not yet:** history simulation (Phase 4), Claude-narrated chronicles
-(Phase 5), and the deferred ornate-render polish items (ocean hatching,
-polity borders, river/lake names, etc.). All tracked in
-`docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/BACKLOG.md`.
+(Phase 5). The Phase-3e render-polish pass is complete; the only
+deferred render items are mountain-range labels (needs an orography-
+naming pass) and a hand-authored `docs/target_aesthetic.svg`. All
+tracked in `docs/ARCHITECTURE.md`, `docs/TASKS.md`, and `docs/BACKLOG.md`.
 
 ## First-time setup
 

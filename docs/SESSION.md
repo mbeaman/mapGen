@@ -12,7 +12,7 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | `6131c5b feat(just): web-setup/web-build/web-dev recipes + document web toolchain` |
+| Latest commit | `a309159 feat(render): Imhof simulated-annealing settlement-label placement` |
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
@@ -32,7 +32,7 @@ fast; the others are stable.
 | 3c polities | done | `e4d4c35` (skel) → `59e84bf` (spec) → `48957b8` |
 | 3d naming | done | `9aedddb` (skel) → `6ba0ff6` (spec) → `c74089f` |
 | 3e ornate render | **done per architecture spec** | MVP `342f606` + labels `8125c41` + glyph dispatch `dc6db51` + typography `90567ff` + compass/cartouche/edge-burn `65ab468` + roughr coastlines `b1815b2`. Only `docs/target_aesthetic.svg` deferred (BACKLOG, revival trigger: starting a new style variant). |
-| 3e backlog polish | open | 11 ideas catalogued in `docs/BACKLOG.md` Render section, each with revival trigger. None required to call 3e "done." |
+| 3e backlog polish | **done this session** | 8 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels. Remaining in BACKLOG: mountain-range labels (needs orography naming) + `target_aesthetic.svg`. |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | not started | — |
 
@@ -41,14 +41,14 @@ fast; the others are stable.
 ## Recently shipped (most recent first)
 
 ```
-6131c5b feat(just): web-setup/web-build/web-dev recipes + document web toolchain
-d61a935 docs: reconcile SESSION/README with shipped web frontend
-bfcdb5b feat: live stage-by-stage generation build-up via resumable Pipeline
-103be12 feat(web): worker + pan/zoom + parchment theme + SVG/PNG/permalink export
-98ba3de feat(web): scaffold Vite + TypeScript frontend driving the wasm-pack output
-8916303 feat(wasm): split generate/render with WorldHandle so style switching is cheap
-0f50dc7 docs(backlog): defer repository doc top-tier polish pass
-8e340da docs: promote resume context to first-class tracked docs
+a309159 feat(render): Imhof simulated-annealing settlement-label placement
+8dcd888 feat(render): label major rivers (textPath) + lakes
+be1469b feat(world): name major rivers + lakes (schema v7)
+e77e95e feat(render): per-pantheon sacred-site glyphs
+d5d5b48 feat(render): polity border lines + trunk/branch road weighting
+11a4470 feat(render): irregular edge-burn stains + faint ocean hatching
+8c646fb chore: shared dev-command allowlist in .claude/settings.json
+263136b feat(render): town glyphs scale by population + mountain depth shadows
 ```
 
 Regenerate this list when stale:
@@ -61,8 +61,11 @@ git log -8 --oneline
 
 ## Currently in flight
 
-Nothing. Phase 3e (per architecture spec) and the web-frontend MVP are
-both complete. Next direction is the user's call:
+Nothing. Phase 3e (per architecture spec), the web-frontend MVP, and
+the full Phase-3e render-polish pass are all complete. Two render items
+stay deferred in BACKLOG with triggers: mountain-range labels (needs an
+orography-naming pass) and a hand-authored `target_aesthetic.svg`. Next
+direction is the user's call:
 
 - **Phase 4 (history sim).** Six causal loops (Turchin secular cycles
   + Khaldun dynasty decline + Mearsheimer offensive realism +
@@ -70,9 +73,6 @@ both complete. Next direction is the user's call:
   deterministic agent-based sim. Reads cultures + religions +
   polities; writes to `WorldData.events` (already in schema, empty).
   ARCHITECTURE.md estimates ~2 weeks of focused work.
-
-- **3e backlog polish.** Pick from `docs/BACKLOG.md` Render section.
-  ~6–8 days total if shipped end-to-end.
 
 - **Web frontend hardening.** The MVP shipped (generate/render/style/
   pan-zoom/export/permalinks). Setup is now codified in `just web-setup`
