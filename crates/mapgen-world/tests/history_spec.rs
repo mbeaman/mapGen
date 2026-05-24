@@ -43,6 +43,7 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::Siege
             | EventKind::TreatySigned
             | EventKind::ClaimAsserted
+            | EventKind::Succession
     )
 }
 
@@ -450,6 +451,38 @@ fn history_shifts_borders_conserving_controlled_cells() {
         "wars must conserve the controlled-cell count (reassign, not create/destroy)"
     );
     assert_ne!(before, after, "wars should have shifted some borders");
+}
+
+#[test]
+fn succession_crises_are_contested_and_follow_a_death() {
+    // 4f: a Succession event marks a *contested* succession, so it names ≥2
+    // claimants and is preceded (same year, same seat) by the ruler's Death.
+    let world = generate_full(fixed(42));
+    let deaths: std::collections::HashSet<(i32, Option<u32>)> = world
+        .events
+        .events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::Death))
+        .map(|e| (e.year, e.location.map(|c| c.0)))
+        .collect();
+    let mut crises = 0;
+    for e in &world.events.events {
+        if matches!(e.kind, EventKind::Succession) {
+            crises += 1;
+            assert!(
+                e.actors.len() >= 2,
+                "a contested succession names ≥2 claimants"
+            );
+            assert!(
+                deaths.contains(&(e.year, e.location.map(|c| c.0))),
+                "a Succession must follow a Death that year at the same seat"
+            );
+        }
+    }
+    assert!(
+        crises >= 1,
+        "expected at least one contested succession on seed 42"
+    );
 }
 
 #[test]

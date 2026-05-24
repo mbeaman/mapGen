@@ -438,15 +438,26 @@ Open findings folded into the substages below:
 - [ ] **(#7, project-wide) Native↔wasm byte-identity** — reasoned (all
   arithmetic), not machine-tested. Tracked in BACKLOG; not 4-specific.
 
-### Phase 4f — Succession crises *(promotes succession from Phase 6)*
+### Phase 4f — Succession crises *(shipped; promotes succession from Phase 6)*
 
-- [ ] (1d) Ruler death + contested heirs (lineage from 4c, claims from 4e) →
-  `Succession`, succession wars, dormant claims activating.
-- [ ] (4h) **(review #5) Minimum-age / regency** — 4c can crown a child (1/68 at
-  age 13 on seed 42); add a min-age gate with a regent, or skip-to-next-eligible.
-- [ ] (2h) Spec: every `Succession` follows a `Death`; contested cases reference ≥2
-  claimants; `Claim.dormant` flips correctly; no succession without a prior
-  coronation; determinism pin. Re-anchor.
+- [x] Agent layer's `succeed` now picks heirs **adult-first** (review #5,
+  skip-to-next-eligible): an adult child (`MIN_RULE_AGE = 16`) is preferred; a
+  minor is crowned only when no adult heir exists (regency-lite). When ≥2 adult
+  heirs survive, `CONTEST_PROB = 0.30` of deaths erupt into a **contested
+  succession**: a `Succession` crisis + a war of brothers (`WarDeclared` /
+  `BattleFought`, casus belli `DynasticClaim`) → victor crowned (same dynasty),
+  loser `Exile`d with a lingering **dormant `Claim`** on the throne.
+- [x] Tuned vs. seed 42: 11 contested successions (each names ≥2 claimants), +11
+  succession wars + 11 exiles. Adult-preference cuts child-accessions to the
+  no-adult-heir cases (9/71 coronations under 16, min age 12 — realistic
+  boy-kings; full *regents* deferred — the minor simply holds the title).
+- [x] Spec (`history_spec`): every `Succession` names ≥2 claimants **and**
+  follows a `Death` that year at the same seat; succession wars satisfy the
+  existing war contract (casus belli + two actors); referential integrity
+  covers the dormant claims + exiles. No schema change (v10); `seed42_full`
+  re-anchored. `just check` green. Knobs in `docs/tuning_log.md`.
+- Note: foreign-claim *usurpation/union* (a neighbour's claimant taking the
+  throne) deferred — 4e already uses foreign claims as inter-polity war fuel.
 
 ### Phase 4g — Religious schism *(promotes schism from Phase 6)*
 

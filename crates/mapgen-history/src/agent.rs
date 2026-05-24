@@ -13,13 +13,13 @@
 
 use mapgen_core::ids::CellId;
 use mapgen_core::{
-    generate_name, Character, Dynasty, Entity, EntityId, Event, EventId, EventKind, House,
-    RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
+    generate_name, CasusBelli, Character, Claim, Dynasty, Entity, EntityId, Event, EventId,
+    EventKind, House, RelationKind, Relationship, Sex, Title, TitleHolding, WorldData,
 };
 use rand_chacha::{rand_core::RngCore, ChaCha8Rng};
 use smallvec::SmallVec;
 
-use crate::SimState;
+use crate::{unit_f32, SimState};
 
 /// Age a founder is assumed to have reached at accession (so their `born_year`
 /// predates the sim; founders get no Birth event).
@@ -33,6 +33,12 @@ const MARRY_AFTER: i32 = 3;
 const CHILD_INTERVAL: i32 = 4;
 /// Upper bound on planned heirs per reign.
 const MAX_CHILDREN: u32 = 4;
+/// Minimum age to inherit unaided (4f): adult children are preferred; a minor
+/// is crowned only when no adult heir exists (regency-lite).
+const MIN_RULE_AGE: i32 = 16;
+/// Chance that a death leaving ≥2 adult heirs erupts into a contested
+/// succession (a war of brothers) rather than orderly primogeniture.
+const CONTEST_PROB: f32 = 0.30;
 
 /// Per-polity ruling court — scratch state, never serialized.
 #[derive(Clone, Debug, Default)]
@@ -304,14 +310,109 @@ fn succeed(
         }
     }
 
-    let heir = state.courts[pid]
+    // Heir pool, in birth order: living children, adults preferred (4f
+    // minimum-age rule — no toddler-kings unless no adult exists).
+    let alive: Vec<EntityId> = state.courts[pid]
         .children
         .iter()
         .copied()
-        .find(|&cid| is_alive(world, cid));
-    match heir {
-        Some(heir_id) => crown_heir(world, state, pid, heir_id, year, rng),
-        None => found_dynasty(world, state, pid, year, rng),
+        .filter(|&cid| is_alive(world, cid))
+        .collect();
+    let adults: Vec<EntityId> = alive
+        .iter()
+        .copied()
+        .filter(|&cid| char_age(world, cid, year) >= MIN_RULE_AGE)
+        .collect();
+
+    if adults.len() >= 2 && unit_f32(rng) < CONTEST_PROB {
+        // A war of brothers: the eldest two adult heirs contest the throne.
+        contested_succession(world, state, pid, adults[0], adults[1], year, rng);
+    } else if let Some(&heir) = adults.first() {
+        crown_heir(world, state, pid, heir, year, rng);
+    } else if let Some(&minor) = alive.first() {
+        // Regency-lite: no adult heir, so the eldest surviving child is crowned.
+        crown_heir(world, state, pid, minor, year, rng);
+    } else {
+        found_dynasty(world, state, pid, year, rng);
+    }
+}
+
+/// A contested succession: a `Succession` crisis, a war between the two
+/// claimants, the victor crowned (same dynasty — both are the late ruler's
+/// children), and the loser exiled with a lingering dormant claim.
+fn contested_succession(
+    world: &mut WorldData,
+    state: &mut SimState,
+    pid: usize,
+    favorite: EntityId,
+    challenger: EntityId,
+    year: i32,
+    rng: &mut ChaCha8Rng,
+) {
+    let cell = world.society.nations[pid].capital_cell;
+    let nation = world.society.nations[pid].name.clone();
+    let fav_name = char_name(world, favorite);
+    let cha_name = char_name(world, challenger);
+
+    emit(
+        world,
+        year,
+        EventKind::Succession,
+        cell,
+        0.7,
+        &[favorite, challenger],
+        format!(
+            "A disputed succession set {fav_name} against {cha_name} for the throne of {nation}."
+        ),
+    );
+    emit_war(
+        world,
+        year,
+        EventKind::WarDeclared,
+        cell,
+        0.68,
+        &[favorite, challenger],
+        Some(CasusBelli::DynasticClaim),
+        format!("{fav_name} and {cha_name} went to war over the throne of {nation}."),
+    );
+
+    // The favourite (eldest) holds the advantage, but fortune can upset it.
+    let fav_strength = 0.6 + 0.4 * unit_f32(rng);
+    let cha_strength = unit_f32(rng);
+    let (winner, loser, w_name, l_name) = if fav_strength >= cha_strength {
+        (favorite, challenger, fav_name, cha_name)
+    } else {
+        (challenger, favorite, cha_name, fav_name)
+    };
+    emit(
+        world,
+        year,
+        EventKind::BattleFought,
+        cell,
+        0.66,
+        &[winner],
+        format!("{w_name} prevailed in the war of succession over {l_name}."),
+    );
+
+    crown_heir(world, state, pid, winner, year, rng);
+
+    emit(
+        world,
+        year,
+        EventKind::Exile,
+        cell,
+        0.5,
+        &[loser],
+        format!("{l_name}, the defeated claimant, was driven into exile."),
+    );
+    // The exiled claimant's grievance lingers as a dormant claim on the throne.
+    if let Some(title) = state.courts[pid].title {
+        world.entities.insert(Entity::Claim(Claim {
+            claimant: loser,
+            target: title,
+            asserted_year: year,
+            dormant: true,
+        }));
     }
 }
 
@@ -386,6 +487,13 @@ fn is_alive(world: &WorldData, id: EntityId) -> bool {
     matches!(world.entities.by_id.get(&id), Some(Entity::Character(c)) if c.died_year.is_none())
 }
 
+fn char_age(world: &WorldData, id: EntityId, year: i32) -> i32 {
+    match world.entities.by_id.get(&id) {
+        Some(Entity::Character(c)) => year - c.born_year,
+        _ => 0,
+    }
+}
+
 fn rand_sex(rng: &mut ChaCha8Rng) -> Sex {
     if rng.next_u32() & 1 == 0 {
         Sex::Female
@@ -425,6 +533,36 @@ fn emit(
         cause_ids: SmallVec::new(),
         salience,
         casus_belli: None,
+        summary_canonical: summary,
+    })
+}
+
+/// Like [`emit`] but carries a casus belli — for the war of a contested
+/// succession (every `WarDeclared` must cite one). (4i will unify the emit
+/// helpers across the history crate.)
+#[allow(clippy::too_many_arguments)]
+fn emit_war(
+    world: &mut WorldData,
+    year: i32,
+    kind: EventKind,
+    cell: u32,
+    salience: f32,
+    actors: &[EntityId],
+    casus_belli: Option<CasusBelli>,
+    summary: String,
+) -> EventId {
+    let mut a: SmallVec<[EntityId; 4]> = SmallVec::new();
+    a.extend(actors.iter().copied());
+    world.events.push(Event {
+        id: EventId(0),
+        year,
+        kind,
+        actors: a,
+        patients: SmallVec::new(),
+        location: Some(CellId(cell)),
+        cause_ids: SmallVec::new(),
+        salience,
+        casus_belli,
         summary_canonical: summary,
     })
 }

@@ -362,6 +362,22 @@ artifact that justified the pick, and the commit that landed the value.
   `history_spec`.
 * **Source:** Phase 4e; `loops/mearsheimer.rs`.
 
+### Succession crises (4f) — `agent.rs`
+
+* **Current:** `MIN_RULE_AGE = 16` (adult-first heir preference); `CONTEST_PROB
+  = 0.30` (chance a ≥2-adult-heir death becomes a war of brothers).
+* **Why these values:** addresses review finding #5 (4c could crown a 13-year-
+  old) via skip-to-next-eligible — prefer an adult child; crown a minor only
+  when none exists. `CONTEST_PROB = 0.30` keeps most successions peaceful
+  (primogeniture) while ~1 in 3 multi-heir deaths becomes a contested civil war,
+  for drama without spam. Seed 42: 11 contested successions over 500 years.
+  Residual minor accessions (9/71 coronations under 16, min age 12) are the
+  no-adult-heir cases — realistic boy-kings; full *regency* (an adult governs for
+  the minor) is deferred, as is foreign-claim usurpation.
+* **Method:** tuned against seed 42 (contested-succession count); the
+  ≥2-claimants + follows-a-Death contract asserted in `history_spec`.
+* **Source:** Phase 4f; `agent.rs` (`succeed` / `contested_succession`).
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on
