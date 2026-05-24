@@ -44,6 +44,7 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::TreatySigned
             | EventKind::ClaimAsserted
             | EventKind::Succession
+            | EventKind::Schism
     )
 }
 
@@ -483,6 +484,44 @@ fn succession_crises_are_contested_and_follow_a_death() {
         crises >= 1,
         "expected at least one contested succession on seed 42"
     );
+}
+
+#[test]
+fn schisms_spawn_drifted_sects_referencing_their_parent() {
+    // 4g: a Schism names the splinter sect (actor) and the parent faith
+    // (patient), both Religion entities; the sect inherits the pantheon but
+    // drifts in alignment.
+    let world = generate_full(fixed(42));
+    let ents = &world.entities.by_id;
+    let religion = |id: &mapgen_core::EntityId| match ents.get(id) {
+        Some(Entity::Religion(r)) => Some(r),
+        _ => None,
+    };
+    let mut schisms = 0;
+    for e in &world.events.events {
+        if matches!(e.kind, EventKind::Schism) {
+            let sect = e
+                .actors
+                .first()
+                .and_then(religion)
+                .expect("schism names a sect Religion");
+            let parent = e
+                .patients
+                .first()
+                .and_then(religion)
+                .expect("schism names a parent Religion");
+            assert!(
+                sect.pantheon == parent.pantheon,
+                "a sect inherits its parent's pantheon"
+            );
+            assert!(
+                sect.alignment != parent.alignment,
+                "a sect must drift in alignment from its parent"
+            );
+            schisms += 1;
+        }
+    }
+    assert!(schisms >= 1, "expected at least one schism on seed 42");
 }
 
 #[test]

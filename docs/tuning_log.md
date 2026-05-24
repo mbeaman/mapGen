@@ -378,6 +378,23 @@ artifact that justified the pick, and the commit that landed the value.
   ≥2-claimants + follows-a-Death contract asserted in `history_spec`.
 * **Source:** Phase 4f; `agent.rs` (`succeed` / `contested_succession`).
 
+### Religious schism (4g) — `loops/schism.rs`
+
+* **Current:** `SCHISM_PROB = 0.003` per religion per year; `ALIGN_DRIFT = 0.3`
+  (alignment shift on one axis for the splinter sect).
+* **Why these values:** `0.003` × ~2–3 religions × 500 years ≈ a handful of
+  schisms (seed 42: 4) — faiths fracture occasionally, not constantly. The
+  splinter inherits pantheon + founding culture and drifts one alignment axis by
+  ±0.3 (a doctrinal divergence the chronicler can read). Different-faith polities
+  without a dynastic claim fight `ReligiousSchism` wars (verified on a
+  multi-faith world; `fixed(42)`'s adjacency happens not to trigger them).
+  Per-cell sect *spread* (converting adherent cells) is deferred — out of scope
+  for the event/entity layer.
+* **Method:** tuned against seed 42 (schism count); sect-inherits-pantheon +
+  drifts-alignment + parent-reference asserted in `history_spec`.
+* **Source:** Phase 4g; `loops/schism.rs` + `polity_religion` in
+  `loops/mearsheimer.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

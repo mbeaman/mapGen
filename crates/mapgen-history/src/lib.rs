@@ -79,6 +79,10 @@ pub struct SimState {
     /// Year each polity last initiated a war, for the war cooldown (init
     /// `i32::MIN` = never).
     pub last_war: Vec<i32>,
+    /// Entity id for each original religion (index into
+    /// `world.religions.religions`), minted lazily by the schism loop so
+    /// `Schism` events can reference the parent faith. `None` until minted.
+    pub religion_entities: Vec<Option<EntityId>>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -177,6 +181,7 @@ impl SimState {
             adjacency,
             claims: Vec::new(),
             last_war: vec![i32::MIN; n_pol],
+            religion_entities: vec![None; world.religions.religions.len()],
         }
     }
 }

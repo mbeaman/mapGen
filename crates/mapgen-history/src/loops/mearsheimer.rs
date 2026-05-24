@@ -90,6 +90,12 @@ fn war_power(world: &WorldData, state: &SimState, pid: usize) -> f32 {
     state.population[pid] * (0.5 + polity_military(world, pid) as f32 / 100.0)
 }
 
+/// The polity's faith (the religion at its capital cell), if any.
+fn polity_religion(world: &WorldData, pid: usize) -> Option<u16> {
+    let cap = world.society.nations[pid].capital_cell as usize;
+    world.religions.religion_id.get(cap).copied().flatten()
+}
+
 fn expansion_mult(world: &WorldData, pid: usize) -> f32 {
     let cap = world.society.nations[pid].capital_cell as usize;
     let dip = world
@@ -167,8 +173,12 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     let name_a = ctx.world.society.nations[a].name.clone();
     let name_b = ctx.world.society.nations[b].name.clone();
     let has_claim = ctx.state.claims.contains(&(a as u16, b as u16));
+    let (ra, rb) = (polity_religion(ctx.world, a), polity_religion(ctx.world, b));
     let casus = if has_claim {
         CasusBelli::DynasticClaim
+    } else if ra.is_some() && rb.is_some() && ra != rb {
+        // Different faiths — a war of religion (schisms deepen these divides).
+        CasusBelli::ReligiousSchism
     } else {
         CasusBelli::FrontierIncident
     };

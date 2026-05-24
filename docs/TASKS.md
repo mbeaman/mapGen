@@ -459,14 +459,28 @@ Open findings folded into the substages below:
 - Note: foreign-claim *usurpation/union* (a neighbour's claimant taking the
   throne) deferred — 4e already uses foreign claims as inter-polity war fuel.
 
-### Phase 4g — Religious schism *(promotes schism from Phase 6)*
+### Phase 4g — Religious schism *(shipped; promotes schism from Phase 6)*
 
-- [ ] (1d) Reads `world.religions`; alignment drift between adherent cultures →
-  `ReligionFounded`/`Schism`, `CasusBelli::ReligiousSchism`, splinter sect entities
-  inheriting + drifting alignment.
-- [ ] (2h) Spec: `Schism` references a parent religion; splinter inherits then
-  drifts alignment; schism-driven wars carry the right casus belli; determinism
-  pin. Re-anchor.
+- [x] `loops/schism.rs` (promoted from stub): per religion per year a low-prob
+  schism (`SCHISM_PROB = 0.003`) mints a splinter `Entity::Religion` — inherits
+  the parent's pantheon + founding culture, **drifts alignment** on one axis
+  (`ALIGN_DRIFT = 0.3`), named in the founder culture's language — and emits a
+  `Schism` event referencing the parent (patient) and sect (actor). Parent
+  faiths are lazily mirrored to `Entity::Religion` so the reference resolves
+  (`SimState.religion_entities`).
+- [x] Mearsheimer gains `ReligiousSchism` casus belli: a war between different-
+  faith polities (capital-cell `religion_id`) that lack a dynastic claim is a
+  war of religion. (Per-cell sect *spread* deferred — schisms add the sect +
+  event, not new adherent cells.)
+- [x] Tuned/verified: seed 42 → 4 schisms (each with valid sect + parent
+  Religion refs). On a multi-faith world (8-nation CLI run) ~23 wars carry
+  `ReligiousSchism`; `fixed(42)`'s adjacency happens not to trigger them
+  (no different-faith adjacent pair wars without a claim) — coupling is correct,
+  inspection-verified.
+- [x] Spec (`history_spec`): every `Schism` names a sect + parent Religion
+  entity, sect inherits pantheon + drifts alignment; `wars_are_well_formed`
+  covers casus presence. No schema change (v10; `Religion` reused); `seed42_full`
+  re-anchored. `just check` green. Knobs in `docs/tuning_log.md`.
 
 ### Phase 4h — Hero/megabeast + Artifacts + Prophecy + mythic ages *(highest-risk; ship minimal)*
 
