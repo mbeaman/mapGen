@@ -38,7 +38,7 @@ use std::sync::LazyLock;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use euclid::default::Point2D;
-use mapgen_core::entities::{Architecture, SettlementIcon, SettlementTier};
+use mapgen_core::entities::{Architecture, PantheonPattern, SettlementIcon, SettlementTier};
 use mapgen_core::WorldData;
 use roughr::core::{OpSetType, OptionsBuilder};
 use roughr::generator::Generator;
@@ -1425,30 +1425,140 @@ fn render_cartouche(w: f32, h: f32, out: &mut String) {
     out.push_str("</g>");
 }
 
-/// Sacred sites — small 4-point radiant markers above their cell.
+/// Sacred sites, with a per-pantheon symbol so faiths read distinctly
+/// on multi-religion worlds instead of all sharing one gold diamond.
+/// The symbol is keyed off each religion's `PantheonPattern`:
+/// Mono → cross, Poly → many-rayed sun, Dual → light/dark split disc,
+/// Animism → leaf, Ancestor → memorial tablet, CosmicOrder → ring.
+/// Each site is wrapped in `<g class="sacred {pantheon}">` so the
+/// dispatch is test-pinnable without coupling to glyph geometry.
 fn render_sacred_sites(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
-    out.push_str(r##"<g stroke="#cc9933" stroke-width="0.8" fill="#ffcc66" fill-opacity="0.85">"##);
+    out.push_str(
+        r##"<g class="sacred-sites" stroke="#cc9933" stroke-width="0.9" fill="#ffcc66" fill-opacity="0.9" stroke-linejoin="round">"##,
+    );
     for religion in &world.religions.religions {
         for &cell in &religion.sacred_sites {
             let p = mesh.sites[cell as usize];
-            // Diamond outline.
             write!(
                 out,
-                r##"<polygon points="{:.1},{:.1} {:.1},{:.1} {:.1},{:.1} {:.1},{:.1}"/>"##,
-                p[0],
-                p[1] - 3.5,
-                p[0] + 3.0,
-                p[1],
-                p[0],
-                p[1] + 3.5,
-                p[0] - 3.0,
-                p[1],
+                r##"<g class="sacred {}">"##,
+                pantheon_class(religion.pantheon)
+            )
+            .unwrap();
+            draw_sacred_glyph(religion.pantheon, p[0], p[1], out);
+            out.push_str("</g>");
+        }
+    }
+    out.push_str("</g>");
+}
+
+fn pantheon_class(p: PantheonPattern) -> &'static str {
+    match p {
+        PantheonPattern::Mono => "mono",
+        PantheonPattern::Poly => "poly",
+        PantheonPattern::Dual => "dual",
+        PantheonPattern::Animism => "animism",
+        PantheonPattern::Ancestor => "ancestor",
+        PantheonPattern::CosmicOrder => "cosmic",
+    }
+}
+
+/// Unit-circle directions at 22.5° steps (cos, sin), precomputed so the
+/// Poly sun-star needs no runtime trigonometry. `SQ` is 1/√2, the 45°
+/// component (named to dodge clippy's approx-constant lint).
+const SQ: f32 = std::f32::consts::FRAC_1_SQRT_2;
+#[rustfmt::skip]
+const UNIT16: [(f32, f32); 16] = [
+    (1.0, 0.0), (0.92388, 0.38268), (SQ, SQ), (0.38268, 0.92388),
+    (0.0, 1.0), (-0.38268, 0.92388), (-SQ, SQ), (-0.92388, 0.38268),
+    (-1.0, 0.0), (-0.92388, -0.38268), (-SQ, -SQ), (-0.38268, -0.92388),
+    (0.0, -1.0), (0.38268, -0.92388), (SQ, -SQ), (0.92388, -0.38268),
+];
+
+/// Per-pantheon sacred-site symbol, ~4 px radius, centered on `(cx, cy)`.
+/// Inherits the gold fill/stroke from the enclosing group.
+fn draw_sacred_glyph(p: PantheonPattern, cx: f32, cy: f32, out: &mut String) {
+    let r = 4.0_f32;
+    match p {
+        // Latin cross — taller vertical bar, crossbar near the top.
+        PantheonPattern::Mono => {
+            write!(
+                out,
+                r##"<line x1="{cx:.1}" y1="{:.1}" x2="{cx:.1}" y2="{:.1}" stroke-width="1.6"/><line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke-width="1.6"/>"##,
+                cy - r,
+                cy + r,
+                cx - r * 0.6,
+                cy - r * 0.35,
+                cx + r * 0.6,
+                cy - r * 0.35,
+            )
+            .unwrap();
+        }
+        // Many-rayed sun: an 8-point star polygon. Vertices come from a
+        // precomputed 16-step unit table (no runtime trig — keeps the
+        // renderer free of transcendentals), alternating full radius for
+        // the spikes and 0.45× for the notches between them.
+        PantheonPattern::Poly => {
+            out.push_str(r##"<polygon points=""##);
+            for (k, &(ux, uy)) in UNIT16.iter().enumerate() {
+                let rad = if k % 2 == 0 { r } else { r * 0.45 };
+                if k > 0 {
+                    out.push(' ');
+                }
+                write!(out, "{:.1},{:.1}", cx + rad * ux, cy + rad * uy).unwrap();
+            }
+            out.push_str(r##""/>"##);
+        }
+        // Duality: a disc with its right half darkened.
+        PantheonPattern::Dual => {
+            write!(out, r##"<circle cx="{cx:.1}" cy="{cy:.1}" r="{r:.1}"/>"##).unwrap();
+            write!(
+                out,
+                r##"<path d="M {cx:.1} {:.1} A {r:.1} {r:.1} 0 0 1 {cx:.1} {:.1} Z" fill="#7a5a1a" stroke="none"/>"##,
+                cy - r,
+                cy + r,
+            )
+            .unwrap();
+        }
+        // Leaf: a pointed ellipse-ish lens with a center vein.
+        PantheonPattern::Animism => {
+            write!(
+                out,
+                r##"<path d="M {cx:.1} {:.1} Q {:.1} {cy:.1} {cx:.1} {:.1} Q {:.1} {cy:.1} {cx:.1} {:.1} Z"/><line x1="{cx:.1}" y1="{:.1}" x2="{cx:.1}" y2="{:.1}" stroke-width="0.6"/>"##,
+                cy - r,
+                cx + r * 0.7,
+                cy + r,
+                cx - r * 0.7,
+                cy - r,
+                cy - r * 0.8,
+                cy + r * 0.8,
+            )
+            .unwrap();
+        }
+        // Ancestor tablet: a tall rounded-top stele.
+        PantheonPattern::Ancestor => {
+            write!(
+                out,
+                r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" rx="{:.1}" ry="{:.1}"/>"##,
+                cx - r * 0.55,
+                cy - r,
+                r * 1.1,
+                r * 2.0,
+                r * 0.55,
+                r * 0.55,
+            )
+            .unwrap();
+        }
+        // Cosmic order: a plain ring with a center dot.
+        PantheonPattern::CosmicOrder => {
+            write!(
+                out,
+                r##"<circle cx="{cx:.1}" cy="{cy:.1}" r="{r:.1}" fill="none" stroke-width="1.4"/><circle cx="{cx:.1}" cy="{cy:.1}" r="0.9"/>"##
             )
             .unwrap();
         }
     }
-    out.push_str("</g>");
 }
 
 /// Muted ornate palette — biomes tinted toward parchment so the

@@ -483,22 +483,6 @@ guess at value-per-day. Re-prioritize freely.
   curve labels.
 - **Origin.** Phase 3e polish brainstorm, current session.
 
-### Sacred sites differentiated by pantheon
-
-- **Why deferred.** All sacred sites currently render as a gold
-  diamond regardless of religion. `PantheonPattern` already
-  distinguishes Mono / Poly / Dual / Animism / Ancestor /
-  CosmicOrder — could vary the sacred-site symbol per pantheon
-  (e.g., cross for Mono, multi-rayed sun for Poly, yin-yang for
-  Dual, leaf for Animism, ancestor-tablet for Ancestor, circle for
-  CosmicOrder).
-- **Trigger for revival.** Multi-religion worlds where the sacred-
-  site symbols don't visually distinguish faiths. Today's seed-42
-  has 1–2 religions so the distinction is minimal; matters more on
-  seeds that surface 3 religions.
-- **Cost.** ~half-day for 6 small SVG glyph functions + dispatch.
-- **Origin.** Phase 3e polish brainstorm, current session.
-
 ### Lake labels
 
 - **Why deferred.** Lakes go through Priority-Flood extraction and

@@ -255,7 +255,8 @@ asked to finish all Phase-3e polish before moving to Phase 4.
   `control[]` (`class="polity-borders"`).
 - [x] Roads differentiated by trunk vs branch — per-segment stroke
   scales with per-cell road-traversal count (`class="roads"`).
-- [ ] Sacred sites differentiated by pantheon.
+- [x] Sacred sites differentiated by pantheon — 6 per-pantheon glyphs
+  (cross / sun / split-disc / leaf / tablet / ring), `class="sacred X"`.
 - [ ] Major-river + lake names (needs naming-stage extension).
 - [ ] Curve-along-feature labels (rivers / mountain ranges).
 - [ ] Lake labels.

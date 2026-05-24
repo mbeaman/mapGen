@@ -700,6 +700,59 @@ fn ornate_antique_mountains_cast_a_depth_shadow() {
     );
 }
 
+/// Six cells, one religion per `PantheonPattern`, each with a single
+/// sacred site — exercises every pantheon glyph branch.
+fn world_with_all_pantheons() -> mapgen_core::WorldData {
+    use mapgen_core::entities::{PantheonPattern, Religion};
+    let mut world = mapgen_core::WorldData::default();
+    world.mesh.width = 120.0;
+    world.mesh.height = 20.0;
+    world.mesh.sites = (0..6).map(|i| [10.0 + i as f32 * 18.0, 10.0]).collect();
+    world.mesh.cell_vertices = vec![vec![]; 6];
+    world.mesh.neighbors = vec![vec![]; 6];
+    world.mesh.coast = vec![false; 6];
+    world.terrain.elevation = vec![0.5; 6];
+    world.terrain.plate_id = vec![mapgen_core::PlateId(0); 6];
+    world.terrain.plates = vec![];
+    world.climate.biome = vec![3; 6];
+    world.climate.temperature = vec![0.5; 6];
+    world.climate.precipitation = vec![0.5; 6];
+    let pantheons = [
+        PantheonPattern::Mono,
+        PantheonPattern::Poly,
+        PantheonPattern::Dual,
+        PantheonPattern::Animism,
+        PantheonPattern::Ancestor,
+        PantheonPattern::CosmicOrder,
+    ];
+    world.religions.religions = pantheons
+        .iter()
+        .enumerate()
+        .map(|(i, &pantheon)| Religion {
+            name: format!("R{i}"),
+            pantheon,
+            sacred_sites: vec![i as u32],
+            ..Default::default()
+        })
+        .collect();
+    world
+}
+
+#[test]
+fn ornate_antique_sacred_sites_differ_by_pantheon() {
+    // BACKLOG "Sacred sites differentiated by pantheon": each of the six
+    // PantheonPatterns must emit its own class-marked glyph so faiths
+    // read distinctly on multi-religion worlds.
+    let world = world_with_all_pantheons();
+    let svg = render(&world, Style::OrnateAntique).expect("ornate render must succeed");
+    for class in ["mono", "poly", "dual", "animism", "ancestor", "cosmic"] {
+        assert!(
+            svg.contains(&format!(r#"class="sacred {class}""#)),
+            "sacred-site glyph for pantheon {class:?} missing from render"
+        );
+    }
+}
+
 /// Two land cells sharing one Voronoi edge, owned by different
 /// polities — the minimal case for an inter-polity border.
 fn world_with_two_adjacent_polities() -> mapgen_core::WorldData {
