@@ -103,7 +103,71 @@ pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha
         religion.name = generate_name(lang, rng);
     }
 
+    // 6. Name *major* natural features — long rivers and sizeable lakes
+    //    — so prominent water gets a label without littering every brook
+    //    and pond. Features have no owning culture, so each is named in
+    //    the language of the culture at its mouth (river) / first cell
+    //    (lake), falling back to language 0. Language indices are
+    //    resolved first (immutable culture borrow) and applied after, to
+    //    satisfy the borrow checker. RNG is consumed strictly after the
+    //    settlement/polity/religion passes above, so their names are
+    //    unchanged by this addition.
+    let last = languages.len() - 1;
+    let river_langs: Vec<Option<usize>> = world
+        .hydrology
+        .rivers
+        .iter()
+        .map(|r| {
+            (r.cells.len() >= MIN_NAMED_RIVER_CELLS).then(|| {
+                let mouth = *r.cells.last().expect("non-empty by the length guard");
+                culture_language(world, mouth, last)
+            })
+        })
+        .collect();
+    for (river, lang_idx) in world.hydrology.rivers.iter_mut().zip(river_langs) {
+        if let Some(idx) = lang_idx {
+            river.name = generate_name(&languages[idx], rng);
+        }
+    }
+
+    let lake_langs: Vec<Option<usize>> = world
+        .hydrology
+        .lakes
+        .iter()
+        .map(|l| {
+            (l.cells.len() >= MIN_NAMED_LAKE_CELLS).then(|| {
+                let cell = *l.cells.first().expect("non-empty by the length guard");
+                culture_language(world, cell, last)
+            })
+        })
+        .collect();
+    for (lake, lang_idx) in world.hydrology.lakes.iter_mut().zip(lake_langs) {
+        if let Some(idx) = lang_idx {
+            lake.name = generate_name(&languages[idx], rng);
+        }
+    }
+
     world.languages = languages;
+}
+
+/// Minimum river length (in cells) to earn a name — keeps minor
+/// watercourses unlabeled. Calibrated value in `docs/tuning_log.md`.
+const MIN_NAMED_RIVER_CELLS: usize = 8;
+/// Minimum lake size (in cells) to earn a name.
+const MIN_NAMED_LAKE_CELLS: usize = 3;
+
+/// Resolve the language index of the culture occupying `cell`, clamped
+/// to the language roster, falling back to language 0 (the first
+/// culture's) when the cell is unassigned (e.g., a water cell).
+fn culture_language(world: &WorldData, cell: u32, last: usize) -> usize {
+    world
+        .cultures
+        .culture_id
+        .get(cell as usize)
+        .and_then(|x| *x)
+        .map(|c| c as usize)
+        .unwrap_or(0)
+        .min(last)
 }
 
 /// Hardcoded per-race phonotactic profile. Each profile leans toward a

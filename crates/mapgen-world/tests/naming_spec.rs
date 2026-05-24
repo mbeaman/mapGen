@@ -320,3 +320,73 @@ fn when_name_world_runs_output_is_deterministic_for_a_fixed_seed() {
         "two runs with seed 42 produced different polity names"
     );
 }
+
+#[test]
+fn major_rivers_are_named_and_minor_ones_are_not() {
+    // Phase-3e polish: the naming stage now labels *major* natural
+    // features. Contract: at least one major river earns a name on the
+    // reference world; every named river clears the major-length
+    // threshold; names are alphabetic and deterministic.
+    let world = generate_full(params(42));
+
+    let named: Vec<&str> = world
+        .hydrology
+        .rivers
+        .iter()
+        .filter(|r| !r.name.is_empty())
+        .map(|r| r.name.as_str())
+        .collect();
+    assert!(
+        !named.is_empty(),
+        "no major rivers were named on seed 42 — threshold too high?"
+    );
+    for r in &world.hydrology.rivers {
+        if !r.name.is_empty() {
+            assert!(
+                r.cells.len() >= 8,
+                "a {}-cell river was named ({:?}) — minor features should stay unnamed",
+                r.cells.len(),
+                r.name
+            );
+            assert!(
+                r.name.chars().all(|c| c.is_ascii_alphabetic()),
+                "river name has non-alphabetic chars: {:?}",
+                r.name
+            );
+        }
+    }
+
+    // Determinism: a second run yields identical river + lake names.
+    let world2 = generate_full(params(42));
+    let rn1: Vec<&str> = world
+        .hydrology
+        .rivers
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    let rn2: Vec<&str> = world2
+        .hydrology
+        .rivers
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(rn1, rn2, "river names not deterministic across runs");
+    let ln1: Vec<&str> = world
+        .hydrology
+        .lakes
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
+    let ln2: Vec<&str> = world2
+        .hydrology
+        .lakes
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
+    assert_eq!(ln1, ln2, "lake names not deterministic across runs");
+    for l in &world.hydrology.lakes {
+        if !l.name.is_empty() {
+            assert!(l.cells.len() >= 3, "a tiny lake was named: {:?}", l.name);
+        }
+    }
+}

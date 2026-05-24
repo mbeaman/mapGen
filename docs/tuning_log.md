@@ -264,6 +264,19 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** derived
 * **Source:** commit `1451d5f`
 
+## Naming — `mapgen-world::naming`
+
+### `MIN_NAMED_RIVER_CELLS` / `MIN_NAMED_LAKE_CELLS`
+
+* **Current:** `8` cells (rivers) / `3` cells (lakes).
+* **Why this value:** Only *major* features earn a label, so the map
+  isn't littered with names on every brook and pond. `8` river cells is
+  roughly the long-river tier on seed 42 at 4k cells (verified: ≥1
+  river clears it); `3` lake cells skips single-cell ponds. Below these
+  the feature renders unlabeled.
+* **Method:** derived (seed-42 spot check in `naming_spec`)
+* **Source:** Phase-3e polish; `naming.rs` step 6
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

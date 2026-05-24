@@ -24,7 +24,11 @@ use crate::{
 ///   `#[serde(default)]` on the field).
 /// * v6 — Phase 3d languages field — `WorldData::languages` populated.
 ///   Pre-v6 worlds load with an empty languages vec.
-pub const SCHEMA_VERSION: u32 = 6;
+/// * v7 — Phase 3e polish: `River::name` / `Lake::name` for major
+///   features. Empty names are `skip_serializing_if`-elided, so the
+///   on-disk shape of pre-v7 / unnamed worlds is unchanged (the Phase-2
+///   golden hash is unaffected; only the full golden re-anchors).
+pub const SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -146,12 +150,22 @@ pub struct HydrologyData {
 pub struct River {
     pub cells: Vec<u32>,
     pub width: f32,
+    /// Generated name — set by the Phase 3d naming stage for *major*
+    /// rivers only; empty for minor watercourses. `skip_serializing_if`
+    /// keeps pre-naming worlds (and minor rivers) byte-identical so the
+    /// Phase-2 golden hash is unaffected.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Lake {
     pub cells: Vec<u32>,
     pub level: f32,
+    /// Generated name — set by the naming stage for sizeable lakes only;
+    /// empty otherwise. See `River::name` for the serialization note.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

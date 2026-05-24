@@ -152,6 +152,7 @@ pub fn fill_depressions(world: &mut WorldData) {
         lakes.push(Lake {
             cells: group,
             level,
+            name: String::new(),
         });
     }
     world.hydrology.lakes = lakes;
@@ -314,6 +315,7 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], _flow_thr
         rivers.push(River {
             cells: chain,
             width,
+            name: String::new(),
         });
     }
 

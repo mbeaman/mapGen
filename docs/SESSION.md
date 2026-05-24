@@ -16,7 +16,7 @@ fast; the others are stable.
 | Tree | clean, synced to origin |
 | Tests | 129 across 31 test binaries, 0 failures |
 | Gate | fmt + clippy clean, wasm release builds |
-| Schema | v6 |
+| Schema | v7 |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger) |
 
 ---
