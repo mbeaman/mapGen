@@ -7,8 +7,9 @@
 //! `mapgen-history`; the byte-level determinism pin is the full-pipeline golden
 //! hash in `pipeline_spec.rs`.
 
-use mapgen_core::{Entity, EventKind};
+use mapgen_core::{Entity, EntityId, EventKind, RelationKind};
 use mapgen_world::{generate_full, GenerateParams, Pipeline, PipelineStage};
+use std::collections::BTreeMap;
 
 fn fixed(seed: u64) -> GenerateParams {
     GenerateParams {
@@ -250,14 +251,147 @@ fn history_is_well_formed_across_seeds() {
 }
 
 #[test]
+fn all_entity_and_event_references_resolve() {
+    // Phase 5's lore engine dereferences every id in the graph; a dangling
+    // reference would crash or hallucinate. Assert the whole web is closed.
+    let world = generate_full(fixed(42));
+    let ents = &world.entities.by_id;
+    let n_events = world.events.events.len() as u32;
+    let ent = |id: EntityId| ents.contains_key(&id);
+    // Event ids are sequential 0..n (pinned by `every_event_has_valid_fields`).
+    let ev = |id: mapgen_core::EventId| id.0 < n_events;
+
+    for e in ents.values() {
+        match e {
+            Entity::Character(c) => {
+                if let Some(h) = c.house {
+                    assert!(ent(h), "character.house dangling");
+                }
+                for r in &c.relationships {
+                    assert!(ent(r.other), "relationship.other dangling");
+                }
+                for t in &c.titles {
+                    assert!(ent(t.title), "title holding references missing Title");
+                    if let Some(e) = t.start_event {
+                        assert!(ev(e), "holding.start_event dangling");
+                    }
+                    if let Some(e) = t.end_event {
+                        assert!(ev(e), "holding.end_event dangling");
+                    }
+                }
+                if let Some(e) = c.birth_event {
+                    assert!(ev(e), "character.birth_event dangling");
+                }
+                if let Some(e) = c.death_event {
+                    assert!(ev(e), "character.death_event dangling");
+                }
+            }
+            Entity::Dynasty(d) => {
+                if let Some(f) = d.founder {
+                    assert!(ent(f), "dynasty.founder dangling");
+                }
+            }
+            Entity::House(h) => {
+                if let Some(d) = h.dynasty {
+                    assert!(ent(d), "house.dynasty dangling");
+                }
+                if let Some(f) = h.founder {
+                    assert!(ent(f), "house.founder dangling");
+                }
+            }
+            Entity::Title(t) => {
+                assert!(
+                    (t.polity as usize) < world.society.nations.len(),
+                    "title.polity out of range"
+                );
+                if let Some(e) = t.created_event {
+                    assert!(ev(e), "title.created_event dangling");
+                }
+            }
+            _ => {}
+        }
+    }
+    for e in &world.events.events {
+        for a in &e.actors {
+            assert!(ent(*a), "event.actor dangling");
+        }
+        for p in &e.patients {
+            assert!(ent(*p), "event.patient dangling");
+        }
+        for c in &e.cause_ids {
+            assert!(ev(*c), "event.cause_id dangling");
+        }
+    }
+}
+
+#[test]
+fn in_dynasty_succession_follows_bloodline() {
+    // A same-dynasty successor must be a *child* of the prior ruler (orderly
+    // succession). A dynastic break (different dynasty) carries no such
+    // requirement. This is the core 4c lineage claim.
+    let world = generate_full(fixed(42));
+    let ents = &world.entities.by_id;
+
+    let mut by_title: BTreeMap<u32, Vec<(i32, EntityId)>> = BTreeMap::new();
+    for (id, e) in ents.iter() {
+        if let Entity::Character(c) = e {
+            for h in &c.titles {
+                by_title
+                    .entry(h.title.0)
+                    .or_default()
+                    .push((h.start_year, *id));
+            }
+        }
+    }
+    let dyn_of = |cid: &EntityId| -> Option<EntityId> {
+        match ents.get(cid) {
+            Some(Entity::Character(c)) => match c.house.and_then(|h| ents.get(&h)) {
+                Some(Entity::House(house)) => house.dynasty,
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let is_child_of = |child: &EntityId, parent: EntityId| -> bool {
+        matches!(ents.get(child), Some(Entity::Character(c))
+            if c.relationships.iter().any(|r| matches!(r.kind, RelationKind::Child) && r.other == parent))
+    };
+
+    let mut checked = 0;
+    for (_title, mut holders) in by_title {
+        holders.sort_by_key(|(y, _)| *y);
+        for w in holders.windows(2) {
+            let (_, prev) = w[0];
+            let (_, next) = w[1];
+            let (dp, dn) = (dyn_of(&prev), dyn_of(&next));
+            if dp.is_some() && dp == dn {
+                assert!(
+                    is_child_of(&next, prev),
+                    "a same-dynasty successor must be a child of the prior ruler"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "expected at least one in-dynasty succession to validate"
+    );
+}
+
+#[test]
 fn secular_cycle_produces_rise_and_collapse_events() {
     // 4d: the Turchin fiscal half + Khaldun decadence drive recurring crises
     // (settlements abandoned, people displaced) punctuating expansion.
     let world = generate_full(fixed(42));
     let n = |k: fn(&EventKind) -> bool| world.events.events.iter().filter(|e| k(&e.kind)).count();
+    let collapses = n(|k| matches!(k, EventKind::CityAbandoned));
+    // Cadence lock: crises must *recur* (multiple secular cycles) but not spam.
+    // Seed 42 yields ~12 (≈3 per polity); the band guards the tuning against a
+    // retune that breaks the mechanism (→ 0) or makes it fire every year.
     assert!(
-        n(|k| matches!(k, EventKind::CityAbandoned)) >= 1,
-        "expected at least one secular collapse (CityAbandoned)"
+        (6..=30).contains(&collapses),
+        "secular collapses ({collapses}) outside the expected recurring band [6, 30]"
     );
     assert!(
         n(|k| matches!(k, EventKind::Migration)) >= 1,
