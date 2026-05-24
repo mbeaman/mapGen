@@ -32,8 +32,11 @@ impl CausalLoop for Schism {
     }
 
     fn tick(&mut self, ctx: &mut TickCtx) {
-        let n_rel = ctx.world.religions.religions.len();
-        for ri in 0..n_rel {
+        // Only the *original* faiths schism (count == religion_entities.len());
+        // sects appended to the religions vec below don't re-schism, which also
+        // keeps `religion_entities` indices valid.
+        let n_orig = ctx.state.religion_entities.len();
+        for ri in 0..n_orig {
             if unit_f32(ctx.rng) < SCHISM_PROB {
                 schism(ctx, ri, ctx.year);
             }
@@ -62,7 +65,22 @@ fn schism(ctx: &mut TickCtx, ri: usize, year: i32) {
         alignment,
         sacred_sites: Vec::new(),
     };
+    // The sect joins the per-cell faith model (so it can later drive wars of
+    // religion that postdate this schism) and is also minted as an entity (so
+    // the Schism event can reference it).
+    let new_ri = ctx.world.religions.religions.len() as u16;
+    ctx.world.religions.religions.push(splinter.clone());
     let splinter_id = ctx.world.entities.insert(Entity::Religion(splinter));
+
+    // The founding culture's adherents defect to the sect — a real faith split.
+    let founder = parent.founder_culture_id;
+    for c in 0..ctx.world.mesh.cell_count() {
+        let cult = ctx.world.cultures.culture_id.get(c).copied().flatten();
+        let faith = ctx.world.religions.religion_id.get(c).copied().flatten();
+        if cult == Some(founder) && faith == Some(ri as u16) {
+            ctx.world.religions.religion_id[c] = Some(new_ri);
+        }
+    }
 
     let cell = parent.sacred_sites.first().copied().unwrap_or(0);
     emit(

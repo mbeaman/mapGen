@@ -150,15 +150,17 @@ impl CausalLoop for Hero {
     }
 }
 
-/// A deterministically chosen polity capital cell (beasts menace settled
-/// realms). `None` if there are no polities.
+/// A deterministically chosen *living* polity's capital cell (beasts menace
+/// settled realms). `None` if there are no surviving polities.
 fn random_capital(ctx: &mut TickCtx) -> Option<u32> {
-    let n = ctx.world.society.nations.len();
-    if n == 0 {
+    let living: Vec<usize> = (0..ctx.world.society.nations.len())
+        .filter(|&pid| !ctx.state.dissolved.get(pid).copied().unwrap_or(false))
+        .collect();
+    if living.is_empty() {
         return None;
     }
-    let idx = (ctx.rng.next_u32() as usize) % n;
-    Some(ctx.world.society.nations[idx].capital_cell)
+    let pid = living[(ctx.rng.next_u32() as usize) % living.len()];
+    Some(ctx.world.society.nations[pid].capital_cell)
 }
 
 /// A legendary name in the first available language (heroes / beasts / relics

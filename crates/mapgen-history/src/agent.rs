@@ -60,6 +60,10 @@ pub struct Court {
 /// Advance every court by one year.
 pub fn advance(world: &mut WorldData, state: &mut SimState, year: i32, rng: &mut ChaCha8Rng) {
     for pid in 0..state.courts.len() {
+        // A dissolved (fully conquered) realm has no court left to advance.
+        if state.dissolved[pid] {
+            continue;
+        }
         if state.courts[pid].ruler.is_none() {
             found_dynasty(world, state, pid, year, rng);
             continue;

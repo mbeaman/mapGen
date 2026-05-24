@@ -73,9 +73,9 @@ pub struct SimState {
     /// Polity adjacency (who borders whom), computed once from the initial
     /// borders. Wars ignite between neighbors; the 4e loop reads this.
     pub adjacency: Vec<Vec<usize>>,
-    /// Active dynastic claims as `(claimant_polity, target_polity)` pairs —
-    /// a claim supplies a `DynasticClaim` casus belli for a war.
-    pub claims: Vec<(u16, u16)>,
+    /// Active dynastic claims as `(claimant_polity, target_polity, asserted_year)`
+    /// — a claim supplies a `DynasticClaim` casus belli until it expires.
+    pub claims: Vec<(u16, u16, i32)>,
     /// Year each polity last initiated a war, for the war cooldown (init
     /// `i32::MIN` = never).
     pub last_war: Vec<i32>,
@@ -89,6 +89,10 @@ pub struct SimState {
     /// `ProphecyUttered` event ids awaiting fulfillment; a heroic deed fulfils
     /// the oldest, and any still pending at sim end are Phase-5 lacunae.
     pub pending_prophecies: Vec<EventId>,
+    /// Per-polity: dissolved (conquered to 0 cells). A dissolved polity's court
+    /// freezes and it stops warring / being a war target — no more "throne of a
+    /// realm that owns nothing".
+    pub dissolved: Vec<bool>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -190,8 +194,20 @@ impl SimState {
             religion_entities: vec![None; world.religions.religions.len()],
             active_megabeasts: Vec::new(),
             pending_prophecies: Vec::new(),
+            dissolved: vec![false; n_pol],
         }
     }
+}
+
+/// Number of cells a polity currently controls (used to detect dissolution
+/// after a conquest).
+pub(crate) fn polity_cell_count(world: &WorldData, pid: usize) -> usize {
+    world
+        .society
+        .control
+        .iter()
+        .filter(|c| **c == Some(pid as u32))
+        .count()
 }
 
 /// Agronomic carrying weight per biome, in relative units. Biome ids are

@@ -6,9 +6,11 @@
 //!
 //! Phase 4e: the "first wars". Actors are the reigning rulers (Characters from
 //! 4c); claims are `Claim` entities targeting a polity's throne `Title`.
-//! Territory changes hands by reassigning `society.control` cells — total
-//! controlled-cell count is conserved (no polity is annihilated; conquest-driven
-//! dissolution is a later refinement).
+//! Territory changes hands by reassigning `society.control` cells (total
+//! controlled-cell count is conserved — cells move, none vanish). A war only
+//! ignites between polities that currently `share_border`, so it always can
+//! change the map; a realm conquered to 0 cells is marked dissolved (4h.5
+//! hardening) and stops warring / being warred.
 
 use mapgen_core::{
     CasusBelli, CellId, Claim, DiplomaticPattern, Entity, EntityId, Event, EventId, EventKind,
@@ -17,10 +19,13 @@ use mapgen_core::{
 use smallvec::SmallVec;
 
 use crate::loops::{CausalLoop, LoopId, TickCtx};
-use crate::{polity_capacity, polity_military, unit_f32, SimState};
+use crate::{polity_capacity, polity_cell_count, polity_military, unit_f32, SimState};
 
 /// Per-polity yearly chance to press a dynastic claim on a neighbour.
 const CLAIM_PROB: f32 = 0.012;
+/// Years a dynastic claim stays live before lapsing (~two generations) — so an
+/// ancient claim doesn't relabel every war on the dyad as dynastic forever.
+const CLAIM_EXPIRY: i32 = 50;
 /// Base war chance per (aggressor, neighbour) per year, scaled by power
 /// pressure and the aggressor's diplomatic posture.
 const WAR_BASE: f32 = 0.020;
@@ -50,17 +55,29 @@ impl CausalLoop for Mearsheimer {
         let year = ctx.year;
         let n = ctx.state.polity_count;
 
+        // Expire stale claims so casus belli stays truthful.
+        ctx.state
+            .claims
+            .retain(|&(_, _, asserted)| year - asserted < CLAIM_EXPIRY);
+
         // 1. Dynastic claims — occasional pressure on a neighbour's throne.
         for a in 0..n {
+            if ctx.state.dissolved[a] {
+                continue;
+            }
             let neighbors = ctx.state.adjacency.get(a).cloned().unwrap_or_default();
             if neighbors.is_empty() {
                 continue;
             }
             if unit_f32(ctx.rng) < CLAIM_PROB {
-                if let Some(&b) = neighbors
-                    .iter()
-                    .find(|&&b| !ctx.state.claims.contains(&(a as u16, b as u16)))
-                {
+                if let Some(&b) = neighbors.iter().find(|&&b| {
+                    !ctx.state.dissolved[b]
+                        && !ctx
+                            .state
+                            .claims
+                            .iter()
+                            .any(|&(x, y, _)| x == a as u16 && y == b as u16)
+                }) {
                     assert_claim(ctx, a, b, year);
                 }
             }
@@ -68,6 +85,9 @@ impl CausalLoop for Mearsheimer {
 
         // 2. Wars — each polity may initiate at most one per year.
         for a in 0..n {
+            if ctx.state.dissolved[a] {
+                continue;
+            }
             if ctx.state.courts.get(a).and_then(|c| c.ruler).is_none() {
                 continue;
             }
@@ -76,7 +96,15 @@ impl CausalLoop for Mearsheimer {
             }
             let neighbors = ctx.state.adjacency.get(a).cloned().unwrap_or_default();
             for b in neighbors {
-                if war_ignites(ctx, a, b) {
+                if ctx.state.dissolved[b] {
+                    continue;
+                }
+                // A war only happens if it can change the map — the two polities
+                // must currently share a border (frozen adjacency over-counts
+                // once a frontier has been fully absorbed). Kills repeated
+                // 0-transfer wars. `share_border` (O(cells)) is checked only when
+                // the cheap ignition roll passes.
+                if war_ignites(ctx, a, b) && share_border(ctx.world, a, b) {
                     ctx.state.last_war[a] = year;
                     resolve_war(ctx, a, b, year);
                     break;
@@ -94,6 +122,23 @@ fn war_power(world: &WorldData, state: &SimState, pid: usize) -> f32 {
 fn polity_religion(world: &WorldData, pid: usize) -> Option<u16> {
     let cap = world.society.nations[pid].capital_cell as usize;
     world.religions.religion_id.get(cap).copied().flatten()
+}
+
+/// Whether polities `a` and `b` currently share a controlled border (a cell of
+/// one adjacent to a cell of the other). O(cells); only called when a war's
+/// ignition roll has already passed.
+fn share_border(world: &WorldData, a: usize, b: usize) -> bool {
+    let owns =
+        |c: usize, pid: usize| world.society.control.get(c).copied().flatten() == Some(pid as u32);
+    (0..world.mesh.cell_count()).any(|c| {
+        owns(c, a)
+            && world
+                .mesh
+                .neighbors
+                .get(c)
+                .map(|nbrs| nbrs.iter().any(|&nb| owns(nb as usize, b)))
+                .unwrap_or(false)
+    })
 }
 
 fn expansion_mult(world: &WorldData, pid: usize) -> f32 {
@@ -159,7 +204,7 @@ fn assert_claim(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         asserted_year: year,
         dormant: false,
     }));
-    ctx.state.claims.push((a as u16, b as u16));
+    ctx.state.claims.push((a as u16, b as u16, year));
 }
 
 fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
@@ -172,7 +217,11 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     let cell = ctx.world.society.nations[a].capital_cell;
     let name_a = ctx.world.society.nations[a].name.clone();
     let name_b = ctx.world.society.nations[b].name.clone();
-    let has_claim = ctx.state.claims.contains(&(a as u16, b as u16));
+    let has_claim = ctx
+        .state
+        .claims
+        .iter()
+        .any(|&(x, y, _)| x == a as u16 && y == b as u16);
     let (ra, rb) = (polity_religion(ctx.world, a), polity_religion(ctx.world, b));
     let casus = if has_claim {
         CasusBelli::DynasticClaim
@@ -236,6 +285,24 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         // Borders moved — Turchin's capacity must track the new territory.
         ctx.state.capacity[w_pid] = polity_capacity(ctx.world, w_pid);
         ctx.state.capacity[l_pid] = polity_capacity(ctx.world, l_pid);
+
+        // If that conquest took the loser's last land, the realm is no more.
+        if !ctx.state.dissolved[l_pid] && polity_cell_count(ctx.world, l_pid) == 0 {
+            ctx.state.dissolved[l_pid] = true;
+            emit(
+                ctx.world,
+                year,
+                EventKind::CityAbandoned,
+                cell,
+                0.82,
+                &[w_ruler],
+                &[l_ruler],
+                None,
+                format!(
+                    "The realm of {l_name} was extinguished; {w_name} seized its last holdings."
+                ),
+            );
+        }
     }
 
     emit(

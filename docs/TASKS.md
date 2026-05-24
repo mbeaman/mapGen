@@ -438,6 +438,34 @@ Open findings folded into the substages below:
 - [ ] **(#7, project-wide) Native↔wasm byte-identity** — reasoned (all
   arithmetic), not machine-tested. Tracked in BACKLOG; not 4-specific.
 
+**Pre-4i review (2026-05-24, agent-run) — verdict: sound, two blockers fixed.**
+An independent agent read full 500-year histories across seeds. Mechanically
+healthy (deterministic, no impossible ages / dead actors / self-wars; salience
+discriminates; dense linkable material for arcs). Found + **fixed** two
+coherence blockers in a hardening pass before 4i:
+
+- [x] **Zombie/landless polities (blocker 1)** — territory transfer *cumulatively*
+  conquered realms to 0 cells, but nothing dissolved them (my `mearsheimer.rs`
+  "no polity is annihilated" comment was wrong). Now `SimState.dissolved`:
+  reaching 0 cells emits a terminal "realm extinguished" event and freezes the
+  court / stops it warring or being warred / claimed. Verified: 0 zombie
+  wars/successions after a fall (seeds 3, 7).
+- [x] **Repeated 0-transfer dyad wars (blocker 2)** — frozen adjacency let a
+  realm "war" a neighbour it no longer bordered (21× zero-transfer filler).
+  War ignition now requires `share_border` (current shared frontier), so every
+  war can change the map. Verified consequential: seed 3 Tazaja 28 wars → 26
+  sieges; seed 7 Eevolrol 11 → 11. (A long *consequential* conquest is still
+  many wars — 4i arc-extraction should roll it into one "Conquest of X" arc.)
+- [x] **Claims pruned** — `claims` now carry the assertion year and expire after
+  `CLAIM_EXPIRY = 50` (and skip dissolved targets), so casus belli stays
+  truthful (no eternal `DynasticClaim`).
+- [x] **Schism connected to the map** — a sect now joins `world.religions`
+  (per-cell `religion_id`): the founding culture's adherents defect to it, so
+  schisms reshape the faith map and can drive later wars of religion.
+- Re-measured hegemon land-share (1/2/3/7/42 = 38/61/69/68/47%) — finding #1
+  improved (headline-monopoly was war-spam, now de-spammed), not fully resolved;
+  re-check after 4i arc-grouping. `seed42_full` re-anchored. `just check` green.
+
 ### Phase 4f — Succession crises *(shipped; promotes succession from Phase 6)*
 
 - [x] Agent layer's `succeed` now picks heirs **adult-first** (review #5,

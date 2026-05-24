@@ -578,6 +578,45 @@ fn hero_sagas_are_causally_linked_and_rare() {
 }
 
 #[test]
+fn no_realm_is_warred_or_inherited_after_it_falls() {
+    // Hardening (blocker 1): once a polity is conquered to 0 cells it is
+    // dissolved — no more "war upon" it and no succession "for the throne of"
+    // it. Scan several seeds so an actual dissolution is exercised.
+    use std::collections::HashMap;
+    let mut dissolutions = 0;
+    for seed in 1..=8u64 {
+        let world = generate_full(fixed(seed));
+        let mut fell: HashMap<String, i32> = HashMap::new();
+        for e in &world.events.events {
+            if let Some(rest) = e.summary_canonical.strip_prefix("The realm of ") {
+                if let Some(name) = rest.split(" was extinguished").next() {
+                    fell.insert(name.to_string(), e.year);
+                }
+            }
+        }
+        for (name, &fall_year) in &fell {
+            dissolutions += 1;
+            let warred = format!("war upon {name}.");
+            let throne = format!("throne of {name}");
+            for e in &world.events.events {
+                if e.year > fall_year {
+                    let s = &e.summary_canonical;
+                    assert!(
+                        !s.contains(&warred) && !s.contains(&throne),
+                        "seed {seed}: y{} references the fallen realm {name}: {s}",
+                        e.year
+                    );
+                }
+            }
+        }
+    }
+    assert!(
+        dissolutions > 0,
+        "no seed in 1..=8 dissolved a polity — the dissolution path went unexercised"
+    );
+}
+
+#[test]
 fn history_produces_major_events() {
     // Extended MVP exit criterion: at least three high-salience events
     // (major battles / collapses) for chronicles to anchor on.
