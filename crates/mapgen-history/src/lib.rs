@@ -70,6 +70,15 @@ pub struct SimState {
     /// The dynasty id observed last year, so Khaldun can detect a dynastic
     /// change and reset asabiyyah.
     pub last_dynasty: Vec<Option<EntityId>>,
+    /// Polity adjacency (who borders whom), computed once from the initial
+    /// borders. Wars ignite between neighbors; the 4e loop reads this.
+    pub adjacency: Vec<Vec<usize>>,
+    /// Active dynastic claims as `(claimant_polity, target_polity)` pairs —
+    /// a claim supplies a `DynasticClaim` casus belli for a war.
+    pub claims: Vec<(u16, u16)>,
+    /// Year each polity last initiated a war, for the war cooldown (init
+    /// `i32::MIN` = never).
+    pub last_war: Vec<i32>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -126,6 +135,33 @@ impl SimState {
             .collect();
         let population = capacity.iter().map(|&k| INITIAL_FILL * k).collect();
 
+        // Polity adjacency from the initial borders: two polities are neighbors
+        // if any cell of one borders a cell of the other.
+        let mut adj: Vec<std::collections::BTreeSet<usize>> =
+            vec![std::collections::BTreeSet::new(); n_pol];
+        for cell in 0..n_cells {
+            let Some(a) = world.society.control.get(cell).copied().flatten() else {
+                continue;
+            };
+            let a = a as usize;
+            if a >= n_pol {
+                continue;
+            }
+            let Some(nbrs) = world.mesh.neighbors.get(cell) else {
+                continue;
+            };
+            for &nb in nbrs {
+                if let Some(b) = world.society.control.get(nb as usize).copied().flatten() {
+                    let b = b as usize;
+                    if b < n_pol && b != a {
+                        adj[a].insert(b);
+                        adj[b].insert(a);
+                    }
+                }
+            }
+        }
+        let adjacency = adj.into_iter().map(|s| s.into_iter().collect()).collect();
+
         Self {
             polity_count: n_pol,
             population,
@@ -138,6 +174,9 @@ impl SimState {
             // Reset to ASAB_HIGH by Khaldun on the first tick (dynasty founded).
             asabiyyah: vec![1.0; n_pol],
             last_dynasty: vec![None; n_pol],
+            adjacency,
+            claims: Vec::new(),
+            last_war: vec![i32::MIN; n_pol],
         }
     }
 }
@@ -179,6 +218,32 @@ fn agriculture_factor(world: &WorldData, pid: usize) -> f32 {
         .map(|c| c.tech.agriculture)
         .unwrap_or(40);
     0.6 + 0.008 * agri as f32
+}
+
+/// Recompute a polity's carrying capacity from its *current* controlled cells —
+/// called after conquest shifts borders, so Turchin's dynamics track the new
+/// territory. Mirrors the rollup in `SimState::new`.
+pub(crate) fn polity_capacity(world: &WorldData, pid: usize) -> f32 {
+    let raw: f32 = (0..world.mesh.cell_count())
+        .filter(|&c| world.society.control.get(c).copied().flatten() == Some(pid as u32))
+        .map(|c| cell_capacity(world.climate.biome.get(c).copied().unwrap_or(0)))
+        .sum();
+    raw * agriculture_factor(world, pid)
+}
+
+/// The founding culture's military skill (0..100; 40 if unknown) — the martial
+/// multiplier on a polity's war power.
+pub(crate) fn polity_military(world: &WorldData, pid: usize) -> u8 {
+    let cap = world.society.nations[pid].capital_cell as usize;
+    world
+        .cultures
+        .culture_id
+        .get(cap)
+        .copied()
+        .flatten()
+        .and_then(|cid| world.cultures.cultures.get(cid as usize))
+        .map(|c| c.tech.military)
+        .unwrap_or(40)
 }
 
 /// A deterministic uniform draw in `[0, 1)` from a loop RNG. Avoids relying on

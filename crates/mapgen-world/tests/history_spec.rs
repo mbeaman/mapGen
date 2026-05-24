@@ -38,6 +38,11 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::CityAbandoned
             | EventKind::Migration
             | EventKind::Exile
+            | EventKind::WarDeclared
+            | EventKind::BattleFought
+            | EventKind::Siege
+            | EventKind::TreatySigned
+            | EventKind::ClaimAsserted
     )
 }
 
@@ -400,6 +405,67 @@ fn secular_cycle_produces_rise_and_collapse_events() {
     assert!(
         n(|k| matches!(k, EventKind::CityFounded)) >= 1,
         "expansion years should found new towns (CityFounded)"
+    );
+}
+
+#[test]
+fn wars_are_well_formed() {
+    // 4e: every declared war cites a casus belli and names both sovereigns;
+    // every battle names a victor.
+    let world = generate_full(fixed(42));
+    let mut wars = 0;
+    for e in &world.events.events {
+        match e.kind {
+            EventKind::WarDeclared => {
+                wars += 1;
+                assert!(e.casus_belli.is_some(), "a war must have a casus belli");
+                assert!(e.actors.len() >= 2, "a war names attacker and defender");
+            }
+            EventKind::BattleFought => {
+                assert!(!e.actors.is_empty(), "a battle names a victor");
+            }
+            _ => {}
+        }
+    }
+    assert!(wars >= 1, "expected at least one war over 500 years");
+}
+
+#[test]
+fn history_shifts_borders_conserving_controlled_cells() {
+    // History (4e wars) must move borders — but only *reassign* cells, never
+    // create or destroy controlled territory. Snapshot control after Naming
+    // (the stage before History) and compare to the finished world.
+    let mut p = Pipeline::new(fixed(42));
+    let mut before = Vec::new();
+    while let Some(stage) = p.step() {
+        if stage == PipelineStage::Naming {
+            before = p.world().society.control.clone();
+        }
+    }
+    let after = p.into_world().society.control;
+    let controlled = |c: &[Option<u32>]| c.iter().filter(|x| x.is_some()).count();
+    assert_eq!(
+        controlled(&before),
+        controlled(&after),
+        "wars must conserve the controlled-cell count (reassign, not create/destroy)"
+    );
+    assert_ne!(before, after, "wars should have shifted some borders");
+}
+
+#[test]
+fn history_produces_major_events() {
+    // Extended MVP exit criterion: at least three high-salience events
+    // (major battles / collapses) for chronicles to anchor on.
+    let world = generate_full(fixed(42));
+    let major = world
+        .events
+        .events
+        .iter()
+        .filter(|e| e.salience >= 0.8)
+        .count();
+    assert!(
+        major >= 3,
+        "expected >= 3 events with salience >= 0.8, got {major}"
     );
 }
 

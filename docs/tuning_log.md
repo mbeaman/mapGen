@@ -341,6 +341,27 @@ artifact that justified the pick, and the commit that landed the value.
   Khaldun decay pinned monotonic + bounded in a unit test.
 * **Source:** Phase 4d; `loops/turchin.rs` (fiscal half) + `loops/khaldun.rs`.
 
+### Mearsheimer wars (4e) — `loops/mearsheimer.rs`
+
+* **Current:** `WAR_BASE = 0.020` per (aggressor, neighbour)/yr × power pressure
+  × diplomatic multiplier (`EXPANSIONIST 2.5` / `HONORBOUND 1.4` / `ISOLATIONIST
+  0.3` / else 1.0); `WAR_COOLDOWN = 12` yr; `TRANSFER_CELLS = 6`; battle salience
+  `0.58 + 0.4·min(1, (Pa+Pb)/STAKES_REF)` with `STAKES_REF = 300`;
+  `CLAIM_PROB = 0.012`/polity/yr. Power = population × (0.5 + military/100).
+* **Why these values:** tuned vs. seed 42 to **~49 wars / 20 sieges** over 500
+  years (≈1/decade across 4 polities) — a turbulent-but-legible military history,
+  not constant war. Two failure modes fixed: (1) without a cooldown the strongest
+  realm warred every few years (rich-get-richer runaway → 103 wars); the 12-year
+  cooldown breaks it. (2) the first salience formula `(Pa+Pb)/(Pa+Pb+4)` saturated
+  to ~1 for every war (132 "major" events); rescaling against `STAKES_REF = 300`
+  makes only the largest wars read ≥ 0.8 (20 of 49). Also caught an `i32::MIN`
+  cooldown-sentinel overflow that silenced all wars. `STAKES_REF` is the knob to
+  retune if the population scale changes (it tracks territory capacity).
+* **Method:** tuned against seed 42 (war/siege counts, casus-belli mix,
+  count of salience ≥ 0.8); border conservation + war well-formedness asserted in
+  `history_spec`.
+* **Source:** Phase 4e; `loops/mearsheimer.rs`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

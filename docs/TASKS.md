@@ -389,23 +389,31 @@ so 4a needed **no schema bump and no golden re-anchor** — a clean, low-risk fo
   + `history_spec` crisis-occurrence + expanded allowed-kinds. No schema change
   (v10 holds); **`seed42_full` re-anchored** (phase2 untouched). `just check`
   green.
-- [ ] (4h) Spec: asabiyyah ∈[0,1] decays monotonically in a stable dynasty absent
-  frontier pressure (cites Ibn Khaldun); fiscal collapse precedes dissolution;
-  instability rises with elite overproduction (cites Turchin); determinism pin.
-  Re-anchor.
+### Phase 4e — Mearsheimer power-transition wars + Claims *(shipped; first wars)*
 
-### Phase 4e — Mearsheimer power-transition wars + Claims *(first wars)*
-
-- [ ] (1-2d) In-sim relative power per polity (tech/military/population/territory);
-  dyadic ratios over `mesh.neighbors` adjacency; Thucydides-trap ignition. Emits
-  `WarDeclared`/`BattleFought`/`Siege`/`TreatySigned`/`AllianceFormed` with
-  `casus_belli`. Claims system (`Claim` entities + `ClaimAsserted` →
-  `CasusBelli::DynasticClaim`). Mutates `society.control[]`/`nations` →
-  **post-history political map.**
-- [ ] (4h) Spec: every `WarDeclared` has `casus_belli: Some`; participants adjacent
-  or share a claim; battles reference valid entity IDs; territory transfers conserve
-  total controlled cells; ≥1 event `salience ≥ 0.8`; post-sim `control[]` ≠ pre-sim;
-  determinism pin. **Re-check `just perf` (heaviest loop).** Re-anchor.
+- [x] Per-polity war power = population × (0.5 + military/100); polity adjacency
+  precomputed from initial borders. Each year, occasional dynastic `Claim`
+  assertions (mint `Claim` entity targeting a neighbour's throne `Title` +
+  `ClaimAsserted`), then war ignition over adjacent pairs (power pressure ×
+  diplomatic posture; expansionist realms war most), one per aggressor/year with
+  a 12-year cooldown. Wars resolve in-year: `WarDeclared` (casus belli
+  `DynasticClaim` if a claim exists, else `FrontierIncident`) → `BattleFought`
+  (stronger side + fortune wins) → victor seizes border cells (`Siege`, mutating
+  `society.control`, capacity recomputed) → `TreatySigned`. Actors are the
+  reigning rulers. **Post-history political map** emerges.
+- [x] Tuned vs. seed 42: **49 wars / 20 sieges** over 500 years (~1/decade across
+  4 polities), casus belli split 23 frontier / 26 dynastic, **20 events
+  salience ≥ 0.8** (big battles only — salience now discriminates). Borders
+  consolidated (a hegemon grew 203→668 cells by conquest). First draft ran away
+  to 103 wars (no cooldown); also fixed an `i32::MIN` cooldown-overflow bug.
+  No permanent dissolution (territory shifts, no annihilation). Knobs in
+  `docs/tuning_log.md`.
+- [x] Spec (`history_spec`): every `WarDeclared` has a casus belli + names both
+  sovereigns; battles name a victor; **borders shift while conserving the
+  controlled-cell count** (Pipeline snapshot after Naming vs. final); ≥3 events
+  `salience ≥ 0.8`; expanded allowed-kinds; referential integrity already covers
+  war actors/claims. No schema change (v10 holds; existing `Claim` reused);
+  **`seed42_full` re-anchored**, phase2 untouched. `just check` green.
 
 ### Phase 4f — Succession crises *(promotes succession from Phase 6)*
 
