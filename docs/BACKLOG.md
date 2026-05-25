@@ -811,6 +811,71 @@ note.
   AGENTS.md / CONTRIBUTING.md / SESSION.md shipped as Option-3-minus
   on this date with this entry filed for the gap.
 
+## Gaps identified in the 2026-05-25 review (previously untracked)
+
+Surfaced while reviewing Phases 6–7. Each is a real gap not otherwise on this
+list; promote when its trigger fires.
+
+### Frontend test suite
+
+- **Gap.** `web/` has *zero* tests — CI only typechecks (`tsc --noEmit`) and
+  bundles. The worker message protocol, the drill-in nav (click→sector mapping,
+  breadcrumb, coarse-first), and the narrate flow are unverified.
+- **Trigger.** Any frontend regression that typecheck didn't catch; or before
+  the frontend grows further.
+- **Cost.** ~1 d. Vitest unit tests for the worker protocol + a Playwright smoke
+  (load → generate → SVG paints → drill-in → breadcrumb-up). Add a `web` step to
+  CI + `just check`.
+
+### Refine-path cross-platform golden
+
+- **Gap.** The 6.2 native↔wasm byte-identity golden covers `generate_full` only.
+  The Phase-7 `refine_sector` path (sub-region mesh, projection, seam-pinning)
+  is assumed byte-identical across targets but not pinned. A wasm/x86 float
+  divergence in the refine path would surface only as a mismatched sector.
+- **Trigger.** Shipping the atlas to users; or any suspected refine determinism
+  bug. **Cost.** ~½ d: hash a fixed sector in `cross_platform.rs` vs a native golden.
+
+### Per-component perf budgets
+
+- **Gap.** Only `generate_full` is benched (`examples/perf_baseline.rs`). Render,
+  the history sim, and `refine_sector` latency have no budget — yet sector-gen
+  latency is user-facing in the atlas (the navigation brief flags "seconds per
+  sector"). **Trigger.** A perf regression in render/refine. **Cost.** ~1 d; add
+  to `just perf`.
+
+### Atlas / world-bible export (`mapgen atlas`)
+
+- **Gap.** No single command packages a world into a shareable artifact
+  (overview map + key sectors + chronicle + entity glossary as one HTML/PDF). The
+  pieces exist; the e2e payoff packaging doesn't. (PDF export is a separate stub
+  item; this is the integrated deliverable.) **Trigger.** Wanting to share/show a
+  generated world. **Cost.** ~1 d.
+
+### Borders that move with history
+
+- **Gap.** `society.control` (polity territory) is set once at generation and
+  **never mutated by the history sim** — wars/conquests appear in the event log
+  but don't redraw the map. The rendered borders are "founding" borders, not
+  "present" ones. **Trigger.** History realism push; or a time-slider (below).
+  **Cost.** ~1–2 d (the sim already tracks wars; apply territorial deltas).
+
+### Map as a point in time (history time-slider)
+
+- **Gap.** The map is implicitly "present day"; there's no way to view the world
+  at a historical year (borders, settlements, names as they were). The history
+  sim produces the timeline but the renderer can't replay it. Pairs with moving
+  borders. **Trigger.** Demand for historical atlas views. **Cost.** larger;
+  needs time-indexed society state (relates to the deferred epoch-restructure).
+
+### Structured tracing + narration eval harness
+
+- **Gap (two small).** (1) No `tracing` spans in the library crates — debugging
+  on-demand sector gen / the serve sidecar is `eprintln`-only. (2) No offline
+  narration-quality harness (NER pass-rate / retry-rate across seeds) to tune the
+  stoplist against data. **Trigger.** Debugging pain / tuning the lore engine.
+  **Cost.** ~½ d each.
+
 ---
 
 ## How items move
