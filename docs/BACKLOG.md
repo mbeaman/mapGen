@@ -882,13 +882,20 @@ list; promote when its trigger fires.
   controlled cells change owner across seeds; total conserved) — previously only
   the loop's panic-safety was unit-tested.
 
-### Map as a point in time (history time-slider)
+### Map as a point in time (history time-slider) — DONE (2026-05-25)
 
-- **Gap.** The map is implicitly "present day"; there's no way to view the world
-  at a historical year (borders, settlements, names as they were). The history
-  sim produces the timeline but the renderer can't replay it. Pairs with moving
-  borders. **Trigger.** Demand for historical atlas views. **Cost.** larger;
-  needs time-indexed society state (relates to the deferred epoch-restructure).
+- **Shipped.** Schema v16 records a territorial timeline
+  (`HistoryData::border_changes`); `WorldData::control_at_year` reconstructs the
+  borders at any past year; `WorldHandle::renderAtYear` + a top-centre frontend
+  slider scrub the world map across the conquest years (range from
+  `historyYears`). World-scale only (history is world-wide; sectors have no
+  timeline). Verified: seed 42 spans years 7–492, 258 cells differ founding→present.
+- **Caveat / follow-up.** The shift is *subtle* in the ornate style — it shows
+  only in the thin dashed polity borders + realm labels. A faint **political
+  territory tint** (wash each realm's cells in its colour) would make the slider
+  dramatic and improve the static political read too; deferred because it changes
+  the locked level-0 ornate aesthetic (needs sign-off + a visual_regression
+  re-anchor). Settlements/names over time also remain static (founded at gen).
 
 ### Structured tracing + narration eval harness
 
