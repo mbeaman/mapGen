@@ -57,13 +57,14 @@ describe("applyLayers", () => {
     for (const l of LAYERS) expect(l.label.length).toBeGreaterThan(0);
   });
 
-  it("ships the climate overlay (off by default, shown via on-climate)", () => {
-    const climate = LAYERS.find((l) => l.name === "climate");
-    expect(climate?.overlay).toBe(true);
-    const s = defaultLayerState();
-    expect(s.has("climate")).toBe(false);
-    s.add("climate");
-    expect(svgLayerClasses(s)).toContain("on-climate");
+  it("ships scalar data overlays (off by default, shown via on-NAME)", () => {
+    for (const name of ["climate", "relief", "precip"]) {
+      expect(LAYERS.find((l) => l.name === name)?.overlay).toBe(true);
+      const s = defaultLayerState();
+      expect(s.has(name)).toBe(false);
+      s.add(name);
+      expect(svgLayerClasses(s)).toContain(`on-${name}`);
+    }
   });
 });
 
@@ -84,8 +85,19 @@ describe("PRESETS", () => {
     expect(presetState(antique)).toEqual(defaultLayerState());
   });
 
-  it("the climate preset turns the temperature overlay on", () => {
-    const climate = PRESETS.find((p) => p.name === "climate")!;
-    expect(svgLayerClasses(presetState(climate))).toContain("on-climate");
+  it("each thematic lens preset turns on exactly its overlay", () => {
+    for (const [preset, overlay] of [
+      ["climate", "climate"],
+      ["relief", "relief"],
+      ["rainfall", "precip"],
+    ]) {
+      const p = PRESETS.find((x) => x.name === preset)!;
+      const cls = svgLayerClasses(presetState(p));
+      expect(cls).toContain(`on-${overlay}`);
+      // No other data overlay rides along.
+      for (const other of ["political", "climate", "relief", "precip"]) {
+        if (other !== overlay) expect(cls).not.toContain(`on-${other}`);
+      }
+    }
   });
 });

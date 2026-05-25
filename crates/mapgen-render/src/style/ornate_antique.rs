@@ -105,6 +105,19 @@ pub fn render(world: &WorldData) -> String {
 <stop offset="75%" stop-color="#d88238"/>
 <stop offset="100%" stop-color="#a82c1e"/>
 </linearGradient>
+<linearGradient id="hypso" x1="0%" y1="0%" x2="100%" y2="0%">
+<stop offset="0%" stop-color="#5a8a4a"/>
+<stop offset="35%" stop-color="#c8be7e"/>
+<stop offset="65%" stop-color="#9a6a3e"/>
+<stop offset="85%" stop-color="#6e4a30"/>
+<stop offset="100%" stop-color="#f2f0ec"/>
+</linearGradient>
+<linearGradient id="precip" x1="0%" y1="0%" x2="100%" y2="0%">
+<stop offset="0%" stop-color="#d8c89a"/>
+<stop offset="40%" stop-color="#b8c87a"/>
+<stop offset="70%" stop-color="#6aa86a"/>
+<stop offset="100%" stop-color="#2a7a6a"/>
+</linearGradient>
 </defs>"##,
     );
     out.push_str(LAYER_STYLE);
@@ -126,6 +139,8 @@ pub fn render(world: &WorldData) -> String {
     layer(&mut out, "land", false, |o| render_land_fill(world, o));
     layer(&mut out, "political", true, |o| render_political(world, o));
     layer(&mut out, "climate", true, |o| render_climate(world, o));
+    layer(&mut out, "relief", true, |o| render_relief(world, o));
+    layer(&mut out, "precip", true, |o| render_precip(world, o));
     layer(&mut out, "ocean", false, |o| {
         render_ocean_hatching(world, o)
     });
@@ -159,8 +174,36 @@ pub fn render(world: &WorldData) -> String {
     // the periphery (intentionally fading edge labels into "aged"
     // shadow); compass + cartouche sit on top, untouched.
     render_edge_burn(vx, vy, w, h, &mut out);
-    // Drawn after the edge-burn so it stays crisp; hidden unless `on-climate`.
-    render_climate_legend(vx, vy, w, h, &mut out);
+    // Overlay legends, drawn after the edge-burn so they stay crisp. Each is
+    // hidden unless its `on-<overlay>` root class is set; they share the
+    // bottom-left anchor (one overlay shows at a time under the presets).
+    render_overlay_legend(
+        &mut out,
+        vx,
+        vy,
+        w,
+        h,
+        "climate",
+        "TEMPERATURE",
+        "thermal",
+        "Frigid",
+        "Torrid",
+    );
+    render_overlay_legend(
+        &mut out,
+        vx,
+        vy,
+        w,
+        h,
+        "relief",
+        "ELEVATION",
+        "hypso",
+        "Lowland",
+        "Peaks",
+    );
+    render_overlay_legend(
+        &mut out, vx, vy, w, h, "precip", "RAINFALL", "precip", "Arid", "Humid",
+    );
     // The compass and title cartouche are whole-world chrome anchored to the
     // canvas corners; a refined sector (Phase 7) is a detail view, so it gets a
     // clean framed map without them. Level-0 worlds are unaffected.
@@ -183,6 +226,8 @@ const LAYER_STYLE: &str = r##"<style>
 svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coastline,svg.off-rivers .layer-rivers,svg.off-mountains .layer-mountains,svg.off-forests .layer-forests,svg.off-roads .layer-roads,svg.off-borders .layer-borders,svg.off-settlements .layer-settlements,svg.off-sacred .layer-sacred,svg.off-labels .layer-labels{display:none}
 svg.on-political .layer-political{display:inline !important}
 svg.on-climate .layer-climate,svg.on-climate .legend-climate{display:inline !important}
+svg.on-relief .layer-relief,svg.on-relief .legend-relief{display:inline !important}
+svg.on-precip .layer-precip,svg.on-precip .legend-precip{display:inline !important}
 </style>"##;
 
 /// Wrap a render step in a named, toggleable layer group. `hidden` adds a
@@ -232,26 +277,87 @@ fn render_political(world: &WorldData, out: &mut String) {
     }
 }
 
-/// Temperature overlay (a data layer, off by default): every cell — land and
-/// sea — washed in a cold→hot thermal ramp normalized to the world's own
-/// min/max, surfacing the latitude bands + orographic cooling the base map only
-/// implies. Drawn under the linework, so coastline / rivers / labels still read
-/// on top (toggle off `land` + `forests` for a clean thematic view). The
-/// matching legend rides top-of-stack via the same `on-climate` class.
+// ---- Data overlays (off by default; revealed by `on-<name>` root classes) ----
+//
+// Each is a per-cell choropleth drawn under the linework, so coastline / rivers
+// / labels still read on top — toggle off `land`+`forests` (or use the Climate
+// lens preset) for a clean thematic view. The matching legend rides top-of-
+// stack via the same `on-<name>` class. All three share `fill_cells` (the
+// polygon loop), `ramp` (stop interpolation), and `render_overlay_legend`.
+
+/// Colour-ramp stops: `(t, [r,g,b])` with `t` ascending over [0,1].
+type Stops = [(f32, [f32; 3])];
+
+/// Cold→hot: indigo → glacial cyan → pale gold → ember orange → oxblood.
+const THERMAL: [(f32, [f32; 3]); 5] = [
+    (0.0, [38.0, 54.0, 120.0]),
+    (0.25, [58.0, 150.0, 190.0]),
+    (0.5, [214.0, 199.0, 132.0]),
+    (0.75, [216.0, 130.0, 56.0]),
+    (1.0, [168.0, 44.0, 30.0]),
+];
+/// Hypsometric land tint: lowland green → gold → ochre → dark brown → snow.
+const HYPSO: [(f32, [f32; 3]); 5] = [
+    (0.0, [90.0, 138.0, 74.0]),
+    (0.35, [200.0, 190.0, 126.0]),
+    (0.65, [154.0, 106.0, 62.0]),
+    (0.85, [110.0, 74.0, 48.0]),
+    (1.0, [242.0, 240.0, 236.0]),
+];
+/// Arid→humid: parched tan → dry grass → green → wet teal.
+const PRECIP: [(f32, [f32; 3]); 4] = [
+    (0.0, [216.0, 200.0, 154.0]),
+    (0.4, [184.0, 200.0, 122.0]),
+    (0.7, [106.0, 168.0, 106.0]),
+    (1.0, [42.0, 122.0, 106.0]),
+];
+
+/// Temperature overlay — a cold→hot wash normalized to the world's own min/max,
+/// surfacing the latitude bands + orographic cooling the base map only implies.
 fn render_climate(world: &WorldData, out: &mut String) {
-    let mesh = &world.mesh;
     let temp = &world.climate.temperature;
-    if temp.is_empty() {
-        return;
-    }
-    let (lo, hi) = temp_range(temp);
+    let (lo, hi) = field_range(temp);
     let span = (hi - lo).max(1e-3);
+    fill_cells(world, out, "0.6", |i| {
+        temp.get(i).map(|&t| ramp(&THERMAL, (t - lo) / span))
+    });
+}
+
+/// Relief overlay — a hypsometric tint on land (green→snow by height) over a
+/// bathymetric blue on water (shallow→deep), each on its own scale so both read.
+fn render_relief(world: &WorldData, out: &mut String) {
+    let elev = &world.terrain.elevation;
+    let (min_e, max_e) = field_range(elev);
+    fill_cells(world, out, "0.8", |i| {
+        elev.get(i).map(|&e| relief_color(e, min_e, max_e))
+    });
+}
+
+/// Precipitation overlay — an arid→humid wash normalized to the world's min/max.
+fn render_precip(world: &WorldData, out: &mut String) {
+    let precip = &world.climate.precipitation;
+    let (lo, hi) = field_range(precip);
+    let span = (hi - lo).max(1e-3);
+    fill_cells(world, out, "0.6", |i| {
+        precip.get(i).map(|&p| ramp(&PRECIP, (p - lo) / span))
+    });
+}
+
+/// Emit a per-cell choropleth: for each non-empty cell, `color(i)` yields an
+/// optional RGB fill drawn at `opacity`. Mirrors `render_land_fill`'s polygon
+/// loop; shared by the scalar data overlays above.
+fn fill_cells(
+    world: &WorldData,
+    out: &mut String,
+    opacity: &str,
+    color: impl Fn(usize) -> Option<[u8; 3]>,
+) {
+    let mesh = &world.mesh;
     for (i, verts) in mesh.cell_vertices.iter().enumerate() {
         if verts.is_empty() {
             continue;
         }
-        let Some(&t) = temp.get(i) else { continue };
-        let [r, g, b] = thermal_color((t - lo) / span);
+        let Some([r, g, b]) = color(i) else { continue };
         out.push_str(r##"<polygon points=""##);
         for (k, &vi) in verts.iter().enumerate() {
             let v = mesh.vertices[vi as usize];
@@ -262,17 +368,17 @@ fn render_climate(world: &WorldData, out: &mut String) {
         }
         write!(
             out,
-            r##"" fill="#{r:02x}{g:02x}{b:02x}" fill-opacity="0.6"/>"##
+            r##"" fill="#{r:02x}{g:02x}{b:02x}" fill-opacity="{opacity}"/>"##
         )
         .unwrap();
     }
 }
 
 /// Finite min/max of a per-cell field, falling back to [0,1] if empty/non-finite.
-fn temp_range(temp: &[f32]) -> (f32, f32) {
+fn field_range(field: &[f32]) -> (f32, f32) {
     let mut lo = f32::INFINITY;
     let mut hi = f32::NEG_INFINITY;
-    for &t in temp {
+    for &t in field {
         if t.is_finite() {
             lo = lo.min(t);
             hi = hi.max(t);
@@ -285,34 +391,61 @@ fn temp_range(temp: &[f32]) -> (f32, f32) {
     }
 }
 
-/// Perceptual cold→hot ramp for `t` in [0,1]: indigo → glacial cyan → pale gold
-/// → ember orange → oxblood. Linear interpolation between fixed stops (the same
-/// colours as the `#thermal` legend gradient); no transcendentals.
-fn thermal_color(t: f32) -> [u8; 3] {
-    const STOPS: [(f32, [f32; 3]); 5] = [
-        (0.0, [38.0, 54.0, 120.0]),
-        (0.25, [58.0, 150.0, 190.0]),
-        (0.5, [214.0, 199.0, 132.0]),
-        (0.75, [216.0, 130.0, 56.0]),
-        (1.0, [168.0, 44.0, 30.0]),
-    ];
+/// Linear interpolation of `t` in [0,1] through `stops` (ascending). No
+/// transcendentals — the same colours as the matching `<linearGradient>` legend.
+fn ramp(stops: &Stops, t: f32) -> [u8; 3] {
     let t = t.clamp(0.0, 1.0);
     let mut k = 0;
-    while k + 1 < STOPS.len() && t > STOPS[k + 1].0 {
+    while k + 1 < stops.len() && t > stops[k + 1].0 {
         k += 1;
     }
-    let (t0, c0) = STOPS[k];
-    let (t1, c1) = STOPS[(k + 1).min(STOPS.len() - 1)];
+    let (t0, c0) = stops[k];
+    let (t1, c1) = stops[(k + 1).min(stops.len() - 1)];
     let f = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
     let mix = |a: f32, b: f32| (a + (b - a) * f).round().clamp(0.0, 255.0) as u8;
     [mix(c0[0], c1[0]), mix(c0[1], c1[1]), mix(c0[2], c1[2])]
 }
 
-/// Legend for the temperature overlay: a `#thermal` gradient bar with
-/// qualitative end labels (the scale is normalized per-world, not °C). Hidden by
-/// default; revealed alongside the tint by the `on-climate` root class. Anchored
-/// bottom-left to clear the compass (NW) and cartouche (SE).
-fn render_climate_legend(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
+/// Two-part relief colour: bathymetry (≤ sea level) shallow→deep blue, land
+/// (> sea level) through the hypsometric ramp, each normalized on its own side.
+fn relief_color(elev: f32, min_e: f32, max_e: f32) -> [u8; 3] {
+    if elev <= 0.0 {
+        let d = if min_e < 0.0 {
+            (elev / min_e).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        // shallow #9fc2dd → deep #16335f
+        let mix = |a: f32, b: f32| (a + (b - a) * d).round().clamp(0.0, 255.0) as u8;
+        [mix(159.0, 22.0), mix(194.0, 51.0), mix(221.0, 95.0)]
+    } else {
+        let t = if max_e > 0.0 {
+            (elev / max_e).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        ramp(&HYPSO, t)
+    }
+}
+
+/// Legend for a data overlay: a gradient bar (`#{grad_id}`) with qualitative end
+/// labels — the scales are normalized per-world, not absolute units. Hidden by
+/// default; revealed alongside its tint by the `on-{class}` root class. All
+/// share the bottom-left anchor (clearing the compass NW + cartouche SE); since
+/// the presets enable one overlay at a time, they don't visually collide.
+#[allow(clippy::too_many_arguments)]
+fn render_overlay_legend(
+    out: &mut String,
+    vx: f32,
+    vy: f32,
+    w: f32,
+    h: f32,
+    class: &str,
+    title: &str,
+    grad_id: &str,
+    lo: &str,
+    hi: &str,
+) {
     let scale = (w.min(h) / 1280.0).clamp(0.7, 1.5);
     let bar_w = 200.0 * scale;
     let bar_h = 12.0 * scale;
@@ -322,7 +455,7 @@ fn render_climate_legend(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
     let x0 = vx + 50.0 * scale;
     let y0 = vy + h - box_h - 50.0 * scale;
 
-    out.push_str(r##"<g class="legend-climate" display="none">"##);
+    write!(out, r##"<g class="legend-{class}" display="none">"##).unwrap();
     write!(
         out,
         r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="#e8d8a8" stroke="#2a2418" stroke-width="{sw:.1}" fill-opacity="0.92"/>"##,
@@ -332,7 +465,7 @@ fn render_climate_legend(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
     .unwrap();
     write!(
         out,
-        r##"<text x="{tx:.1}" y="{ty:.1}" font-family="Cinzel, Georgia, serif" font-size="{fs:.1}" letter-spacing="1" fill="#2a2418">TEMPERATURE</text>"##,
+        r##"<text x="{tx:.1}" y="{ty:.1}" font-family="Cinzel, Georgia, serif" font-size="{fs:.1}" letter-spacing="1" fill="#2a2418">{title}</text>"##,
         tx = x0 + pad,
         ty = y0 + pad + 8.0 * scale,
         fs = 9.0 * scale,
@@ -342,20 +475,20 @@ fn render_climate_legend(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
     let by = y0 + pad + 12.0 * scale;
     write!(
         out,
-        r##"<rect x="{bx:.1}" y="{by:.1}" width="{bar_w:.1}" height="{bar_h:.1}" fill="url(#thermal)" stroke="#2a2418" stroke-width="{sw:.1}"/>"##,
+        r##"<rect x="{bx:.1}" y="{by:.1}" width="{bar_w:.1}" height="{bar_h:.1}" fill="url(#{grad_id})" stroke="#2a2418" stroke-width="{sw:.1}"/>"##,
         sw = 0.6 * scale,
     )
     .unwrap();
     let ly = by + bar_h + 11.0 * scale;
     write!(
         out,
-        r##"<text x="{bx:.1}" y="{ly:.1}" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">Frigid</text>"##,
+        r##"<text x="{bx:.1}" y="{ly:.1}" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">{lo}</text>"##,
         fs = 9.0 * scale,
     )
     .unwrap();
     write!(
         out,
-        r##"<text x="{rx:.1}" y="{ly:.1}" text-anchor="end" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">Torrid</text>"##,
+        r##"<text x="{rx:.1}" y="{ly:.1}" text-anchor="end" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">{hi}</text>"##,
         rx = bx + bar_w,
         fs = 9.0 * scale,
     )

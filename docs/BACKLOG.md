@@ -707,17 +707,21 @@ note.
   lives in `web/src/layers.ts` (pure, unit-tested); `LAYERS` there must stay in
   sync with `LAYER_STYLE` in `crates/mapgen-render/src/style/ornate_antique.rs`.
   Overlays shipped: **political territory** (per-cell nation tint) and
-  **temperature** (whole-map cold→hot thermal ramp, normalized per-world, with a
-  `#thermal`-gradient legend keyed off the same `on-climate` class). The
-  temperature layer established the **scalar-choropleth + legend** pattern
-  (`thermal_color` ramp, `temp_range`, `render_climate_legend`) the remaining
-  data overlays below can clone.
+  **temperature**, **elevation/relief**, and **precipitation** scalar
+  choropleths, each with a per-world-normalized gradient legend keyed off its
+  own `on-NAME` class. These established the reusable **scalar-choropleth +
+  legend** substrate in `ornate_antique.rs` (`fill_cells`, the `ramp` over a
+  `Stops` table, `field_range`, `relief_color`, `render_overlay_legend` + the
+  `#thermal`/`#hypso`/`#precip` gradient defs) that the remaining data overlays
+  below can clone in well under ½ d each. Six presets ship: Antique, Political,
+  Physical, Climate, Relief, Rainfall.
 - **What this unlocks — data overlays** (each is the same `on-NAME` mechanism
-  over a per-cell field the pipeline already computes, so most are <½ d each):
-  - **Climate**: temperature choropleth — DONE (2026-05-25). Still open:
-    precipitation (arid→wet), Köppen-zone bands — both already computed.
-  - **Relief / hypsometric**: elevation tint + bathymetry; drainage **basins**
-    coloured by outlet (pairs with the deferred drainage-divide viz).
+  over a per-cell field the pipeline already computes):
+  - **Climate**: temperature + precipitation choropleths — DONE (2026-05-25).
+    Still open: Köppen-zone bands (categorical, already computed).
+  - **Relief / hypsometric**: elevation tint + bathymetry — DONE (2026-05-25).
+    Still open: drainage **basins** coloured by outlet (pairs with the deferred
+    drainage-divide viz).
   - **Soil / fertility**: the USDA soil orders as an agronomic overlay → feeds
     a future population/agriculture layer.
   - **Cultural**: culture regions and (when religions land) faith spread —
@@ -727,22 +731,23 @@ note.
   - **Tectonic / hazard**: plate boundaries, volcano/quake risk, wind &
     upwelling flow arrows.
 - **What this unlocks — composite usages:**
-  - **Layer presets / "lenses"**: one-click bundles — Physical, Political,
-    Climate, Cultural — instead of toggling individually.
+  - **Layer presets / "lenses"**: one-click bundles — DONE (2026-05-25):
+    Antique / Political / Physical / Climate / Relief / Rainfall. Open: a
+    Cultural lens once a culture overlay lands.
   - **Thematic atlas export**: render one world under N preset sets → a multi-
     page world bible (this is exactly the `mapgen atlas` item below, now trivial
-    to express).
+    to express — the presets *are* the page list).
   - **Animated political history**: time-slider × political overlay already
     reads cleanly; extend to a play/scrub GIF/film of territory shifting.
   - **Per-layer SVG export** (just rivers, just labels) for external compositing;
     **GM vs player** layer sets; **opacity sliders** and **legends** per overlay;
     **hover tooltips** (each layer is a hit-testable group).
-- **Trigger for next slice.** Either (a) **relief / precipitation** — clone the
-  temperature choropleth+legend over `terrain.elevation` / `climate.precipitation`
-  (a hypsometric green→brown→white ramp, a parched-tan→teal ramp) — or (b) **layer
-  presets / lenses**: named toggle bundles (Physical, Political, Climate) wired in
-  `layers.ts` + the panel, since the clean "climate lens" view (land/forests/ocean
-  off) already demonstrates the payoff.
+- **Trigger for next slice.** Highest-leverage remaining: (a) **thematic atlas
+  export** (`mapgen atlas` — render the six presets to a single shareable
+  HTML/PDF; the payoff packaging), (b) a **soil or cultural** overlay (clone the
+  choropleth substrate), or (c) wire the active layer state into the frontend's
+  **PNG/SVG export** so a chosen lens can be downloaded (export currently emits
+  the default state).
 - **Origin.** "Implement overlays to toggle components on/off" (2026-05-25).
 
 ### Alternative render styles

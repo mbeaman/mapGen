@@ -16,6 +16,8 @@ export interface Layer {
 export const LAYERS: Layer[] = [
   { name: "political", label: "Political territory", overlay: true },
   { name: "climate", label: "Temperature", overlay: true },
+  { name: "relief", label: "Elevation", overlay: true },
+  { name: "precip", label: "Rainfall", overlay: true },
   { name: "labels", label: "Labels", overlay: false },
   { name: "settlements", label: "Settlements", overlay: false },
   { name: "sacred", label: "Sacred sites", overlay: false },
@@ -55,8 +57,10 @@ export const PRESETS: Preset[] = [
   },
   // Natural features only — no human geography.
   { name: "physical", label: "Physical", enabled: ["land", "ocean", "coastline", "rivers", "mountains", "forests", "labels"] },
-  // The thermal lens: temperature over a stripped base (sea shows pure thermal).
+  // Thematic lenses: one data overlay over a stripped base (sea shows the tint).
   { name: "climate", label: "Climate", enabled: ["coastline", "rivers", "labels", "climate"] },
+  { name: "relief", label: "Relief", enabled: ["coastline", "rivers", "mountains", "labels", "relief"] },
+  { name: "rainfall", label: "Rainfall", enabled: ["coastline", "rivers", "labels", "precip"] },
 ];
 
 /// The enabled set for a preset, as a fresh mutable `Set`.
