@@ -695,6 +695,48 @@ note.
 
 ## Render
 
+### Toggleable map layers + data overlays — foundation DONE (2026-05-25)
+
+- **Shipped.** The ornate render emits every component as a
+  `<g class="layer-NAME">` group plus a `<style>` block keyed off root-`<svg>`
+  classes: `off-NAME` hides a feature, `on-NAME` reveals a data overlay.
+  Toggling is pure CSS on the root element — instant, no re-render, and it
+  survives restyle / drill-in / year-scrub SVG swaps. Default rasterization is
+  byte-stable (overlays hidden via a `display="none"` attribute resvg honours),
+  so the visual-regression and refine goldens are unaffected. Frontend logic
+  lives in `web/src/layers.ts` (pure, unit-tested); `LAYERS` there must stay in
+  sync with `LAYER_STYLE` in `crates/mapgen-render/src/style/ornate_antique.rs`.
+  First overlay shipped: **political territory** (per-cell nation tint).
+- **What this unlocks — data overlays** (each is the same `on-NAME` mechanism
+  over a per-cell field the pipeline already computes, so most are <½ d each):
+  - **Climate**: temperature choropleth (cold→hot), precipitation (arid→wet),
+    Köppen-zone bands — the realism foundation computes all three.
+  - **Relief / hypsometric**: elevation tint + bathymetry; drainage **basins**
+    coloured by outlet (pairs with the deferred drainage-divide viz).
+  - **Soil / fertility**: the USDA soil orders as an agronomic overlay → feeds
+    a future population/agriculture layer.
+  - **Cultural**: culture regions and (when religions land) faith spread —
+    reuses the `cultures` style's per-cell assignment as an overlay tint.
+  - **Economy** (needs the resources/economy item): resource deposits, trade-
+    route intensity, population density heatmap.
+  - **Tectonic / hazard**: plate boundaries, volcano/quake risk, wind &
+    upwelling flow arrows.
+- **What this unlocks — composite usages:**
+  - **Layer presets / "lenses"**: one-click bundles — Physical, Political,
+    Climate, Cultural — instead of toggling individually.
+  - **Thematic atlas export**: render one world under N preset sets → a multi-
+    page world bible (this is exactly the `mapgen atlas` item below, now trivial
+    to express).
+  - **Animated political history**: time-slider × political overlay already
+    reads cleanly; extend to a play/scrub GIF/film of territory shifting.
+  - **Per-layer SVG export** (just rivers, just labels) for external compositing;
+    **GM vs player** layer sets; **opacity sliders** and **legends** per overlay;
+    **hover tooltips** (each layer is a hit-testable group).
+- **Trigger for next slice.** Pick the highest-value overlay (climate or relief
+  are cheapest and most striking) and add it as a second `on-NAME` layer +
+  `layers.ts` entry + a legend. Then layer presets.
+- **Origin.** "Implement overlays to toggle components on/off" (2026-05-25).
+
 ### Alternative render styles
 
 - **Why deferred.** MVP ships only `ornate_antique` (and `greyscale` /
