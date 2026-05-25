@@ -62,7 +62,11 @@ use crate::{
 ///   plus per-river `River::strahler` (mouth order) and `River::regime` (seasonal
 ///   flow class). Both goldens re-anchor for the `schema_version` byte and the new
 ///   hydrology arrays; `seed42_full` additionally for the per-river fields.
-pub const SCHEMA_VERSION: u32 = 15;
+/// * v16 — time-slider: `HistoryData::border_changes` records each cell that
+///   changed hands in a won war, so `control_at_year` can reconstruct the map at
+///   any past year. Both goldens re-anchor for the `schema_version` byte;
+///   `seed42_full` additionally for the recorded changes (phase2 has no history).
+pub const SCHEMA_VERSION: u32 = 16;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -106,6 +110,35 @@ pub struct WorldData {
     /// event graph after the sim. `skip`-elided when empty.
     #[serde(default, skip_serializing_if = "crate::history::HistoryData::is_empty")]
     pub history: crate::history::HistoryData,
+}
+
+impl WorldData {
+    /// Reconstruct the per-cell controlling polity as it was at the end of
+    /// `year` (the time-slider). `society.control` holds the *present* state;
+    /// this walks it backward by undoing every recorded `border_change` with a
+    /// later year — in reverse insertion order, so a cell that changed hands
+    /// several times is restored correctly. With no recorded history it returns
+    /// the present control unchanged.
+    pub fn control_at_year(&self, year: i32) -> Vec<Option<u32>> {
+        let mut control = self.society.control.clone();
+        for ch in self.history.border_changes.iter().rev() {
+            if ch.year > year {
+                if let Some(slot) = control.get_mut(ch.cell as usize) {
+                    *slot = ch.from;
+                }
+            }
+        }
+        control
+    }
+
+    /// Inclusive `(first, last)` year span of recorded territorial change, or
+    /// `None` if no borders ever moved. Drives the time-slider's range.
+    pub fn border_change_year_span(&self) -> Option<(i32, i32)> {
+        let years = self.history.border_changes.iter().map(|c| c.year);
+        let first = years.clone().min()?;
+        let last = self.history.border_changes.iter().map(|c| c.year).max()?;
+        Some((first, last))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -360,6 +393,33 @@ pub struct ReligionsData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_at_year_reconstructs_past_borders() {
+        use crate::history::BorderChange;
+        let mut w = WorldData::default();
+        // Present: cell 0 owned by polity 2, having passed 0 → 1 → 2.
+        w.society.control = vec![Some(2)];
+        w.history.border_changes = vec![
+            BorderChange {
+                year: 10,
+                cell: 0,
+                from: Some(0),
+                to: Some(1),
+            },
+            BorderChange {
+                year: 20,
+                cell: 0,
+                from: Some(1),
+                to: Some(2),
+            },
+        ];
+        assert_eq!(w.control_at_year(100), vec![Some(2)], "future = present");
+        assert_eq!(w.control_at_year(25), vec![Some(2)], "after both changes");
+        assert_eq!(w.control_at_year(15), vec![Some(1)], "between the two");
+        assert_eq!(w.control_at_year(5), vec![Some(0)], "before any change");
+        assert_eq!(w.border_change_year_span(), Some((10, 20)));
+    }
 
     #[test]
     fn pre_v3_worlds_deserialize_with_empty_cultures() {

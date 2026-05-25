@@ -103,6 +103,9 @@ pub struct SimState {
     /// its parent faith is a genuine *war of religion* and cites the schism as its
     /// cause — distinct from an ordinary border war between unrelated faiths.
     pub schism_parent: Vec<(u16, u16, EventId)>,
+    /// Territorial changes recorded chronologically as wars are won (the
+    /// time-slider). Moved into `world.history.border_changes` after the sim.
+    pub border_changes: Vec<mapgen_core::history::BorderChange>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -206,6 +209,7 @@ impl SimState {
             pending_prophecies: Vec::new(),
             dissolved: vec![false; n_pol],
             schism_parent: Vec::new(),
+            border_changes: Vec::new(),
         }
     }
 }
@@ -337,8 +341,11 @@ pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
     // major-event reel isn't dominated by one rivalry's serial battles.
     refine_salience(world);
 
-    // Weave the (refined) causal event graph into narrative arcs + mythic ages.
+    // Weave the (refined) causal event graph into narrative arcs + mythic ages
+    // (this rebuilds `world.history`), then attach the territorial timeline the
+    // sim accumulated so the map can be reconstructed at any past year.
     world.history = extract::build(world);
+    world.history.border_changes = std::mem::take(&mut state.border_changes);
 }
 
 /// Salience multiplier applied per *prior* verbatim recurrence of an event's

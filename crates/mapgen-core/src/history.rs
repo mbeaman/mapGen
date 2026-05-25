@@ -14,6 +14,22 @@ pub struct HistoryData {
     pub ages: Vec<MythicAge>,
     /// Dramatic threads woven from causally-linked, salient events.
     pub arcs: Vec<NarrativeArc>,
+    /// Chronological territorial changes — each cell that changed hands in a won
+    /// war (the time-slider). Lets `society.control` be reconstructed at any past
+    /// year via [`crate::WorldData::control_at_year`]. Empty if no conquests
+    /// occurred or on pre-time-slider worlds.
+    #[serde(default)]
+    pub border_changes: Vec<BorderChange>,
+}
+
+/// One territorial change recorded during the history sim: in `year`, `cell`
+/// passed from polity `from` to polity `to`. Appended chronologically.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct BorderChange {
+    pub year: i32,
+    pub cell: u32,
+    pub from: Option<u32>,
+    pub to: Option<u32>,
 }
 
 impl HistoryData {

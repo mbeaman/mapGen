@@ -317,7 +317,14 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     // A more decisive victory seizes more land (4..=8 border holdings, vs. the
     // old fixed 6); `moved` is the real count, capped by the loser's frontier.
     let take = 4 + (4.0 * dec).round() as usize;
-    let moved = transfer_border_cells(ctx.world, w_pid, l_pid, take);
+    let moved = transfer_border_cells(
+        ctx.world,
+        w_pid,
+        l_pid,
+        take,
+        year,
+        &mut ctx.state.border_changes,
+    );
     if moved > 0 {
         let siege_line = match ctx.rng.next_u32() % 3 {
             0 => format!("{w_name} wrested {moved} settlements from {l_name}."),
@@ -373,7 +380,14 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
 /// Reassign up to `k` of the loser's cells that border the winner's territory
 /// to the winner. Returns how many moved. Deterministic (ascending cell index);
 /// total controlled-cell count is unchanged (cells change owner, none vanish).
-fn transfer_border_cells(world: &mut WorldData, winner: usize, loser: usize, k: usize) -> usize {
+fn transfer_border_cells(
+    world: &mut WorldData,
+    winner: usize,
+    loser: usize,
+    k: usize,
+    year: i32,
+    changes: &mut Vec<mapgen_core::history::BorderChange>,
+) -> usize {
     let n = world.mesh.cell_count();
     let frontier: Vec<usize> = (0..n)
         .filter(|&c| world.society.control.get(c).copied().flatten() == Some(loser as u32))
@@ -389,6 +403,14 @@ fn transfer_border_cells(world: &mut WorldData, winner: usize, loser: usize, k: 
         .take(k)
         .collect();
     for c in &frontier {
+        // Record the change (chronologically) before applying it, so the map can
+        // be reconstructed at any past year.
+        changes.push(mapgen_core::history::BorderChange {
+            year,
+            cell: *c as u32,
+            from: Some(loser as u32),
+            to: Some(winner as u32),
+        });
         world.society.control[*c] = Some(winner as u32);
     }
     frontier.len()
@@ -420,8 +442,13 @@ mod tests {
             },
         ];
         w.society.control = vec![Some(0), Some(0), Some(1), Some(1)];
-        let moved = transfer_border_cells(&mut w, 0, 1, 6);
+        let mut changes = Vec::new();
+        let moved = transfer_border_cells(&mut w, 0, 1, 6, 0, &mut changes);
         assert_eq!(moved, 0, "no adjacency ⇒ no frontier, and no panic");
+        assert!(
+            changes.is_empty(),
+            "nothing transferred ⇒ no recorded changes"
+        );
         assert_eq!(
             w.society.control,
             vec![Some(0), Some(0), Some(1), Some(1)],
