@@ -189,6 +189,33 @@ note.
   culture/era variants multiply it.
 - **Origin.** This session, 2026-05-24, multi-scale request.
 
+### Scale-dependent render fidelity (per-feature level-of-detail)
+
+- **Origin.** User request, 2026-05-25: "zooming in should also change the
+  fidelity level of the details — those trees should become more detailed
+  forests."
+- **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
+  tree glyphs, finer rivers/coastline), but every feature still renders with the
+  same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
+  small world-scale tree marks, not a richer forest. At a closer scale, features
+  should gain *detail*, not merely count.
+- **What it should become (examples).**
+  - Forests: world = scatter of small tree marks → regional = larger individual
+    trees + canopy texture → local = tree clusters with trunks/shadows/varied
+    species marks.
+  - Mountains: scaled triangles → ridgelines / hachures / contour-like strokes.
+  - Coastlines: finer crenellation / roughr detail budget that grows with zoom.
+  - Settlements: single glyph → town plan / street hint at urban scale.
+- **What it needs.** A per-level render "stylesheet" keyed off the sector level /
+  `mesh.region` size (the renderer already knows its viewport via
+  `MeshData::view_rect`): choose feature glyph variants + detail budgets by scale.
+  This is the *detail-increasing* complement to ADR 0001 Q3's generalisation
+  (which *decreases* detail when zoomed out); the two share the per-level
+  stylesheet mechanism. Pairs naturally with the "per-level cartographic
+  generalisation" follow-up listed under the navigation item below.
+- **Trigger.** Now that drill-in works (Phase 7), this is the most visible next
+  uplevel for the atlas. Largely a `mapgen-render` change; no schema impact.
+
 ### Seamless inter-scale navigation (research brief)
 
 - **Research pass DONE (6.3, 2026-05-24)** → **`docs/adr/0001-multiscale-navigation.md`**.
