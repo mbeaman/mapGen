@@ -105,6 +105,50 @@ proptest! {
         prop_assert_eq!(world.climate.biome.len(), world.mesh.cell_count());
     }
 
+    /// Cross-cutting well-formedness of the *full* world (geography → history)
+    /// across a wide seed sweep. The fixed-seed `history_spec` checks these on
+    /// a handful of seeds (1,2,3,7,42); this widens to catch the long tail the
+    /// curated seeds miss — every event id contiguous, salience bounded, causes
+    /// acyclic, entity references resolvable, biome ids valid, control sane.
+    #[test]
+    fn full_world_invariants_hold(seed in 1u64..200) {
+        let world = generate_full(proptest_params(seed));
+
+        for (i, e) in world.events.events.iter().enumerate() {
+            prop_assert_eq!(e.id.0 as usize, i, "seed {}: event id != index", seed);
+            prop_assert!(
+                e.salience.is_finite() && (0.0..=1.0).contains(&e.salience),
+                "seed {}: event {} salience {} out of [0,1]", seed, i, e.salience
+            );
+            for c in &e.cause_ids {
+                prop_assert!(
+                    (c.0 as usize) < i,
+                    "seed {}: event {} cites non-earlier cause {} (cycle/forward ref)", seed, i, c.0
+                );
+            }
+            for a in e.actors.iter().chain(e.patients.iter()) {
+                prop_assert!(
+                    world.entities.by_id.contains_key(a),
+                    "seed {}: event {} references unknown entity {:?}", seed, i, a
+                );
+            }
+        }
+        // Biome ids stay within the 15-value palette (0..=14).
+        for (i, &b) in world.climate.biome.iter().enumerate() {
+            prop_assert!(b <= 14, "seed {}: cell {} biome id {} out of range", seed, i, b);
+        }
+        // Every controlled cell points at a real polity.
+        let n_pol = world.society.nations.len();
+        for (i, c) in world.society.control.iter().enumerate() {
+            if let Some(pid) = c {
+                prop_assert!(
+                    (*pid as usize) < n_pol,
+                    "seed {}: cell {} control {} >= {} nations", seed, i, pid, n_pol
+                );
+            }
+        }
+    }
+
     /// `flow_directions` returns a per-cell downhill pointer. Every
     /// `Some(j)` entry at cell `i` must satisfy `elev[j] < elev[i]`. A
     /// violation means either a self-loop or an upstream pointer — both

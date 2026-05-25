@@ -3,7 +3,7 @@
 //! separately and needs `wasm-bindgen-test` infrastructure that lands with
 //! Phase 5.
 
-use mapgen_world::{generate, GenerateParams};
+use mapgen_world::{generate, generate_full, GenerateParams};
 
 fn fixed_params(seed: u64) -> GenerateParams {
     GenerateParams {
@@ -26,6 +26,22 @@ fn same_seed_same_world() {
     assert_eq!(
         a_bytes, b_bytes,
         "two generations with the same seed must produce byte-identical output"
+    );
+}
+
+#[test]
+fn full_world_round_trips_through_json() {
+    // The persistence promise: a world saved to disk and reloaded must be
+    // faithful. Round-trip the *full* world (geography + society + history +
+    // works) and re-serialize — comparing bytes avoids needing PartialEq on the
+    // whole WorldData. Nothing pinned this before.
+    let world = generate_full(fixed_params(42));
+    let json = serde_json::to_vec(&world).expect("serialize");
+    let reloaded: mapgen_core::WorldData = serde_json::from_slice(&json).expect("deserialize");
+    let rejson = serde_json::to_vec(&reloaded).expect("re-serialize");
+    assert_eq!(
+        json, rejson,
+        "world → JSON → world must round-trip identically"
     );
 }
 
