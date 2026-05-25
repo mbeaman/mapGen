@@ -6,7 +6,7 @@ use mapgen_lore::client::LlmClient;
 use mapgen_lore::context::event_closure;
 use mapgen_lore::schema::ChronicleDraft;
 use mapgen_lore::voice::{Register, VoiceCard};
-use mapgen_lore::{narrate, ner, select_focal};
+use mapgen_lore::{narrate, ner, select_focal, Prompt};
 use mapgen_world::{generate_full, GenerateParams};
 
 fn seed42() -> mapgen_core::WorldData {
@@ -23,7 +23,7 @@ fn seed42() -> mapgen_core::WorldData {
 /// A client that always returns the same canned response.
 struct Canned(String);
 impl LlmClient for Canned {
-    fn complete(&self, _system: &str, _user: &str) -> anyhow::Result<String> {
+    fn complete(&self, _prompt: &Prompt) -> anyhow::Result<String> {
         Ok(self.0.clone())
     }
 }
@@ -31,7 +31,7 @@ impl LlmClient for Canned {
 /// A client that always errors (network / auth failure).
 struct Failing;
 impl LlmClient for Failing {
-    fn complete(&self, _system: &str, _user: &str) -> anyhow::Result<String> {
+    fn complete(&self, _prompt: &Prompt) -> anyhow::Result<String> {
         anyhow::bail!("simulated client failure")
     }
 }

@@ -259,9 +259,26 @@ fn main() -> Result<()> {
                 .map(|e| e.summary_canonical.clone())
                 .unwrap_or_default();
 
-            // 5d: offline template narrator (client = None). 5e wires the real
-            // Anthropic client behind the `lore` feature + ANTHROPIC_API_KEY.
-            let work = narrate(&mut world, focal, &card, None)?;
+            // Offline by default. With `--features lore` and a key set, narrate
+            // through Claude; otherwise (no feature, or no key) fall back to the
+            // deterministic template narrator.
+            #[cfg(feature = "lore")]
+            let client = mapgen_lore::AnthropicClient::from_env();
+            #[cfg(feature = "lore")]
+            let narrator: Option<&dyn mapgen_lore::LlmClient> = match &client {
+                Some(c) => {
+                    eprintln!("narrating via Claude ({})", c.model());
+                    Some(c)
+                }
+                None => {
+                    eprintln!("ANTHROPIC_API_KEY not set — narrating offline (template)");
+                    None
+                }
+            };
+            #[cfg(not(feature = "lore"))]
+            let narrator: Option<&dyn mapgen_lore::LlmClient> = None;
+
+            let work = narrate(&mut world, focal, &card, narrator)?;
 
             println!("# {}", work.title);
             println!(

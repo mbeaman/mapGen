@@ -10,6 +10,12 @@ description = "Native developer CLI for mapgen."
 name = "mapgen"
 path = "src/main.rs"
 
+[features]
+# Opt-in real Claude narration: `cargo build -p mapgen-cli --features lore`.
+# Off by default, so `mapgen lore` narrates offline (template) and a stock build
+# pulls in no network deps.
+lore = ["mapgen-lore/lore"]
+
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
 mapgen-world = { path = "../mapgen-world" }

@@ -15,6 +15,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+#[cfg(feature = "lore")]
+pub mod anthropic;
 pub mod bible;
 pub mod client;
 pub mod context;
@@ -24,6 +26,8 @@ pub mod schema;
 pub mod template;
 pub mod voice;
 
+#[cfg(feature = "lore")]
+pub use anthropic::AnthropicClient;
 pub use client::LlmClient;
 pub use prompt::Prompt;
 pub use schema::{ChronicleDraft, SCHEMA_HINT};
@@ -134,18 +138,18 @@ fn draft_with_client(
     client: &dyn LlmClient,
 ) -> anyhow::Result<ChronicleDraft> {
     let prompt = prompt::build(world, focal, voice);
-    let draft = ChronicleDraft::from_response(&client.complete(&prompt.system, &prompt.user)?)?;
+    let draft = ChronicleDraft::from_response(&client.complete(&prompt)?)?;
     match ner::validate(&draft, world, slice) {
         Ok(()) => Ok(draft),
         Err(violation) => {
-            let retry_user = format!(
-                "{}\n\n# CORRECTION\nYour previous response was rejected: {violation}. \
+            // Retry once, reporting the violation in the (volatile) focal block.
+            let mut retry_prompt = prompt.clone();
+            retry_prompt.focal.push_str(&format!(
+                "\n\n# CORRECTION\nYour previous response was rejected: {violation}. \
                  Use only names from the WORLD BIBLE / ENTITY CONTEXT and ids from the \
                  SUPPLIED EVENTS.",
-                prompt.user
-            );
-            let retry =
-                ChronicleDraft::from_response(&client.complete(&prompt.system, &retry_user)?)?;
+            ));
+            let retry = ChronicleDraft::from_response(&client.complete(&retry_prompt)?)?;
             ner::validate(&retry, world, slice).map_err(|e| anyhow::anyhow!(e))?;
             Ok(retry)
         }

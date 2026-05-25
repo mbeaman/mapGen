@@ -17,32 +17,43 @@ places, gods, artifacts, or dates. Where the events do not tell you something, \
 write \"[lacuna]\" rather than guessing. Stay in the requested VOICE. Respond with \
 valid JSON exactly per the SCHEMA, and nothing else.";
 
-/// A system/user prompt pair ready for an [`crate::client::LlmClient`].
+/// A narration prompt, split at the prompt-cache boundary: `system` (standing
+/// rules) and `world_bible` are stable per world and marked cacheable by the
+/// real client; `focal` (entity context + events + voice + schema) is volatile
+/// per call.
 #[derive(Clone, Debug)]
 pub struct Prompt {
     pub system: String,
-    pub user: String,
+    pub world_bible: String,
+    pub focal: String,
+}
+
+impl Prompt {
+    /// The full user-message text (bible + focal), for clients/tests that don't
+    /// distinguish the cache boundary.
+    pub fn user_text(&self) -> String {
+        format!("{}\n{}", self.world_bible, self.focal)
+    }
 }
 
 /// Build the prompt to narrate `focal` (and its causal lead-up) in `voice`.
 pub fn build(world: &WorldData, focal: EventId, voice: &VoiceCard) -> Prompt {
     let slice = event_closure(world, focal);
 
-    let mut user = String::new();
-    user.push_str(&world_bible(world));
-    user.push_str("\n# ENTITY CONTEXT\n");
-    user.push_str(&entity_context(world, &slice));
-    user.push_str("\n# SUPPLIED EVENTS\n");
-    user.push_str(&event_slice_text(world, &slice));
-    user.push_str(&format!(
+    let mut focal_block = String::from("# ENTITY CONTEXT\n");
+    focal_block.push_str(&entity_context(world, &slice));
+    focal_block.push_str("\n# SUPPLIED EVENTS\n");
+    focal_block.push_str(&event_slice_text(world, &slice));
+    focal_block.push_str(&format!(
         "\n# VOICE\nWrite as {}. {}\n",
         voice.author,
         voice.register.style_hint()
     ));
-    user.push_str(&format!("\n# SCHEMA\n{SCHEMA_HINT}\n"));
+    focal_block.push_str(&format!("\n# SCHEMA\n{SCHEMA_HINT}\n"));
 
     Prompt {
         system: SYSTEM_RULES.to_string(),
-        user,
+        world_bible: world_bible(world),
+        focal: focal_block,
     }
 }

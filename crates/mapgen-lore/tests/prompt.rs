@@ -33,6 +33,7 @@ fn prompt_includes_bible_events_voice_and_schema() {
     let focal = linked_event(&w).id;
     let voice = VoiceCard::for_register(Register::MonasticChronicle);
     let p = prompt::build(&w, focal, &voice);
+    let user = p.user_text();
 
     for section in [
         "# WORLD BIBLE",
@@ -41,18 +42,18 @@ fn prompt_includes_bible_events_voice_and_schema() {
         "# VOICE",
         "# SCHEMA",
     ] {
-        assert!(p.user.contains(section), "prompt missing section {section}");
+        assert!(user.contains(section), "prompt missing section {section}");
     }
-    // The bible names a real realm (a proper noun the chronicler may use).
+    // The bible (the cacheable block) names a real realm.
     let nation = &w.society.nations[0].name;
     assert!(
-        p.user.contains(nation.as_str()),
+        p.world_bible.contains(nation.as_str()),
         "world bible should name realm {nation}"
     );
     // The focal event itself is in the supplied slice.
-    assert!(p.user.contains(&format!("[{}] year", focal.0)));
+    assert!(p.focal.contains(&format!("[{}] year", focal.0)));
     // The voice's register hint and the system rules are present.
-    assert!(p.user.contains("monastic annal"));
+    assert!(p.focal.contains("monastic annal"));
     assert!(p.system.contains("in-world chronicler"));
 }
 

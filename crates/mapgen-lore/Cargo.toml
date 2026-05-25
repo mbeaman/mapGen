@@ -14,7 +14,7 @@ path = "src/lib.rs"
 # Opt-in: enables the real Anthropic HTTP client (Phase 5e). OFF by default, so a
 # stock build pulls in no network deps and cannot make a paid API call. The
 # offline template narrator and the whole grounding pipeline compile regardless.
-lore = []
+lore = ["dep:ureq"]
 
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
@@ -25,6 +25,9 @@ serde_json = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 anyhow = { workspace = true }
 thiserror = { workspace = true }
+# Blocking HTTP for the Anthropic client; only compiled with the `lore` feature.
+# `json` brings `send_json` / `into_json` (rustls TLS is on by default).
+ureq = { version = "2", optional = true, features = ["json"] }
 
 # Generate real worlds in tests (no cycle: mapgen-world doesn't depend on lore).
 [dev-dependencies]
