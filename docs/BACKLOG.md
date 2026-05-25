@@ -649,8 +649,9 @@ note.
 
 ### Save-game version migration
 
-- **Why deferred.** Schema version field is set (currently v2); no
-  migrations yet. Old worlds become un-loadable on schema bumps.
+- **Why deferred.** Schema version field is set (currently **v13**); no
+  migrations yet. Schema has bumped freely (v2→v13) on the accepted policy that
+  old `.json.gz` worlds become un-loadable across a breaking change.
 - **Trigger for revival.** First time we want to keep an old world
   across a breaking schema change.
 - **Cost.** Half a day to add migration runner; cost-per-migration
@@ -686,14 +687,6 @@ note.
   subcommand covering: default values, every flag explicitly set,
   malformed values, and `--help` rendering.
 - **Origin.** Pre-Phase-3a hygiene audit, 2026-05-17.
-
-### Native sidecar `/narrate` endpoint
-
-- **Why deferred.** Part of Phase 5 (Claude integration). CLI works
-  without it for now.
-- **Trigger for revival.** Web frontend exists and needs to call Claude.
-- **Cost.** A day. Axum server wrapping `mapgen-lore::narrate`.
-- **Origin.** ARCHITECTURE.md §7.
 
 ### Repository documentation top-tier polish pass
 
