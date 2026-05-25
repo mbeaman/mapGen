@@ -106,12 +106,17 @@ pub fn render(world: &WorldData) -> String {
     )
     .unwrap();
 
+    // Scale-dependent render fidelity (Phase 7 LOD): how far zoomed in we are
+    // vs. the whole world — 1.0 at level 0, 2/4/8… for refined sectors. Feature
+    // glyphs gain detail when zoomed in; at 1.0 the world renders byte-identical.
+    let detail = (mesh.width / w).max(1.0);
+
     render_land_fill(world, &mut out);
     render_ocean_hatching(world, &mut out);
     render_coastline_ripples(world, &mut out);
     render_rivers(world, &mut out);
-    render_mountains(world, &mut out);
-    render_forest_scatter(world, &mut out);
+    render_mountains(world, &mut out, detail);
+    render_forest_scatter(world, &mut out, detail);
     render_roads(world, &mut out);
     render_polity_borders(world, &mut out);
     render_settlements(world, &mut out);
@@ -442,10 +447,11 @@ fn render_rivers(world: &WorldData, out: &mut String) {
 /// Tolkien triangular mountains on ALPINE / SNOW cells. Size scales
 /// with elevation. Placed at the cell's site; wobble x position by a
 /// per-cell hash for non-grid look.
-fn render_mountains(world: &WorldData, out: &mut String) {
+fn render_mountains(world: &WorldData, out: &mut String, detail: f32) {
     let mesh = &world.mesh;
     let biomes = &world.climate.biome;
     let elev = &world.terrain.elevation;
+    let rich = detail >= 2.0;
 
     out.push_str(r##"<g class="mountains" fill="#3a2f25" stroke="#1a140e" stroke-width="0.6" stroke-linejoin="round" fill-opacity="0.92">"##);
     for i in 0..mesh.cell_count() {
@@ -483,6 +489,27 @@ fn render_mountains(world: &WorldData, out: &mut String) {
             peak_y + sh,
         )
         .unwrap();
+        // Zoomed in (Phase 7 LOD): a subordinate peak beside the main one so a
+        // cell reads as a ridge rather than a lone sticker. Drawn before the
+        // main triangle so the main peak overlaps it.
+        if rich {
+            let s2 = base * 0.62;
+            let dir = if hash_offset(i as u32, 6) < 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
+            let c2x = cx + dir * base * (0.45 + hash_offset(i as u32, 5).abs() * 0.3);
+            let p2x = c2x + hash_offset(i as u32, 7) * s2 * 0.2;
+            let p2y = cy - height * 0.4;
+            write!(
+                out,
+                r##"<polygon points="{:.1},{by:.1} {:.1},{by:.1} {p2x:.1},{p2y:.1}"/>"##,
+                c2x - s2 * 0.5,
+                c2x + s2 * 0.5,
+            )
+            .unwrap();
+        }
         write!(
             out,
             r##"<polygon points="{bx_l:.1},{by:.1} {bx_r:.1},{by:.1} {peak_x:.1},{peak_y:.1}"/>"##
@@ -503,44 +530,103 @@ fn render_mountains(world: &WorldData, out: &mut String) {
     out.push_str("</g>");
 }
 
-/// Small triangular tree tufts on forest-class biomes. Multiple per
-/// cell, positioned deterministically along the cell polygon's
-/// half-edges.
-fn render_forest_scatter(world: &WorldData, out: &mut String) {
+/// Tree tufts on forest-class biomes. At world scale (`detail == 1`) each tree
+/// is a single small triangle — unchanged, so the level-0 render stays
+/// byte-identical. Zoomed into a refined sector (`detail >= 2`), the canopy
+/// densifies and each tree gains a trunk + layered crown (conifers as stacked
+/// tiers, broadleaf as a lobed canopy), so a forest reads as a *detailed* wood
+/// rather than a denser sprinkle of the same marks (Phase 7 LOD).
+fn render_forest_scatter(world: &WorldData, out: &mut String, detail: f32) {
     let mesh = &world.mesh;
     let biomes = &world.climate.biome;
+    let rich = detail >= 2.0;
 
     out.push_str(r##"<g fill="#2d4a2b" stroke="#1a2e19" stroke-width="0.3" fill-opacity="0.85">"##);
     for i in 0..mesh.cell_count() {
         let biome = biomes.get(i).copied().unwrap_or(0);
-        let (n_trees, color) = match biome {
-            TEMPERATE_FOREST => (3, "#2d4a2b"),
-            TEMPERATE_RAINFOREST => (4, "#1f3a1d"),
-            TAIGA => (2, "#1e3a2c"),
-            TROPICAL_RAINFOREST => (4, "#1c4422"),
+        let (base_trees, color, conifer) = match biome {
+            TEMPERATE_FOREST => (3, "#2d4a2b", false),
+            TEMPERATE_RAINFOREST => (4, "#1f3a1d", true),
+            TAIGA => (2, "#1e3a2c", true),
+            TROPICAL_RAINFOREST => (4, "#1c4422", false),
             _ => continue,
+        };
+        // Zoomed in, fill the now-larger cell with a fuller canopy. Capped so
+        // the SVG stays sane at deep zoom.
+        let n_trees = if rich {
+            (base_trees as f32 * 1.6).round().min(8.0) as i32
+        } else {
+            base_trees
         };
         let site = mesh.sites[i];
         for t in 0..n_trees {
-            // Per-tree offset from cell site.
             let ox = hash_offset(i as u32, (10 + t) as u32) * 14.0;
             let oy = hash_offset(i as u32, (20 + t) as u32) * 10.0;
             let cx = site[0] + ox;
             let cy = site[1] + oy;
             let size = 2.5 + hash_offset(i as u32, (30 + t) as u32).abs() * 1.5;
-            // Tree = small triangle.
-            let bx_l = cx - size;
-            let bx_r = cx + size;
-            let by = cy + size * 0.8;
-            let peak_y = cy - size * 1.5;
+            if rich {
+                rich_tree(out, cx, cy, size, color, conifer);
+            } else {
+                // World scale: the original single triangle (unchanged bytes).
+                let bx_l = cx - size;
+                let bx_r = cx + size;
+                let by = cy + size * 0.8;
+                let peak_y = cy - size * 1.5;
+                write!(
+                    out,
+                    r##"<polygon points="{bx_l:.1},{by:.1} {bx_r:.1},{by:.1} {cx:.1},{peak_y:.1}" fill="{color}"/>"##
+                )
+                .unwrap();
+            }
+        }
+    }
+    out.push_str("</g>");
+}
+
+/// A single detailed tree for the zoomed-in forest canopy: a brown trunk plus a
+/// layered crown — three stacked tiers for a conifer, three overlapping lobes
+/// for a broadleaf. Coordinates are in world units (the viewBox scales them up).
+fn rich_tree(out: &mut String, cx: f32, cy: f32, size: f32, color: &str, conifer: bool) {
+    let tw = (size * 0.22).max(0.6);
+    let th = size * 0.9;
+    write!(
+        out,
+        r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#5a4326" stroke="none"/>"##,
+        cx - tw * 0.5,
+        cy + size * 0.45,
+        tw,
+        th,
+    )
+    .unwrap();
+    if conifer {
+        // Stacked triangles, each tier smaller and higher than the last.
+        for k in 0..3 {
+            let s = size * (1.0 - k as f32 * 0.26);
+            let tier_y = cy + size * 0.3 - size * 0.6 * k as f32;
+            let bx_l = cx - s;
+            let bx_r = cx + s;
+            let peak_y = tier_y - s * 1.25;
             write!(
                 out,
-                r##"<polygon points="{bx_l:.1},{by:.1} {bx_r:.1},{by:.1} {cx:.1},{peak_y:.1}" fill="{color}"/>"##
+                r##"<polygon points="{bx_l:.1},{tier_y:.1} {bx_r:.1},{tier_y:.1} {cx:.1},{peak_y:.1}" fill="{color}"/>"##
+            )
+            .unwrap();
+        }
+    } else {
+        // Broadleaf: a lobed crown from three overlapping circles.
+        let cap_y = cy - size * 0.2;
+        for (dx, dy, r) in [(0.0, -0.35, 1.15), (-0.7, 0.15, 0.78), (0.7, 0.15, 0.78)] {
+            write!(
+                out,
+                r##"<circle cx="{:.1}" cy="{:.1}" r="{:.1}" fill="{color}"/>"##,
+                cx + dx * size,
+                cap_y + dy * size,
+                r * size,
             )
             .unwrap();
         }
     }
-    out.push_str("</g>");
 }
 
 /// Roads, drawn per-segment with stroke width scaled by how many roads
