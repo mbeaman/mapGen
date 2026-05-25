@@ -96,8 +96,9 @@ political map the renderer reads. Inspect via `mapgen events`.
   - Ages: classified relative to the timeline's average — motifs vary across
     seeds and "Golden" is reachable.
   - Hardening: `transfer_border_cells` panic-fix; `extract.rs` + closure unit tests.
-  - **Deferred polish** (in `docs/tuning_log.md` § 4k): hero-saga sentence
-    variety, megabeast 100% kill rate, finer age epithets.
+  - Polish (follow-up commit `55b48b5`): hero-event phrasing variety; ~30% of
+    beasts are unslayable "great wyrms" (standing menaces, not a 100% kill rate);
+    per-motif age epithets (a grim seed reads "Founding / Shadow / Ruin / Woe").
 
 Phase 3e (spec + polish), the web-frontend MVP, and the multi-scale BACKLOG
 track are all complete. Deferred render item: a hand-authored
