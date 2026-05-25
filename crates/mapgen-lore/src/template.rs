@@ -32,16 +32,35 @@ pub fn template_draft(focal: &Event, slice: &[&Event], voice: &VoiceCard) -> Chr
 }
 
 fn title_for(reg: Register, focal: &Event) -> String {
-    // The summary (sans trailing period) names only lexicon entities, so the
-    // title stays grounded.
-    let subject = focal.summary_canonical.trim_end_matches('.');
-    match reg {
-        Register::Saga => format!("A Lay of {subject}"),
-        Register::MonasticChronicle => format!("On the matter of {subject}"),
-        Register::Hymn => format!("A Hymn upon {subject}"),
-        Register::CourtlyLetter => format!("Concerning {subject}"),
-        Register::PeasantRumor => format!("What is said of {subject}"),
+    // Title on the event's *subject* (its first proper noun) rather than the
+    // whole summary sentence — "A Lay of Uedihi", not "A Lay of Uedihi crushed
+    // Dav in the field". The subject is a lexicon name, so the title stays
+    // grounded.
+    match (reg, subject_of(&focal.summary_canonical)) {
+        (Register::Saga, Some(s)) => format!("A Lay of {s}"),
+        (Register::Saga, None) => "A Lay of the Age".to_string(),
+        (Register::MonasticChronicle, Some(s)) => format!("The Annal of {s}"),
+        (Register::MonasticChronicle, None) => "An Annal of the Age".to_string(),
+        (Register::Hymn, Some(s)) => format!("A Hymn for {s}"),
+        (Register::Hymn, None) => "A Hymn of the Age".to_string(),
+        (Register::CourtlyLetter, Some(s)) => format!("Concerning {s}"),
+        (Register::CourtlyLetter, None) => "A Dispatch of the Age".to_string(),
+        (Register::PeasantRumor, Some(s)) => format!("What They Say of {s}"),
+        (Register::PeasantRumor, None) => "Talk of the Age".to_string(),
     }
+}
+
+/// The first proper-noun-looking token in a summary (its subject), if any —
+/// skipping sentence-opening common words.
+fn subject_of(summary: &str) -> Option<String> {
+    summary.split_whitespace().find_map(|raw| {
+        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
+        let w = w.strip_suffix("'s").unwrap_or(w);
+        let first = w.chars().next()?;
+        let common = matches!(w, "The" | "A" | "An" | "In" | "Famine");
+        (first.is_uppercase() && w.chars().all(|c| c.is_alphabetic()) && !common)
+            .then(|| w.to_string())
+    })
 }
 
 fn render_body(reg: Register, evs: &[&Event]) -> String {

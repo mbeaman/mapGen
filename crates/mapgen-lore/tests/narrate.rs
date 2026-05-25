@@ -152,3 +152,28 @@ fn ner_accepts_grounded_text_and_rejects_invented_names() {
     };
     assert!(ner::validate(&bad_ref, &w, &slice).is_err());
 }
+
+#[test]
+fn ner_accepts_realistic_chronicle_prose() {
+    // A paragraph of ordinary chronicle prose — common words plus two real realm
+    // names — must pass; the expanded stoplist exists so this doesn't false-trip.
+    let w = seed42();
+    let focal = select_focal(&w, "auto-major-war").unwrap();
+    let slice = event_closure(&w, focal);
+    let (a, b) = (&w.society.nations[0].name, &w.society.nations[1].name);
+    let body = format!(
+        "In that age a great war arose. {a} marched against {b}, and the mighty host \
+         laid siege before the gates. After a long and bitter struggle the realm of \
+         {b} was broken. Thus the people long remembered those dark years."
+    );
+    let draft = ChronicleDraft {
+        title: "An Account".into(),
+        body,
+        references: vec![focal.0],
+        lacunae: vec![],
+    };
+    assert!(
+        ner::validate(&draft, &w, &slice).is_ok(),
+        "realistic chronicle prose should validate against the stoplist + lexicon"
+    );
+}
