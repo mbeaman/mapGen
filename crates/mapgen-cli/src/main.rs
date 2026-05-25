@@ -11,12 +11,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use mapgen_core::WorldData;
 use mapgen_render::style::Style;
-use mapgen_world::{GenerateParams, Pipeline, PipelineStage};
+use mapgen_world::{
+    scale::{refine_sector, RefineParams, Sector},
+    GenerateParams, Pipeline, PipelineStage,
+};
 
 #[derive(Parser)]
 #[command(name = "mapgen", version, about = "Fantasy map generator.")]
@@ -53,6 +56,34 @@ enum Cmd {
         /// progression (greyscale → biomes → cultures).
         #[arg(long, value_name = "STYLE")]
         dump_style: Option<String>,
+    },
+    /// Refine a sub-sector of a seed's world at finer resolution (Phase 7
+    /// multi-scale) and render it. No parent file needed — the base field is
+    /// recomputed from the seed, so a sector is a pure function of
+    /// `(seed, plates, level, sx, sy)`. `(sx, sy)` index the 2^level × 2^level
+    /// quadtree grid at `level` (e.g. level 2 → sx,sy in 0..4).
+    Refine {
+        #[arg(long)]
+        seed: u64,
+        /// Quadtree depth (0 = whole world). Each level is 2× finer per axis.
+        #[arg(long, default_value_t = 2)]
+        level: u32,
+        /// Column in the 2^level grid.
+        #[arg(long, default_value_t = 0)]
+        sx: u32,
+        /// Row in the 2^level grid.
+        #[arg(long, default_value_t = 0)]
+        sy: u32,
+        /// Plate count — must match the world this sector belongs to.
+        #[arg(long, default_value_t = 14)]
+        plates: usize,
+        /// Target cell count inside the sector (finer than the parent world).
+        #[arg(long, default_value_t = 4_000)]
+        cells: usize,
+        #[arg(long, default_value = "ornate_antique")]
+        style: String,
+        #[arg(long, default_value = "maps/sector.svg")]
+        out: PathBuf,
     },
     /// Render a previously generated world to SVG.
     Render {
@@ -174,6 +205,47 @@ fn main() -> Result<()> {
             };
             write_world(&out, &world)?;
             eprintln!("wrote world: {}", out.display());
+        }
+        Cmd::Refine {
+            seed,
+            level,
+            sx,
+            sy,
+            plates,
+            cells,
+            style,
+            out,
+        } => {
+            let sector = Sector { level, sx, sy };
+            if !sector.is_valid() {
+                bail!(
+                    "sector ({sx},{sy}) out of range for level {level} (valid 0..{})",
+                    sector.span()
+                );
+            }
+            // World dims/seed/plates define the shared base field; the parent's
+            // own cell count is irrelevant (plates + noise are position-based).
+            let params = GenerateParams {
+                seed,
+                plate_count: plates,
+                ..Default::default()
+            };
+            let refine = RefineParams {
+                target_cells: cells,
+                ..Default::default()
+            };
+            let world = refine_sector(params, sector, refine);
+            let style: Style = style.parse().map_err(anyhow::Error::msg)?;
+            let svg = mapgen_render::render(&world, style).map_err(anyhow::Error::msg)?;
+            if let Some(parent) = out.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            fs::write(&out, svg).with_context(|| format!("writing {}", out.display()))?;
+            eprintln!(
+                "wrote sector L{level} ({sx},{sy}) [{} cells]: {}",
+                world.mesh.cell_count(),
+                out.display()
+            );
         }
         Cmd::Render { r#in, style, out } => {
             let world = read_world(&r#in)?;
