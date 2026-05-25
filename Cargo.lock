@@ -775,6 +775,7 @@ dependencies = [
  "anyhow",
  "mapgen-core",
  "mapgen-history",
+ "mapgen-world",
  "serde",
  "serde_json",
  "thiserror",

@@ -10,12 +10,16 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+pub mod bible;
 pub mod client;
+pub mod context;
+pub mod prompt;
 pub mod schema;
 pub mod template;
 pub mod voice;
 
 pub use client::LlmClient;
+pub use prompt::Prompt;
 pub use schema::{ChronicleDraft, SCHEMA_HINT};
 pub use voice::{Register, VoiceCard};
 
