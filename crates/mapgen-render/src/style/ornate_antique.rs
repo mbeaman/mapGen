@@ -39,7 +39,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use euclid::default::Point2D;
 use mapgen_core::entities::{Architecture, PantheonPattern, SettlementIcon, SettlementTier};
-use mapgen_core::WorldData;
+use mapgen_core::{fmath, WorldData};
 use roughr::core::{OpSetType, OptionsBuilder};
 use roughr::generator::Generator;
 
@@ -816,17 +816,26 @@ fn render_settlements(world: &WorldData, out: &mut String, detail: f32) {
                 .unwrap();
             }
         } else {
-            if urban {
-                // Town fabric under the landmark glyph. Capitals are larger and
-                // walled; towns are a looser cluster.
-                let (radius, n, walled) = match s.tier {
-                    SettlementTier::Capital => (6.0 + scale * 9.0, 13, true),
-                    _ => (5.0 + scale * 7.0, 6, false),
+            let capital = s.tier == SettlementTier::Capital;
+            if detail >= 8.0 {
+                // Deepest zoom: a full town plan — wall, streets, quarters.
+                let r = if capital {
+                    14.0
+                } else {
+                    8.0 + s.population * 4.0
+                };
+                draw_city_plan(out, site[0], site[1], r, arch, capital, &fill, s.cell);
+            } else if urban {
+                // Mid zoom: a building cluster under the landmark glyph.
+                let (radius, n, walled) = if capital {
+                    (6.0 + scale * 9.0, 13, true)
+                } else {
+                    (5.0 + scale * 7.0, 6, false)
                 };
                 draw_urban_halo(out, site[0], site[1], radius, n, walled, &fill, s.cell);
             }
             draw_glyph(icon, site[0], site[1], scale, &fill, &style, out);
-            if s.tier == SettlementTier::Capital {
+            if capital {
                 draw_capital_pennant(site[0], site[1], scale, &fill, out);
             }
         }
@@ -871,6 +880,129 @@ fn draw_urban_halo(
         )
         .unwrap();
     }
+}
+
+/// A hand-drawn town plan for a settlement at the deepest zoom (Phase 7 LOD):
+/// an enclosing wall (capitals), a street network (a grid for planned cultures,
+/// radial spokes + a ring road for organic ones), and quarters of small
+/// buildings. The caller draws the settlement's landmark glyph over the centre
+/// as the citadel. Everything is hash-driven off `seed` (the cell), so a town's
+/// plan is stable across renders and distinct between towns. `r` is the town
+/// radius in world units; trig routes through `fmath` (the purity guard forbids
+/// raw `sin`/`cos` even in the renderer).
+#[allow(clippy::too_many_arguments)]
+fn draw_city_plan(
+    out: &mut String,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    arch: Architecture,
+    capital: bool,
+    fill: &str,
+    seed: u32,
+) {
+    use std::f32::consts::{PI, TAU};
+    let grid = matches!(arch, Architecture::Classical | Architecture::Megalithic);
+
+    // 1. Walled enclosure (capitals): an irregular polygon, faintly filled to
+    //    read as a built-up area, stroked as a stone wall.
+    if capital {
+        let n_wall = 16u32;
+        let mut pts = String::new();
+        for k in 0..n_wall {
+            let a = TAU * k as f32 / n_wall as f32;
+            let rr = r * (0.9 + hash_offset(seed, 100 + k).abs() * 0.13);
+            let px = cx + rr * fmath::cos(a);
+            let py = cy + rr * fmath::sin(a);
+            write!(pts, "{}{px:.1},{py:.1}", if k == 0 { "" } else { " " }).unwrap();
+        }
+        write!(
+            out,
+            r##"<polygon points="{pts}" fill="#cdbf9c" fill-opacity="0.40" stroke="#3a2f22" stroke-width="1.4" stroke-linejoin="round"/>"##
+        )
+        .unwrap();
+    }
+
+    // 2. Streets.
+    out.push_str(
+        r##"<g stroke="#7a5836" stroke-width="0.55" stroke-opacity="0.7" fill="none" stroke-linecap="round">"##,
+    );
+    if grid {
+        // Horizontal + vertical streets as chords of the town circle.
+        for m in -2i32..=2 {
+            let off = m as f32 * r * 0.32;
+            if off.abs() >= r {
+                continue;
+            }
+            let half = (r * r - off * off).sqrt();
+            write!(
+                out,
+                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                cx - half,
+                cy + off,
+                cx + half,
+                cy + off,
+            )
+            .unwrap();
+            write!(
+                out,
+                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                cx + off,
+                cy - half,
+                cx + off,
+                cy + half,
+            )
+            .unwrap();
+        }
+    } else {
+        // Radial spokes from the centre + a ring road.
+        let spokes = 5 + seed % 3;
+        for k in 0..spokes {
+            let a = TAU * k as f32 / spokes as f32 + hash_offset(seed, 200 + k) * 0.18;
+            write!(
+                out,
+                r##"<line x1="{cx:.1}" y1="{cy:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                cx + r * fmath::cos(a),
+                cy + r * fmath::sin(a),
+            )
+            .unwrap();
+        }
+        write!(
+            out,
+            r##"<circle cx="{cx:.1}" cy="{cy:.1}" r="{:.1}"/>"##,
+            r * 0.55,
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+
+    // 3. Quarters: small buildings filling the town, uniform over the disk
+    //    (sqrt radius), leaving the centre clear for the citadel glyph.
+    let n_b = if capital { 34 } else { 20 };
+    write!(
+        out,
+        r##"<g fill="{fill}" stroke="#1a140e" stroke-width="0.25" fill-opacity="0.92">"##
+    )
+    .unwrap();
+    for k in 0..n_b {
+        let ang = hash_offset(seed, 300 + k) * PI;
+        let d = hash_offset(seed, 400 + k).abs().sqrt() * r * 0.82;
+        if d < r * 0.16 {
+            continue; // keep the centre for the citadel
+        }
+        let bx = cx + d * fmath::cos(ang);
+        let by = cy + d * fmath::sin(ang);
+        let bw = 1.1 + hash_offset(seed, 500 + k).abs() * 1.3;
+        write!(
+            out,
+            r##"<rect x="{:.1}" y="{:.1}" width="{bw:.1}" height="{:.1}" fill="{fill}" stroke="#1a140e" stroke-width="0.25"/>"##,
+            bx - bw * 0.5,
+            by - bw * 0.4,
+            bw * 0.8,
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
 }
 
 /// Architecture-driven styling axis: stroke weight, fill darkening,
