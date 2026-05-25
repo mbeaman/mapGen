@@ -1,15 +1,27 @@
-//! Determinism guard (review finding #2): the history sim must not call raw
-//! `f32`/`f64` transcendentals — they break the native ↔ wasm32 byte-identical
-//! contract. Anything transcendental must route through `mapgen_core::fmath`
-//! (which `fmath::sin` etc. do via `libm`). 4a–4h get by on pure arithmetic;
-//! this test fails the moment a future loop reaches for `x.exp()` directly.
+//! Determinism guard: no crate in the workspace may call raw `f32`/`f64`
+//! transcendentals — they break the native ↔ wasm32 byte-identical contract
+//! that the multi-scale atlas depends on (a sector regenerated in the browser
+//! must match the CLI bit-for-bit). Anything transcendental must route through
+//! `mapgen_core::fmath` (libm-backed, so identical on every target).
+//!
+//! This guard earns its keep: 6.2 wired the first real cross-platform golden
+//! (`crates/mapgen-wasm/tests/cross_platform.rs`) and immediately caught two
+//! escapes this scan now forbids — a `.exp()` in `climate::band_precip` and a
+//! `.powf()` in `cultures` — that diverged because *native* std libm and the
+//! wasm libm round transcendentals differently in the last ULP. The scan lives
+//! in mapgen-history for historical reasons but walks every crate's `src/`.
+//!
+//! `sqrt` is deliberately NOT forbidden: IEEE-754 *requires* `sqrt` to be
+//! correctly rounded, so x86 SSE2 `sqrtss` and the wasm `f32.sqrt` instruction
+//! produce bit-identical results (unlike sin/cos/exp/ln/pow, which have no such
+//! mandate). `.powi(` is excluded too — integer power is exact multiplication.
 
 use std::fs;
 use std::path::Path;
 
-/// Method-call (`x.exp()`) and associated (`f32::exp`) forms of the
-/// transcendental / irrational functions `fmath` owns. `.powi(` is deliberately
-/// excluded — integer power is exact multiplication, not a libm call.
+/// Method-call (`x.exp()`) and associated (`f32::exp`) forms of the genuinely
+/// target-divergent transcendentals `fmath` owns. See module docs for why
+/// `sqrt` and `powi` are absent.
 const FORBIDDEN: &[&str] = &[
     ".sin(",
     ".cos(",
@@ -25,7 +37,6 @@ const FORBIDDEN: &[&str] = &[
     ".log2(",
     ".log10(",
     ".powf(",
-    ".sqrt(",
     ".cbrt(",
     ".hypot(",
     "f32::sin",
@@ -34,7 +45,6 @@ const FORBIDDEN: &[&str] = &[
     "f32::exp",
     "f32::ln",
     "f32::powf",
-    "f32::sqrt",
     "f32::hypot",
     "f64::sin",
     "f64::cos",
@@ -42,7 +52,6 @@ const FORBIDDEN: &[&str] = &[
     "f64::exp",
     "f64::ln",
     "f64::powf",
-    "f64::sqrt",
 ];
 
 fn scan(dir: &Path, out: &mut Vec<String>) {
@@ -51,6 +60,12 @@ fn scan(dir: &Path, out: &mut Vec<String>) {
         if path.is_dir() {
             scan(&path, out);
         } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            // `fmath.rs` is the one place libm is called; its bodies route
+            // through `libm::sinf` etc. (which don't match these patterns),
+            // but skip it explicitly so the intent is unmistakable.
+            if path.file_name().map(|f| f == "fmath.rs").unwrap_or(false) {
+                continue;
+            }
             let src = fs::read_to_string(&path).expect("read source");
             for (i, line) in src.lines().enumerate() {
                 // Ignore line comments to avoid flagging prose.
@@ -66,14 +81,31 @@ fn scan(dir: &Path, out: &mut Vec<String>) {
 }
 
 #[test]
-fn mapgen_history_uses_no_raw_transcendentals() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+fn workspace_uses_no_raw_transcendentals() {
+    // CARGO_MANIFEST_DIR is .../crates/mapgen-history; its parent is the
+    // `crates/` root, so we scan every crate's `src/` (test/example code is
+    // excluded — only the determinism-critical library paths matter).
+    let crates_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/ root");
     let mut violations = Vec::new();
-    scan(&src, &mut violations);
+    let mut scanned = 0usize;
+    for entry in fs::read_dir(crates_root).expect("read crates dir") {
+        let src = entry.expect("dir entry").path().join("src");
+        if src.is_dir() {
+            scanned += 1;
+            scan(&src, &mut violations);
+        }
+    }
+    assert!(
+        scanned >= 6,
+        "expected to scan the workspace crates, saw {scanned}"
+    );
     assert!(
         violations.is_empty(),
-        "raw f32/f64 transcendentals in mapgen-history (route through \
-         mapgen_core::fmath to keep native↔wasm32 byte-identical):\n{}",
+        "raw f32/f64 transcendentals found (route through mapgen_core::fmath to \
+         keep native↔wasm32 byte-identical — see crates/mapgen-wasm/tests/\
+         cross_platform.rs):\n{}",
         violations.join("\n")
     );
 }

@@ -24,7 +24,7 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
     // ITCZ shift in lat_norm units (-1 to +1 spans pole-to-pole). Earth's
     // axial tilt of 23.5° corresponds to roughly 0.26 of a hemisphere
     // — the ITCZ moves about that far north in June and south in December.
-    let shift = (params.axial_tilt.sin()) * 0.5;
+    let shift = fmath::sin(params.axial_tilt) * 0.5;
 
     // NH-summer pass: ITCZ shifted toward NH (negative y in our convention).
     let (temp_summer, precip_summer) = one_pass(world, &params, -shift, true);

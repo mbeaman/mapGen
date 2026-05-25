@@ -63,6 +63,11 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Cross-platform determinism golden (native↔wasm byte-identity)
+        # Runs the full pipeline compiled to wasm32 in Node and asserts the
+        # seed-42 hash matches the native golden. Guards the atlas's "same
+        # sector in browser and CLI" promise. See crates/mapgen-wasm/tests/.
+        run: wasm-pack test --node crates/mapgen-wasm
       - name: Build wasm-pack output
         run: wasm-pack build --release --target web --out-dir ../../web/pkg crates/mapgen-wasm
       - name: Install web deps

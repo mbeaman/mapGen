@@ -31,7 +31,15 @@ pub fn poisson_disk_2d<R: RngCore>(
     push(&mut points, &mut active, &mut grid, grid_w, cell_size, seed);
 
     while !active.is_empty() {
-        let idx = rng.gen_range(0..active.len());
+        // Sample over an explicit u64 range, not the `usize` `active.len()`:
+        // `rand`'s integer sampler draws a different number of RNG bytes for
+        // u64 vs u32, so a `usize` range desyncs the stream between 64-bit
+        // native and 32-bit wasm. Widening to u64 makes both targets draw
+        // identically (and is a no-op on native, where usize *is* u64), which
+        // is what keeps the cross-platform golden — and the whole atlas's
+        // "same sector in browser and CLI" promise — byte-identical. See
+        // crates/mapgen-wasm/tests/cross_platform.rs.
+        let idx = rng.gen_range(0..active.len() as u64) as usize;
         let parent = points[active[idx] as usize];
         let mut accepted = false;
 

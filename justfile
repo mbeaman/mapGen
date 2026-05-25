@@ -25,6 +25,14 @@ check:
 test:
     cargo test --workspace
 
+# Cross-platform determinism golden: run the full pipeline compiled to wasm32
+# in Node and assert byte-identity with the native golden. Needs wasm-pack +
+# node, so it's kept out of `just check` (the fmath-purity test in `check`
+# catches source-level escapes fast; this proves the runtime end-to-end and
+# runs in CI). Run it after touching anything in the generate pipeline.
+test-wasm:
+    wasm-pack test --node crates/mapgen-wasm
+
 # Rewrite formatting in place (cargo fmt --all).
 fmt:
     cargo fmt --all

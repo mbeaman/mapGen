@@ -117,7 +117,7 @@ impl PatchShape {
                 let by = (max[1] - min[1]) * 0.5;
                 let qx = (p[0] - cx).abs() - bx;
                 let qy = (p[1] - cy).abs() - by;
-                let outside = qx.max(0.0).hypot(qy.max(0.0));
+                let outside = crate::fmath::hypot(qx.max(0.0), qy.max(0.0));
                 let inside = qx.max(qy).min(0.0);
                 outside + inside
             }

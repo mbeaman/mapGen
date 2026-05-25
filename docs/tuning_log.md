@@ -507,6 +507,37 @@ intact:
 * **Source:** Phase 4k; `loops/{mearsheimer,hero,schism}.rs`, `lib.rs`,
   `extract.rs`, `entities.rs`/`history.rs` (schema v12 Megabeast, v13 Conquest).
 
+## Cross-platform determinism — both goldens re-anchored (6.2)
+
+**Not a tuning change** — recorded here so the golden re-anchor at this commit
+isn't mistaken for parameter drift. 6.2 wired the first real native↔wasm golden
+(`crates/mapgen-wasm/tests/cross_platform.rs`: run the full pipeline in wasm32
+via Node, assert byte-identity with the native golden). It immediately exposed
+**three** silent divergences — the "byte-identical" contract had never actually
+been executed cross-platform before:
+
+1. **`poisson.rs` — `gen_range(0..active.len())`** over a `usize` range. `rand`'s
+   integer sampler draws a different number of RNG bytes for `u64` (64-bit
+   native) vs `u32` (wasm32), desyncing the whole stream from the first active
+   pick → a *different mesh* (3612 vs 3631 points). Fixed by sampling over an
+   explicit `u64` range (`0..active.len() as u64`). **No-op on native** (usize
+   *is* u64 there), so this fix alone changed nothing.
+2. **`climate::band_precip` — `.exp()`** (and a no-op `.sqrt()` in
+   `wind_vector`). std `exp` resolves to the *system* libm natively but a
+   *different* libm baked into the wasm binary; they disagree in the last ULP.
+   Routed through `fmath::exp`. This **did** move the native precip values onto
+   the shared libm result → **both goldens re-anchored** (phase2
+   `39afce5e…`→`f2e8f6f9…`, full `0b29e65c…`→`2c9e034c…`). Distribution
+   unchanged at the aggregate level (every realism/svg/visual test still passes).
+3. **Latent (didn't bite seed 42, would bite others): `cultures` `.powf()`,
+   `patch` `.hypot()`.** Routed through `fmath`. No golden impact for seed 42.
+
+**`sqrt` is intentionally left raw** — IEEE-754 *requires* it correctly rounded,
+so x86 SSE2 and wasm `f32.sqrt` are bit-identical (unlike sin/cos/exp/ln/pow).
+The `fmath` purity guard (was mapgen-history-only) now scans **every crate's
+`src/`** so a future raw transcendental fails fast in `just check`; the wasm
+runtime golden runs in CI and via `just test-wasm`.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

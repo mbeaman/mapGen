@@ -664,16 +664,20 @@ note.
   scales with schema delta.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
-### Cross-platform byte-identical golden hashes (native ↔ wasm32)
+### Cross-platform byte-identical golden hashes (native ↔ wasm32) — DONE (6.2, 2026-05-24)
 
-- **Why deferred.** Currently only native goldens. Cross-platform
-  via `wasm-bindgen-test` headless Chrome is in the plan but
-  infrastructure-heavy.
-- **Trigger for revival.** Float-determinism bug suspected between
-  targets. Or WASM frontend ships and we want byte-identical worlds
-  in browser.
-- **Cost.** A day to wire `wasm-bindgen-test`; ongoing cost in CI time.
-- **Origin.** ARCHITECTURE.md §3; planned for Phase 5.
+- **Shipped.** `crates/mapgen-wasm/tests/cross_platform.rs` runs the full
+  pipeline compiled to wasm32 in **Node** (`wasm-pack test --node`, no headless
+  Chrome needed) and asserts byte-identity with the native seed-42 golden (one
+  shared golden file). Wired into CI (`build-web` job) and `just test-wasm`.
+- **Caught real bugs on first run** (the contract had never actually executed
+  cross-platform): a `usize`-width `gen_range` in `poisson` (mesh) and a std
+  `.exp()` in `climate::band_precip` (climate) both diverged; `cultures` `.powf`
+  and `patch` `.hypot` were latent. All routed through `fmath`; both goldens
+  re-anchored. See `docs/tuning_log.md` § Cross-platform determinism.
+- **Preventative.** The `fmath` purity guard now scans every crate's `src/`
+  (was mapgen-history-only), so a future raw transcendental fails `just check`.
+- **Origin.** ARCHITECTURE.md §3; planned for Phase 5, delivered in 6.2.
 
 ### CLI argument-parser regression tests
 

@@ -16,7 +16,7 @@ use mapgen_core::entities::{
     Alignment, Architecture, Culture, DiplomaticPattern, MagicStyle, Race, SettlementIcon, TechEra,
     TechProfile,
 };
-use mapgen_core::WorldData;
+use mapgen_core::{fmath, WorldData};
 use rand_chacha::ChaCha8Rng;
 
 /// Tunables for the cultures stage. Calibrated values land in
@@ -338,7 +338,7 @@ fn habitat_fitness_with(
     };
 
     let product = biome_score * temp_score * elev_score * water_score;
-    product.powf(0.25).clamp(0.0, 1.0)
+    fmath::pow(product, 0.25).clamp(0.0, 1.0)
 }
 
 fn tent(value: f32, lo: f32, hi: f32) -> f32 {

@@ -183,8 +183,8 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
 ///   1.0  : polar dry → 0.3
 pub(crate) fn band_precip(abs_lat: f32) -> f32 {
     // Two cosine bumps + linear pole falloff.
-    let itcz = (-((abs_lat - 0.0) * 4.5).powi(2)).exp() * 0.9;
-    let storm = (-((abs_lat - 0.55) * 4.5).powi(2)).exp() * 0.7;
+    let itcz = fmath::exp(-((abs_lat - 0.0) * 4.5).powi(2)) * 0.9;
+    let storm = fmath::exp(-((abs_lat - 0.55) * 4.5).powi(2)) * 0.7;
     let baseline = 0.4 * (1.0 - abs_lat); // soft falloff toward pole
     0.3 + itcz + storm + baseline
 }
@@ -223,7 +223,7 @@ pub(crate) fn wind_vector(lat_norm: f32) -> [f32; 2] {
         // Polar easterlies.
         (-1.0_f32, hem_to_equator * 0.3)
     };
-    let mag = (vx * vx + vy * vy).sqrt();
+    let mag = fmath::sqrt(vx * vx + vy * vy);
     [vx / mag, vy / mag]
 }
 

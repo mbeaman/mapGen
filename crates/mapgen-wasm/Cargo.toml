@@ -30,3 +30,11 @@ serde_json = { workspace = true }
 # deps (roughr → rand → getrandom) build. getrandom otherwise errors
 # out on `wasm*-unknown-unknown` per its compile-time check.
 getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+# 6.2 cross-platform golden: run the full pipeline compiled to wasm32 (in Node)
+# and assert byte-identity with the native golden. ciborium + blake3 reproduce
+# mapgen-world's hashing exactly; wasm-bindgen-test drives the wasm runner.
+wasm-bindgen-test = "0.3"
+ciborium = { workspace = true }
+blake3 = { workspace = true }
