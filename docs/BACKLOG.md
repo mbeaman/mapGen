@@ -706,11 +706,16 @@ note.
   so the visual-regression and refine goldens are unaffected. Frontend logic
   lives in `web/src/layers.ts` (pure, unit-tested); `LAYERS` there must stay in
   sync with `LAYER_STYLE` in `crates/mapgen-render/src/style/ornate_antique.rs`.
-  First overlay shipped: **political territory** (per-cell nation tint).
+  Overlays shipped: **political territory** (per-cell nation tint) and
+  **temperature** (whole-map cold→hot thermal ramp, normalized per-world, with a
+  `#thermal`-gradient legend keyed off the same `on-climate` class). The
+  temperature layer established the **scalar-choropleth + legend** pattern
+  (`thermal_color` ramp, `temp_range`, `render_climate_legend`) the remaining
+  data overlays below can clone.
 - **What this unlocks — data overlays** (each is the same `on-NAME` mechanism
   over a per-cell field the pipeline already computes, so most are <½ d each):
-  - **Climate**: temperature choropleth (cold→hot), precipitation (arid→wet),
-    Köppen-zone bands — the realism foundation computes all three.
+  - **Climate**: temperature choropleth — DONE (2026-05-25). Still open:
+    precipitation (arid→wet), Köppen-zone bands — both already computed.
   - **Relief / hypsometric**: elevation tint + bathymetry; drainage **basins**
     coloured by outlet (pairs with the deferred drainage-divide viz).
   - **Soil / fertility**: the USDA soil orders as an agronomic overlay → feeds
@@ -732,9 +737,12 @@ note.
   - **Per-layer SVG export** (just rivers, just labels) for external compositing;
     **GM vs player** layer sets; **opacity sliders** and **legends** per overlay;
     **hover tooltips** (each layer is a hit-testable group).
-- **Trigger for next slice.** Pick the highest-value overlay (climate or relief
-  are cheapest and most striking) and add it as a second `on-NAME` layer +
-  `layers.ts` entry + a legend. Then layer presets.
+- **Trigger for next slice.** Either (a) **relief / precipitation** — clone the
+  temperature choropleth+legend over `terrain.elevation` / `climate.precipitation`
+  (a hypsometric green→brown→white ramp, a parched-tan→teal ramp) — or (b) **layer
+  presets / lenses**: named toggle bundles (Physical, Political, Climate) wired in
+  `layers.ts` + the panel, since the clean "climate lens" view (land/forests/ocean
+  off) already demonstrates the payoff.
 - **Origin.** "Implement overlays to toggle components on/off" (2026-05-25).
 
 ### Alternative render styles

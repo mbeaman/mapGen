@@ -98,6 +98,13 @@ pub fn render(world: &WorldData) -> String {
 <stop offset="78%" stop-color="#2a1c0d" stop-opacity="0.30"/>
 <stop offset="100%" stop-color="#1a1208" stop-opacity="0.72"/>
 </radialGradient>
+<linearGradient id="thermal" x1="0%" y1="0%" x2="100%" y2="0%">
+<stop offset="0%" stop-color="#263678"/>
+<stop offset="25%" stop-color="#3a96be"/>
+<stop offset="50%" stop-color="#d6c784"/>
+<stop offset="75%" stop-color="#d88238"/>
+<stop offset="100%" stop-color="#a82c1e"/>
+</linearGradient>
 </defs>"##,
     );
     out.push_str(LAYER_STYLE);
@@ -118,6 +125,7 @@ pub fn render(world: &WorldData) -> String {
     // the frontend flips layers via the `LAYER_STYLE` rules.
     layer(&mut out, "land", false, |o| render_land_fill(world, o));
     layer(&mut out, "political", true, |o| render_political(world, o));
+    layer(&mut out, "climate", true, |o| render_climate(world, o));
     layer(&mut out, "ocean", false, |o| {
         render_ocean_hatching(world, o)
     });
@@ -151,6 +159,8 @@ pub fn render(world: &WorldData) -> String {
     // the periphery (intentionally fading edge labels into "aged"
     // shadow); compass + cartouche sit on top, untouched.
     render_edge_burn(vx, vy, w, h, &mut out);
+    // Drawn after the edge-burn so it stays crisp; hidden unless `on-climate`.
+    render_climate_legend(vx, vy, w, h, &mut out);
     // The compass and title cartouche are whole-world chrome anchored to the
     // canvas corners; a refined sector (Phase 7) is a detail view, so it gets a
     // clean framed map without them. Level-0 worlds are unaffected.
@@ -172,6 +182,7 @@ pub fn render(world: &WorldData) -> String {
 const LAYER_STYLE: &str = r##"<style>
 svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coastline,svg.off-rivers .layer-rivers,svg.off-mountains .layer-mountains,svg.off-forests .layer-forests,svg.off-roads .layer-roads,svg.off-borders .layer-borders,svg.off-settlements .layer-settlements,svg.off-sacred .layer-sacred,svg.off-labels .layer-labels{display:none}
 svg.on-political .layer-political{display:inline !important}
+svg.on-climate .layer-climate,svg.on-climate .legend-climate{display:inline !important}
 </style>"##;
 
 /// Wrap a render step in a named, toggleable layer group. `hidden` adds a
@@ -219,6 +230,137 @@ fn render_political(world: &WorldData, out: &mut String) {
         )
         .unwrap();
     }
+}
+
+/// Temperature overlay (a data layer, off by default): every cell — land and
+/// sea — washed in a cold→hot thermal ramp normalized to the world's own
+/// min/max, surfacing the latitude bands + orographic cooling the base map only
+/// implies. Drawn under the linework, so coastline / rivers / labels still read
+/// on top (toggle off `land` + `forests` for a clean thematic view). The
+/// matching legend rides top-of-stack via the same `on-climate` class.
+fn render_climate(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let temp = &world.climate.temperature;
+    if temp.is_empty() {
+        return;
+    }
+    let (lo, hi) = temp_range(temp);
+    let span = (hi - lo).max(1e-3);
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() {
+            continue;
+        }
+        let Some(&t) = temp.get(i) else { continue };
+        let [r, g, b] = thermal_color((t - lo) / span);
+        out.push_str(r##"<polygon points=""##);
+        for (k, &vi) in verts.iter().enumerate() {
+            let v = mesh.vertices[vi as usize];
+            if k > 0 {
+                out.push(' ');
+            }
+            write!(out, "{:.1},{:.1}", v[0], v[1]).unwrap();
+        }
+        write!(
+            out,
+            r##"" fill="#{r:02x}{g:02x}{b:02x}" fill-opacity="0.6"/>"##
+        )
+        .unwrap();
+    }
+}
+
+/// Finite min/max of a per-cell field, falling back to [0,1] if empty/non-finite.
+fn temp_range(temp: &[f32]) -> (f32, f32) {
+    let mut lo = f32::INFINITY;
+    let mut hi = f32::NEG_INFINITY;
+    for &t in temp {
+        if t.is_finite() {
+            lo = lo.min(t);
+            hi = hi.max(t);
+        }
+    }
+    if lo.is_finite() {
+        (lo, hi)
+    } else {
+        (0.0, 1.0)
+    }
+}
+
+/// Perceptual cold→hot ramp for `t` in [0,1]: indigo → glacial cyan → pale gold
+/// → ember orange → oxblood. Linear interpolation between fixed stops (the same
+/// colours as the `#thermal` legend gradient); no transcendentals.
+fn thermal_color(t: f32) -> [u8; 3] {
+    const STOPS: [(f32, [f32; 3]); 5] = [
+        (0.0, [38.0, 54.0, 120.0]),
+        (0.25, [58.0, 150.0, 190.0]),
+        (0.5, [214.0, 199.0, 132.0]),
+        (0.75, [216.0, 130.0, 56.0]),
+        (1.0, [168.0, 44.0, 30.0]),
+    ];
+    let t = t.clamp(0.0, 1.0);
+    let mut k = 0;
+    while k + 1 < STOPS.len() && t > STOPS[k + 1].0 {
+        k += 1;
+    }
+    let (t0, c0) = STOPS[k];
+    let (t1, c1) = STOPS[(k + 1).min(STOPS.len() - 1)];
+    let f = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
+    let mix = |a: f32, b: f32| (a + (b - a) * f).round().clamp(0.0, 255.0) as u8;
+    [mix(c0[0], c1[0]), mix(c0[1], c1[1]), mix(c0[2], c1[2])]
+}
+
+/// Legend for the temperature overlay: a `#thermal` gradient bar with
+/// qualitative end labels (the scale is normalized per-world, not °C). Hidden by
+/// default; revealed alongside the tint by the `on-climate` root class. Anchored
+/// bottom-left to clear the compass (NW) and cartouche (SE).
+fn render_climate_legend(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
+    let scale = (w.min(h) / 1280.0).clamp(0.7, 1.5);
+    let bar_w = 200.0 * scale;
+    let bar_h = 12.0 * scale;
+    let pad = 10.0 * scale;
+    let box_w = bar_w + pad * 2.0;
+    let box_h = bar_h + 34.0 * scale;
+    let x0 = vx + 50.0 * scale;
+    let y0 = vy + h - box_h - 50.0 * scale;
+
+    out.push_str(r##"<g class="legend-climate" display="none">"##);
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="{rx:.1}" ry="{rx:.1}" fill="#e8d8a8" stroke="#2a2418" stroke-width="{sw:.1}" fill-opacity="0.92"/>"##,
+        rx = 5.0 * scale,
+        sw = 1.2 * scale,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<text x="{tx:.1}" y="{ty:.1}" font-family="Cinzel, Georgia, serif" font-size="{fs:.1}" letter-spacing="1" fill="#2a2418">TEMPERATURE</text>"##,
+        tx = x0 + pad,
+        ty = y0 + pad + 8.0 * scale,
+        fs = 9.0 * scale,
+    )
+    .unwrap();
+    let bx = x0 + pad;
+    let by = y0 + pad + 12.0 * scale;
+    write!(
+        out,
+        r##"<rect x="{bx:.1}" y="{by:.1}" width="{bar_w:.1}" height="{bar_h:.1}" fill="url(#thermal)" stroke="#2a2418" stroke-width="{sw:.1}"/>"##,
+        sw = 0.6 * scale,
+    )
+    .unwrap();
+    let ly = by + bar_h + 11.0 * scale;
+    write!(
+        out,
+        r##"<text x="{bx:.1}" y="{ly:.1}" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">Frigid</text>"##,
+        fs = 9.0 * scale,
+    )
+    .unwrap();
+    write!(
+        out,
+        r##"<text x="{rx:.1}" y="{ly:.1}" text-anchor="end" font-family="EB Garamond, serif" font-size="{fs:.1}" fill="#2a2418">Torrid</text>"##,
+        rx = bx + bar_w,
+        fs = 9.0 * scale,
+    )
+    .unwrap();
+    out.push_str("</g>");
 }
 
 /// Soft biome-tinted fill, muted with parchment so the map reads as

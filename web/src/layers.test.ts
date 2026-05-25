@@ -56,4 +56,13 @@ describe("applyLayers", () => {
     expect(names.size).toBe(LAYERS.length);
     for (const l of LAYERS) expect(l.label.length).toBeGreaterThan(0);
   });
+
+  it("ships the climate overlay (off by default, shown via on-climate)", () => {
+    const climate = LAYERS.find((l) => l.name === "climate");
+    expect(climate?.overlay).toBe(true);
+    const s = defaultLayerState();
+    expect(s.has("climate")).toBe(false);
+    s.add("climate");
+    expect(svgLayerClasses(s)).toContain("on-climate");
+  });
 });

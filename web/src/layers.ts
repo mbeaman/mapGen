@@ -15,6 +15,7 @@ export interface Layer {
 
 export const LAYERS: Layer[] = [
   { name: "political", label: "Political territory", overlay: true },
+  { name: "climate", label: "Temperature", overlay: true },
   { name: "labels", label: "Labels", overlay: false },
   { name: "settlements", label: "Settlements", overlay: false },
   { name: "sacred", label: "Sacred sites", overlay: false },
