@@ -29,6 +29,8 @@ Project docs:
 - [`docs/design-influences.md`](docs/design-influences.md) — how the history
   pipeline compares to Dwarf Fortress / RimWorld / Crusader Kings / Caves of Qud,
   and the depth-vs-narratability scope choices behind it.
+- [`docs/adr/`](docs/adr/) — architectural decision records (e.g. the multi-scale
+  atlas navigation/seam model that anchors the planned refinement framework).
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev process, validation gate,
   TDD discipline, commit conventions.
 - [`AGENTS.md`](AGENTS.md) — guidance for AI collaborators (persona,

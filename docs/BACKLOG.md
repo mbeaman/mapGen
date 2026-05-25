@@ -191,6 +191,12 @@ note.
 
 ### Seamless inter-scale navigation (research brief)
 
+- **Research pass DONE (6.3, 2026-05-24).** The eight questions below are
+  answered in **`docs/adr/0001-multiscale-navigation.md`** — recommendation:
+  discrete atlas-plate drill-in + progressive coarse-first rendering, vector SVG
+  per sector on demand, halo-cell seam stitching, Töpfer/Visvalingam
+  generalisation. The *implementation* (Phase 8.4) is still deferred; the ADR is
+  the design anchor that shapes the Phase-7 framework.
 - **Why deferred.** Depends on the refinement framework plus at least one
   local scale existing — there's nothing to navigate *between* yet. And the
   right interaction model is itself an open question that wants a research
