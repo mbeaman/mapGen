@@ -189,3 +189,33 @@ child sector's hash once the framework lands.
   coarse-first upscale + cross-fade; rank-driven background prefetch queue.
 - Render: per-level stylesheet + Visvalingam simplification + scale-rank label
   priority; raster pyramid only if in-level pan proves janky.
+
+---
+
+## Implementation status (2026-05-25)
+
+Phase 7 + a first cut of 8.4 shipped (`crates/mapgen-world/src/scale.rs`,
+`mapgen-wasm::refineSector`, `web/src/{worker,main,panzoom}.ts`):
+
+- **Done.** Discrete drill-in (Q1) with a clickable breadcrumb (overview/detail);
+  coarse-first focus zoom (Q2 — the parent's pixels frame the clicked region
+  while the sector generates); vector SVG per sector on demand (Q7); path-
+  independent per-sector blake3 seeds (Q8 — `StageRng::sector`); the halo as
+  simulation *context* (Q5, partial). The coarsening contract (Q8) is tested on
+  the base field (94–98% coastline agreement).
+- **Deferred (documented, not blocking the MVP).**
+  - **Exact seam-pinning (Q5).** The halo is context, not a pinned Dirichlet
+    boundary, so adjacent sectors agree only approximately (shared base field).
+    The drill-in views one sector at a time, so this isn't yet exercised; exact
+    pinning needs per-stage boundary masks in erosion/hydrology/climate.
+  - **Cartographic generalisation (Q3) + scale-rank labels (Q4).** Per-level
+    stylesheets, Visvalingam simplification, and Töpfer feature budgets are not
+    yet applied — a sector currently renders its own cells directly. Strahler
+    order (6.1.5) is already stored as the rank signal Q3's river selection
+    wants.
+  - **Rank-driven prefetch (Q6).** Sectors regenerate on click (~100 ms), no
+    background queue yet.
+  - **Per-sector society.** Sectors are physical-only (terrain→biomes); the
+    parent's settlements/polities are not yet carried into or refined within a
+    sector. The true cross-fade (vs. the current coarse-first focus + swap) and
+    the raster pyramid (Q7) remain trigger-gated.

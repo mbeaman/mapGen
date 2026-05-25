@@ -191,13 +191,22 @@ note.
 
 ### Seamless inter-scale navigation (research brief)
 
-- **Research pass DONE (6.3, 2026-05-24).** The eight questions below are
-  answered in **`docs/adr/0001-multiscale-navigation.md`** — recommendation:
-  discrete atlas-plate drill-in + progressive coarse-first rendering, vector SVG
-  per sector on demand, halo-cell seam stitching, Töpfer/Visvalingam
-  generalisation. The *implementation* (Phase 8.4) is still deferred; the ADR is
-  the design anchor that shapes the Phase-7 framework.
-- **Why deferred.** Depends on the refinement framework plus at least one
+- **Research pass DONE (6.3, 2026-05-24)** → **`docs/adr/0001-multiscale-navigation.md`**.
+- **Framework + MVP navigation DONE (Phase 7 / 8.4, 2026-05-25).** Shipped:
+  `mapgen-world/src/scale.rs` (`Sector` + `refine_sector` — deterministic
+  on-demand sector refinement through the physical pipeline; coarsening contract
+  tested at 94–98% coastline agreement), `mapgen-wasm::refineSector`, the
+  `mapgen refine` CLI, and the browser drill-in (`web/src/{worker,main,panzoom}.ts`
+  — click to zoom in, coarse-first focus, clickable breadcrumb). See the ADR's
+  "Implementation status" for the done/deferred split.
+- **Remaining follow-ups (each its own future item):** exact Dirichlet
+  seam-pinning across the stateful stages (today the halo is context, so
+  adjacent-sector seams are only approximate); per-level cartographic
+  generalisation (Töpfer budgets + Visvalingam simplification + scale-rank
+  labels); rank-driven background prefetch; per-sector society (settlements/
+  roads/local history); true cross-fade + raster pyramid (trigger-gated).
+- **Original deferral rationale (kept for context).** Depended on the refinement
+  framework plus at least one
   local scale existing — there's nothing to navigate *between* yet. And the
   right interaction model is itself an open question that wants a research
   pass before any code: an ornate hand-drawn atlas is traditionally a set of
