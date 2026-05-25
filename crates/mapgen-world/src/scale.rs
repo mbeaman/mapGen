@@ -268,15 +268,51 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     // gives correct drainage and makes a river cross a sector seam identically on
     // both sides. Runs after biomes (which used the sector's own flow), so this
     // only re-bases what the renderer draws.
-    project_hydrology(parent, &mut world, halo);
+    //
+    // Both projections sample parent layers by "nearest parent cell" — compute
+    // that mapping once and share it (it dominated the projection cost).
+    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
+    project_hydrology(parent, &mut world, halo, &nearest_parent);
 
     // Project the parent's society onto the sector — the same towns, borders,
     // and roads, remapped to the finer mesh. Society is generated once at world
     // scale and never re-rolled per sector, so drilling in shows *this* world's
     // cities, not different ones.
-    project_society(parent, &mut world, rect, halo);
+    project_society(parent, &mut world, rect, halo, &nearest_parent);
 
     world
+}
+
+/// For each sector cell, the index of the nearest *parent* cell within the
+/// haloed rect (`None` if no parent cell falls in the halo). Shared by the
+/// hydrology and society projections, which both resample parent per-cell layers
+/// onto the finer mesh — this nearest search dominated their cost, so it is done
+/// once here. `O(sector_cells × parent_cells_in_halo)`; the halo restriction
+/// keeps the parent set small.
+fn nearest_parent_cells(
+    parent: &WorldData,
+    sites: &[[f32; 2]],
+    halo: [f32; 4],
+) -> Vec<Option<u32>> {
+    let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
+        .filter(|&i| in_rect(parent.mesh.sites[i as usize], halo))
+        .collect();
+    sites
+        .iter()
+        .map(|&p| {
+            let mut best: Option<u32> = None;
+            let mut bd = f32::MAX;
+            for &pc in &parent_in_halo {
+                let s = parent.mesh.sites[pc as usize];
+                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                if d < bd {
+                    bd = d;
+                    best = Some(pc);
+                }
+            }
+            best
+        })
+        .collect()
 }
 
 fn in_rect(p: [f32; 2], r: [f32; 4]) -> bool {
@@ -311,7 +347,12 @@ fn pin_edges_to_shared(world: &mut WorldData, rect: [f32; 4], shared: &[f32]) {
 /// width / name / order / regime. Because the parent network is global and both
 /// neighbours sample the *same* parent, a river crosses their shared seam
 /// identically. A physical-only parent (no hydrology) is a no-op.
-fn project_hydrology(parent: &WorldData, world: &mut WorldData, halo: [f32; 4]) {
+fn project_hydrology(
+    parent: &WorldData,
+    world: &mut WorldData,
+    halo: [f32; 4],
+    nearest_parent: &[Option<u32>],
+) {
     if parent.hydrology.flow.len() != parent.mesh.cell_count() {
         return;
     }
@@ -319,11 +360,8 @@ fn project_hydrology(parent: &WorldData, world: &mut WorldData, halo: [f32; 4]) 
     let in_halo = |c: u32| in_rect(psite(c), halo);
     let n = world.mesh.cell_count();
 
-    // Per sector cell, the nearest parent cell (restricted to the haloed rect) —
-    // its flow and Strahler order carry over (drives river width / classing).
-    let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
-        .filter(|&i| in_halo(i))
-        .collect();
+    // Per-cell flow + Strahler order, sampled from the nearest parent cell
+    // (shared `nearest_parent` map) — drives river width / classing.
     let mut flow = vec![0.0_f32; n];
     let has_strahler = parent.hydrology.strahler.len() == parent.mesh.cell_count();
     let mut strahler = if has_strahler {
@@ -331,22 +369,11 @@ fn project_hydrology(parent: &WorldData, world: &mut WorldData, halo: [f32; 4]) 
     } else {
         Vec::new()
     };
-    if !parent_in_halo.is_empty() {
-        for i in 0..n {
-            let p = world.mesh.sites[i];
-            let mut best = parent_in_halo[0];
-            let mut bd = f32::MAX;
-            for &pc in &parent_in_halo {
-                let s = psite(pc);
-                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
-                if d < bd {
-                    bd = d;
-                    best = pc;
-                }
-            }
-            flow[i] = parent.hydrology.flow[best as usize];
+    for (i, &maybe_pc) in nearest_parent.iter().enumerate() {
+        if let Some(pc) = maybe_pc {
+            flow[i] = parent.hydrology.flow[pc as usize];
             if has_strahler {
-                strahler[i] = parent.hydrology.strahler[best as usize];
+                strahler[i] = parent.hydrology.strahler[pc as usize];
             }
         }
     }
@@ -421,7 +448,13 @@ fn project_hydrology(parent: &WorldData, world: &mut WorldData, halo: [f32; 4]) 
 /// (restricted to the haloed rect, which keeps this cheap); the polity and
 /// culture rosters are copied verbatim. A physical-only parent (no society) is a
 /// no-op.
-fn project_society(parent: &WorldData, world: &mut WorldData, rect: [f32; 4], halo: [f32; 4]) {
+fn project_society(
+    parent: &WorldData,
+    world: &mut WorldData,
+    rect: [f32; 4],
+    halo: [f32; 4],
+    nearest_parent: &[Option<u32>],
+) {
     if parent.society.nations.is_empty() && parent.society.settlements.is_empty() {
         return;
     }
@@ -444,12 +477,8 @@ fn project_society(parent: &WorldData, world: &mut WorldData, rect: [f32; 4], ha
         best
     };
 
-    // Only parent cells inside the haloed rect can influence the sector;
-    // restricting the per-sector-cell nearest search to them keeps it cheap.
-    let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
-        .filter(|&i| in_rect(psite(i), halo))
-        .collect();
-
+    // Per-cell controlling polity + culture, sampled from the nearest parent
+    // cell (shared `nearest_parent` map).
     let mut control = vec![None; n];
     let has_cultures = parent.cultures.culture_id.len() == parent.mesh.cell_count();
     let mut culture_id = if has_cultures {
@@ -457,21 +486,11 @@ fn project_society(parent: &WorldData, world: &mut WorldData, rect: [f32; 4], ha
     } else {
         Vec::new()
     };
-    if !parent_in_halo.is_empty() {
-        for (i, &p) in sites.iter().enumerate() {
-            let mut best = parent_in_halo[0];
-            let mut bd = f32::MAX;
-            for &pc in &parent_in_halo {
-                let s = psite(pc);
-                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
-                if d < bd {
-                    bd = d;
-                    best = pc;
-                }
-            }
-            control[i] = parent.society.control.get(best as usize).copied().flatten();
+    for (i, &maybe_pc) in nearest_parent.iter().enumerate() {
+        if let Some(pc) = maybe_pc {
+            control[i] = parent.society.control.get(pc as usize).copied().flatten();
             if has_cultures {
-                culture_id[i] = parent.cultures.culture_id[best as usize];
+                culture_id[i] = parent.cultures.culture_id[pc as usize];
             }
         }
     }
