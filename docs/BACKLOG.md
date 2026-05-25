@@ -354,16 +354,18 @@ note.
 
 ## Hydrology
 
-### Strahler stream order
+### Strahler stream order — DONE (6.1.5, 2026-05-24)
 
-- **Why deferred.** River extraction works without it; the renderer just
-  uses flow accumulation directly for width.
-- **Trigger for revival.** Lore engine wants to distinguish "great river"
-  from "minor tributary" for chronicle text. Or the renderer wants
-  styled-different rivers per order (thicker stroke for 5th+ order).
-- **Cost.** Half a day. Post-process each river chain; 1st order = no
-  tributaries; joining two N-order = (N+1)-order at the confluence;
-  otherwise inherit max.
+- **Shipped.** `extract_rivers` computes per-cell Strahler order over the flow
+  network (`HydrologyData::strahler`) and each `River::strahler` (mouth order).
+  Sources = 1; a confluence increments only when ≥2 equal-order streams meet.
+- **Caveat (documented in tuning_log).** At 4k cells the order tops out at ~2–3
+  (small networks), so it's *not* a good render-width signal — √flow stays
+  smoother and wider-ranging — and a naming gate on order ≥ 3 would strip all
+  river names on low-order worlds. It's kept as the standard classification
+  attribute (creek/stream/river) and the rank signal the multi-scale atlas will
+  use for LOD river selection (per ADR 0001 §3). Grows expressive at higher cell
+  counts.
 - **Origin.** Rivers commit `bd30c9b`.
 
 ### Distinct headwater origin types
@@ -400,15 +402,16 @@ note.
   mark `River.endorheic = true`.
 - **Origin.** Rivers commit `bd30c9b`.
 
-### Seasonal river regime
+### Seasonal river regime — DONE (6.1.5, 2026-05-24)
 
-- **Why deferred.** All rivers are perennial in current model. Real rivers
-  vary: nival snowmelt peaks in spring, pluvial peaks in wet season,
-  ephemeral dry up most of the year.
-- **Trigger for revival.** History sim needs famines tied to drought years
-  (ephemeral rivers fail). Or render wants seasonal labels.
-- **Cost.** Half a day after seasonal climate is fully wired. Tag each
-  river with regime based on upstream temp + precip seasonality.
+- **Shipped.** `hydrology::classify_river_regimes` (run at the end of the climate
+  stage) tags each `River::regime` as Perennial / Summer-monsoon / Winter-rain /
+  Nival / Ephemeral, from the catchment's seasonal precipitation balance and
+  headwater winter temperature. The ornate render draws **ephemeral** rivers with
+  a dashed line (the standard intermittent-stream convention). Seed 42 yields a
+  varied mix (Ephemeral 20, Perennial 10, Nival 5, Monsoon 2, Winter-rain 2).
+- **Future hooks.** History-sim drought/famine tied to ephemeral rivers failing
+  (the original trigger) and seasonal river labels remain open follow-ups.
 - **Origin.** Rivers commit `bd30c9b`.
 
 ### Meander geometry in flat country

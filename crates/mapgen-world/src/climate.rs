@@ -171,6 +171,9 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
 
     // Lore overlay last.
     crate::patch::apply_climate_patches(world);
+
+    // River seasonal regime now that precipitation exists (6.1.5).
+    crate::hydrology::classify_river_regimes(world);
 }
 
 /// Latitude-band relative precipitation. Input is |lat_norm| in [0, 1]

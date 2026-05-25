@@ -58,7 +58,11 @@ use crate::{
 ///   waterlogged Histosol cells. Both goldens re-anchor for the `schema_version`
 ///   byte and the new `soil` array; `seed42_full`/`seed42_phase2` additionally
 ///   for any cells that flip to WETLAND.
-pub const SCHEMA_VERSION: u32 = 14;
+/// * v15 — Phase 6.1.5: per-cell Strahler stream order (`HydrologyData::strahler`)
+///   plus per-river `River::strahler` (mouth order) and `River::regime` (seasonal
+///   flow class). Both goldens re-anchor for the `schema_version` byte and the new
+///   hydrology arrays; `seed42_full` additionally for the per-river fields.
+pub const SCHEMA_VERSION: u32 = 15;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -183,6 +187,26 @@ pub struct HydrologyData {
     pub flow: Vec<f32>,
     pub rivers: Vec<River>,
     pub lakes: Vec<Lake>,
+    /// Per-cell Strahler stream order (Phase 6.1.5): 0 off the river network,
+    /// 1 at headwaters, +1 where two equal-order streams meet. Filled by
+    /// `extract_rivers`. Empty on pre-v15 worlds.
+    #[serde(default)]
+    pub strahler: Vec<u8>,
+}
+
+/// Seasonal flow-regime classes for [`River::regime`] (Phase 6.1.5). Stored as
+/// `u8` for serde stability; `PERENNIAL` is the 0 default.
+pub mod river_regime {
+    /// Flow roughly balanced across seasons (humid temperate / equatorial).
+    pub const PERENNIAL: u8 = 0;
+    /// Summer-dominant supply — monsoonal / wet-summer catchments.
+    pub const SUMMER_MONSOON: u8 = 1;
+    /// Winter-dominant supply — Mediterranean / wet-winter catchments.
+    pub const WINTER_RAIN: u8 = 2;
+    /// Snowmelt-fed — cold headwaters, spring freshet (nival).
+    pub const NIVAL: u8 = 3;
+    /// Intermittent / ephemeral — arid catchment, flows only seasonally.
+    pub const EPHEMERAL: u8 = 4;
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -195,6 +219,16 @@ pub struct River {
     /// Phase-2 golden hash is unaffected.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
+    /// Strahler order at the river's mouth — its highest order along the chain
+    /// (Phase 6.1.5). 0 on pre-v15 worlds; ~1–2 = creek/brook, 3–4 = stream,
+    /// 5+ = major river. Used for naming gating and ornate render width.
+    #[serde(default)]
+    pub strahler: u8,
+    /// Seasonal flow regime (Phase 6.1.5) — one of the `river_regime::*`
+    /// classes, derived from the catchment's seasonal precipitation balance
+    /// and headwater temperature. 0 (`PERENNIAL`) on pre-v15 worlds.
+    #[serde(default)]
+    pub regime: u8,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

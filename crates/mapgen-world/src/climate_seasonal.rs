@@ -48,6 +48,9 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
     world.climate.biome = vec![0u8; n];
 
     crate::patch::apply_climate_patches(world);
+
+    // River seasonal regime now that seasonal precipitation exists (6.1.5).
+    crate::hydrology::classify_river_regimes(world);
 }
 
 fn one_pass(

@@ -392,6 +392,7 @@ fn extract_coastline_polylines(world: &WorldData) -> Vec<(Vec<[f32; 2]>, bool)> 
 }
 
 fn render_rivers(world: &WorldData, out: &mut String) {
+    use mapgen_core::world_data::river_regime;
     let mesh = &world.mesh;
     let flow = &world.hydrology.flow;
     out.push_str(
@@ -401,14 +402,23 @@ fn render_rivers(world: &WorldData, out: &mut String) {
         if river.cells.len() < 2 {
             continue;
         }
+        // Intermittent (ephemeral) watercourses get the standard cartographic
+        // dashed line; perennial rivers stay solid (6.1.5).
+        let dash = if river.regime == river_regime::EPHEMERAL {
+            r##" stroke-dasharray="4 3""##
+        } else {
+            ""
+        };
         for win in river.cells.windows(2) {
             let a = mesh.sites[win[0] as usize];
             let b = mesh.sites[win[1] as usize];
+            // Width from √flow — at 4k cells Strahler order tops out at ~3, so
+            // flow accumulation gives a smoother, wider creek→trunk gradient.
             let f = flow.get(win[1] as usize).copied().unwrap_or(1.0);
             let sw = (f.sqrt() * 0.22).clamp(0.6, 6.0);
             write!(
                 out,
-                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke-width="{:.2}"/>"##,
+                r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke-width="{:.2}"{dash}/>"##,
                 a[0], a[1], b[0], b[1], sw
             )
             .unwrap();

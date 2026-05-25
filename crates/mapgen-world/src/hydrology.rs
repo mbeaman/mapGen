@@ -17,7 +17,7 @@ use std::collections::BinaryHeap;
 
 use mapgen_core::{
     fmath,
-    world_data::{Lake, River, WorldData},
+    world_data::{river_regime, Lake, River, WorldData},
 };
 
 /// Min-heap entry: lowest elevation pops first; ties broken by cell index
@@ -271,6 +271,7 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], _flow_thr
 
     // 4. Headwaters = river cells with no upstream river cell.
     let mut incoming = vec![0u32; n];
+    let mut upstream: Vec<Vec<u32>> = vec![Vec::new(); n];
     for c in 0..n {
         if !is_river[c] {
             continue;
@@ -278,8 +279,43 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], _flow_thr
         if let Some(d) = flow_dir[c] {
             if is_river[d as usize] {
                 incoming[d as usize] += 1;
+                upstream[d as usize].push(c as u32);
             }
         }
+    }
+
+    // 4b. Per-cell Strahler order (6.1.5). Visit river cells from high to low
+    // elevation so a cell's upstream orders are settled before it: a source is
+    // order 1; a confluence is `max(upstream)` unless ≥2 tributaries share that
+    // max, in which case it increments. (`flow_accumulate` uses the same
+    // descending-elevation sweep, so the orders agree with the flow network.)
+    let mut order = vec![0u8; n];
+    let mut by_elev: Vec<u32> = (0..n as u32).filter(|&i| is_river[i as usize]).collect();
+    by_elev.sort_by(|&a, &b| {
+        elev[b as usize]
+            .total_cmp(&elev[a as usize])
+            .then(a.cmp(&b))
+    });
+    for &c in &by_elev {
+        let ci = c as usize;
+        if upstream[ci].is_empty() {
+            order[ci] = 1;
+            continue;
+        }
+        let m = upstream[ci]
+            .iter()
+            .map(|&u| order[u as usize])
+            .max()
+            .unwrap_or(1);
+        let ties = upstream[ci]
+            .iter()
+            .filter(|&&u| order[u as usize] == m)
+            .count();
+        order[ci] = if ties >= 2 {
+            m.saturating_add(1)
+        } else {
+            m.max(1)
+        };
     }
 
     let mut rivers = Vec::new();
@@ -312,13 +348,91 @@ pub fn extract_rivers(world: &mut WorldData, flow_dir: &[Option<u32>], _flow_thr
             .map(|&i| flow[i as usize])
             .fold(0.0_f32, f32::max);
         let width = fmath::sqrt(max_flow) * 0.05;
+        // Mouth order = highest Strahler order reached along the chain.
+        let strahler = chain.iter().map(|&i| order[i as usize]).max().unwrap_or(1);
         rivers.push(River {
             cells: chain,
             width,
             name: String::new(),
+            strahler,
+            // Regime needs seasonal climate, which hasn't run yet at hydrology
+            // time; `classify_river_regimes` (post-climate) fills it in.
+            regime: river_regime::PERENNIAL,
         });
     }
 
     world.hydrology.rivers = rivers;
+    world.hydrology.strahler = order;
     // `fill_depressions` already populated `lakes`; don't clobber.
+}
+
+/// Classify each river's seasonal flow regime (Phase 6.1.5) from its catchment.
+/// Must run *after* climate (it reads seasonal precipitation/temperature), so
+/// the climate stage calls it once it has filled those arrays. A no-op before
+/// climate or when there are no rivers.
+///
+/// The catchment is approximated by the river's own chain cells (the trunk and
+/// its valley); a true upstream-area average is a future refinement.
+pub fn classify_river_regimes(world: &mut WorldData) {
+    let n = world.mesh.cell_count();
+    if world.climate.temperature.len() != n {
+        return;
+    }
+    let seasonal = world.climate.precipitation_summer.len() == n
+        && world.climate.precipitation_winter.len() == n
+        && world.climate.temperature_winter.len() == n;
+
+    let regimes: Vec<u8> = world
+        .hydrology
+        .rivers
+        .iter()
+        .map(|r| {
+            let land: Vec<usize> = r
+                .cells
+                .iter()
+                .map(|&c| c as usize)
+                .filter(|&i| world.terrain.elevation[i] > 0.0)
+                .collect();
+            if land.is_empty() {
+                return river_regime::PERENNIAL;
+            }
+            let (mut ps, mut pw) = (0.0_f32, 0.0_f32);
+            for &i in &land {
+                if seasonal {
+                    ps += world.climate.precipitation_summer[i];
+                    pw += world.climate.precipitation_winter[i];
+                } else {
+                    ps += world.climate.precipitation[i] * 0.5;
+                    pw += world.climate.precipitation[i] * 0.5;
+                }
+            }
+            let k = land.len() as f32;
+            let (ps, pw) = (ps / k, pw / k);
+            let p_annual = ps + pw;
+
+            // Headwater = the river's source (chain is built source→mouth).
+            let head = r.cells[0] as usize;
+            let head_winter_t = if seasonal {
+                world.climate.temperature_winter[head]
+            } else {
+                world.climate.temperature[head]
+            };
+
+            if p_annual < 0.12 {
+                river_regime::EPHEMERAL // arid catchment — flows only in season
+            } else if head_winter_t < 0.0 {
+                river_regime::NIVAL // freezing headwater builds a snowpack
+            } else if ps > pw * 1.5 {
+                river_regime::SUMMER_MONSOON
+            } else if pw > ps * 1.5 {
+                river_regime::WINTER_RAIN
+            } else {
+                river_regime::PERENNIAL
+            }
+        })
+        .collect();
+
+    for (r, reg) in world.hydrology.rivers.iter_mut().zip(regimes) {
+        r.regime = reg;
+    }
 }

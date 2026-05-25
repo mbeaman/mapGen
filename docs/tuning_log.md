@@ -569,6 +569,29 @@ throwaway example), with these findings worth recording:
   scaling up on wetter ones (seed 99). Left deliberately conservative so marshes
   read as special rather than blanketing low ground.
 
+## Strahler order + seasonal river regime (6.1.5)
+
+New per-cell + per-river Strahler order and a per-river seasonal regime (schema
+v15). Findings from sweeping seeds 1/7/42/99/123:
+
+- **Strahler order tops out at 2–3 on 4k-cell continents** (even just 2 on seed
+  123). The networks are small (10–39 rivers) and order increments only when two
+  *equal*-order streams meet, which is rare with few tributaries. Consequences:
+  - **Render width stays on √flow, not Strahler.** √flow spans ~0.6–5.0 px on
+    seed 42 (flow up to ~530); order-based width would be a flat 1.2–2.6. So
+    Strahler would *coarsen* the river hierarchy at this resolution — kept it as
+    classification data instead.
+  - **No Strahler naming gate.** Gating "name a river" on order ≥ 3 would strip
+    every river name on seed 123 (max order 2). Naming stays length-based.
+  - Strahler will be more expressive at 15k–30k cells and is the rank signal the
+    atlas LOD selection wants (ADR 0001 §3), so it's shipped as data regardless.
+- **Regime classifies well and *is* consumed:** thresholds — Ephemeral if
+  catchment `p_annual < 0.12`; else Nival if the headwater's winter temp < 0
+  (freezing → snowpack); else Summer-monsoon / Winter-rain if one half-year
+  exceeds 1.5× the other; else Perennial. Seed 42 → Ephemeral 20 / Perennial 10
+  / Nival 5 / Monsoon 2 / Winter-rain 2. **Ephemeral rivers render dashed** (the
+  intermittent-stream cartographic convention) — the visible payoff of 6.1.5.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on
