@@ -768,6 +768,17 @@ fn render_settlements(world: &WorldData, out: &mut String, detail: f32) {
         })
         .collect();
 
+    // Sea-cell positions, for siting a harbour on a coastal town's seaward edge
+    // (only needed at city-plan zoom).
+    let sea_sites: Vec<[f32; 2]> = if detail >= 8.0 {
+        (0..mesh.cell_count())
+            .filter(|&i| world.terrain.elevation.get(i).copied().unwrap_or(1.0) <= 0.0)
+            .map(|i| mesh.sites[i])
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     for s in &world.society.settlements {
         let site = mesh.sites[s.cell as usize];
         let (icon, arch) = polity_glyph
@@ -818,13 +829,17 @@ fn render_settlements(world: &WorldData, out: &mut String, detail: f32) {
         } else {
             let capital = s.tier == SettlementTier::Capital;
             if detail >= 8.0 {
-                // Deepest zoom: a full town plan — wall, streets, quarters.
+                // Deepest zoom: a full town plan — wall, streets, quarters,
+                // plus a harbour if the sea is close.
                 let r = if capital {
                     14.0
                 } else {
                     8.0 + s.population * 4.0
                 };
-                draw_city_plan(out, site[0], site[1], r, arch, capital, &fill, s.cell);
+                let harbour = nearest_sea_dir(site, &sea_sites, r * 1.6);
+                draw_city_plan(
+                    out, site[0], site[1], r, arch, capital, &fill, s.cell, harbour,
+                );
             } else if urban {
                 // Mid zoom: a building cluster under the landmark glyph.
                 let (radius, n, walled) = if capital {
@@ -882,14 +897,35 @@ fn draw_urban_halo(
     }
 }
 
+/// Unit direction from `site` toward the nearest sea cell within `max_dist`
+/// (world units), or `None` if the settlement is inland — sites a harbour on a
+/// coastal town's seaward edge.
+fn nearest_sea_dir(site: [f32; 2], sea_sites: &[[f32; 2]], max_dist: f32) -> Option<[f32; 2]> {
+    let mut best_d2 = max_dist * max_dist;
+    let mut best: Option<[f32; 2]> = None;
+    for &s in sea_sites {
+        let d2 = (s[0] - site[0]).powi(2) + (s[1] - site[1]).powi(2);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best = Some(s);
+        }
+    }
+    best.map(|s| {
+        let (dx, dy) = (s[0] - site[0], s[1] - site[1]);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-3);
+        [dx / len, dy / len]
+    })
+}
+
 /// A hand-drawn town plan for a settlement at the deepest zoom (Phase 7 LOD):
 /// an enclosing wall (capitals), a street network (a grid for planned cultures,
-/// radial spokes + a ring road for organic ones), and quarters of small
-/// buildings. The caller draws the settlement's landmark glyph over the centre
-/// as the citadel. Everything is hash-driven off `seed` (the cell), so a town's
-/// plan is stable across renders and distinct between towns. `r` is the town
-/// radius in world units; trig routes through `fmath` (the purity guard forbids
-/// raw `sin`/`cos` even in the renderer).
+/// radial spokes + a ring road for organic ones), quarters of small buildings, a
+/// market plaza, and a harbour on the seaward edge if `harbour` is `Some(dir)`.
+/// The caller draws the settlement's landmark glyph over the centre as the
+/// citadel. Everything is hash-driven off `seed` (the cell), so a town's plan is
+/// stable across renders and distinct between towns. `r` is the town radius in
+/// world units; trig routes through `fmath` (the purity guard forbids raw
+/// `sin`/`cos` even in the renderer).
 #[allow(clippy::too_many_arguments)]
 fn draw_city_plan(
     out: &mut String,
@@ -900,6 +936,7 @@ fn draw_city_plan(
     capital: bool,
     fill: &str,
     seed: u32,
+    harbour: Option<[f32; 2]>,
 ) {
     use std::f32::consts::{PI, TAU};
     let grid = matches!(arch, Architecture::Classical | Architecture::Megalithic);
@@ -1003,6 +1040,67 @@ fn draw_city_plan(
         .unwrap();
     }
     out.push_str("</g>");
+
+    // 4. Market plaza: a small open square just off the citadel, with stalls.
+    let ang = hash_offset(seed, 700) * PI;
+    let md = r * 0.34;
+    let (mx, my) = (cx + md * fmath::cos(ang), cy + md * fmath::sin(ang));
+    let ps = r * 0.13;
+    write!(
+        out,
+        r##"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" fill="#cdbf9c" fill-opacity="0.7" stroke="#6b4a2a" stroke-width="0.4"/>"##,
+        mx - ps,
+        my - ps,
+        ps * 2.0,
+        ps * 2.0,
+    )
+    .unwrap();
+    for q in 0..3u32 {
+        let sx = mx + hash_offset(seed, 710 + q) * ps * 0.7;
+        let sy = my + hash_offset(seed, 720 + q) * ps * 0.7;
+        write!(
+            out,
+            r##"<rect x="{:.1}" y="{:.1}" width="1.0" height="1.0" fill="#7a5836" stroke="none"/>"##,
+            sx - 0.5,
+            sy - 0.5,
+        )
+        .unwrap();
+    }
+
+    // 5. Harbour on the seaward edge (coastal towns): piers reaching into the
+    //    water, with a moored boat or two.
+    if let Some([dx, dy]) = harbour {
+        let (wx, wy) = (cx + dx * r * 0.95, cy + dy * r * 0.95);
+        let (qx, qy) = (-dy, dx); // along-shore (perpendicular to the sea dir)
+        out.push_str(
+            r##"<g stroke="#5a4326" stroke-width="0.8" stroke-linecap="round" fill="none">"##,
+        );
+        for m in -1i32..=1 {
+            let sx = wx + qx * m as f32 * r * 0.22;
+            let sy = wy + qy * m as f32 * r * 0.22;
+            write!(
+                out,
+                r##"<line x1="{sx:.1}" y1="{sy:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                sx + dx * r * 0.38,
+                sy + dy * r * 0.38,
+            )
+            .unwrap();
+        }
+        out.push_str("</g>");
+        for b in 0..2u32 {
+            let off = r * (0.42 + 0.18 * b as f32);
+            let j = hash_offset(seed, 600 + b) * r * 0.18;
+            let bx = wx + dx * off + qx * j;
+            let by = wy + dy * off + qy * j;
+            write!(
+                out,
+                r##"<ellipse cx="{bx:.1}" cy="{by:.1}" rx="{:.1}" ry="{:.1}" fill="#3a2f22" stroke="none"/>"##,
+                r * 0.07,
+                r * 0.035,
+            )
+            .unwrap();
+        }
+    }
 }
 
 /// Architecture-driven styling axis: stroke weight, fill darkening,
