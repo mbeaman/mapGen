@@ -16,6 +16,7 @@ pub mod pipeline;
 pub mod plates;
 pub mod polities;
 pub mod religions;
+pub mod soils;
 
 pub use pipeline::{FineStep, Pipeline, PipelineStage};
 

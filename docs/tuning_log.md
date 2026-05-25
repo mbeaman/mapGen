@@ -538,6 +538,37 @@ The `fmath` purity guard (was mapgen-history-only) now scans **every crate's
 `src/`** so a future raw transcendental fails fast in `just check`; the wasm
 runtime golden runs in CI and via `just test-wasm`.
 
+## USDA soil orders + WETLAND biome (6.1.4)
+
+New per-cell soil layer (`soils.rs`, schema v14) classified from climate +
+drainage + relief, plus a soil-driven `WETLAND` biome. Thresholds were
+calibrated by sweeping the order distribution across seeds 1/7/42/99/123 (a
+throwaway example), with these findings worth recording:
+
+- **`flow` is raw accumulation counts, not normalized** (land median ~2, p90
+  ~20, max ~500 on a 4k-cell continent). The Entisol floodplain rule keys off
+  `flow > 25` (≈p90) with `relief < 0.08`; an early draft using `flow > 0.08`
+  matched ~everything and made Entisol 56% of land.
+- **Aridity must use `p_annual = p_summer + p_winter`, not `climate.precipitation`**
+  (which is the half-year *mean*). Using the mean halved every threshold and put
+  66% of land in Aridisol. With `p_annual` matched to `koppen::classify_one`,
+  Aridisol = the true `BW` desert (`< 0.75×` the arid threshold); the wetter
+  `BS` steppe band falls through to **Mollisol** (semi-arid grassland soils),
+  which is where prairie/steppe soils actually form.
+- **The tropical gate must use the *coldest* month** (`t_cold > 0.55`, Köppen's
+  A criterion), not the warmest — temperate regions also have hot summers, so
+  gating on `t_warm` leaked them into the tropical (Ultisol) branch and starved
+  Mollisol/Alfisol entirely.
+- **Resulting character (seed 42):** Mollisol ~33% + Aridisol ~31% + Inceptisol
+  ~20% dominate — i.e. grassland + desert + mountain soils, which matches these
+  dry, mountainous continents. Oxisol/Vertisol/Andisol are absent for lack of
+  hot-wet-tropical lowland / a volcanism model (documented, not a bug). A guard
+  test fails if any single order exceeds 75% of land.
+- **WETLAND** (waterlogged Histosols: `relief < 0.035 && elev < 0.30 &&
+  p_annual > 0.25`) lands at 0.0–0.8% of land across seeds — rare on arid worlds,
+  scaling up on wetter ones (seed 99). Left deliberately conservative so marshes
+  read as special rather than blanketing low ground.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

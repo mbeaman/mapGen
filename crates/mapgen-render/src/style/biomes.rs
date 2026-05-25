@@ -146,6 +146,7 @@ fn biome_color(biome: u8, elev: f32) -> &'static str {
         12 => "#7da6c8", // SEA_SHALLOW
         13 => "#3a5d85", // SEA_DEEP
         14 => "#4d8a3a", // RIPARIAN — saturated green river corridor
+        15 => "#5f8c7b", // WETLAND — muted marsh teal-green
         _ => "#a0a0a0",  // unassigned / unknown
     }
 }

@@ -133,9 +133,9 @@ proptest! {
                 );
             }
         }
-        // Biome ids stay within the 15-value palette (0..=14).
+        // Biome ids stay within the 16-value palette (0..=15, incl. WETLAND).
         for (i, &b) in world.climate.biome.iter().enumerate() {
-            prop_assert!(b <= 14, "seed {}: cell {} biome id {} out of range", seed, i, b);
+            prop_assert!(b <= 15, "seed {}: cell {} biome id {} out of range", seed, i, b);
         }
         // Every controlled cell points at a real polity.
         let n_pol = world.society.nations.len();

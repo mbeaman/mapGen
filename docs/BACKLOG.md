@@ -301,15 +301,19 @@ note.
   meets coast.
 - **Origin.** Research brief in commit `44ec18f`.
 
-### USDA simplified soil orders
+### USDA simplified soil orders — DONE (6.1.4, 2026-05-24)
 
-- **Why deferred.** Biomes capture most of the visible distinction. Soil
-  detail matters when settlements / cultures want it (Mollisols carry 3x
-  the population of Spodosols).
-- **Trigger for revival.** Cultures stage needs to differentiate "savanna
-  on Oxisol vs savanna on Vertisol" for habitat scoring.
-- **Cost.** Half a day. 3-axis decision tree (temp × wet/dry × age × parent
-  rock); store as u8 per cell.
+- **Shipped.** `crates/mapgen-world/src/soils.rs` classifies every land cell
+  into one of the USDA orders from climate (temp/precip/seasonality), drainage
+  (`hydrology.flow`) and local relief; stored as `ClimateData::soil: Vec<u8>`
+  (schema v14), classified at the head of the Biomes stage. Andisol is never
+  assigned (no volcanism model) — documented. Calibrated across seeds 1/7/42/99/
+  123 (no order >75% of land; aridity matched to `koppen` via `p_annual`).
+- **Soil-driven biome refinement (the item below) shipped with it:** waterlogged
+  Histosols become the new `biomes::WETLAND` (id 15) — a real biome the
+  pure-climate palette couldn't express. Colors added to both render styles.
+- **Now available to cultures** for habitat/agricultural scoring (the original
+  trigger) — a follow-up can weight settlement suitability by soil order.
 - **Origin.** Research brief in commit `44ec18f`.
 
 ### Volcanic point classification
@@ -504,12 +508,13 @@ note.
   CONTINENTAL_COLD, etc.); update palettes; remap Köppen.
 - **Origin.** Realism audit in commit `117eafe`.
 
-### Soil-driven biome refinement
+### Soil-driven biome refinement — DONE (6.1.4, 2026-05-24)
 
-- **Why deferred.** USDA soil orders backlog item upstream. Without soil,
-  biome only reflects climate, not substrate.
-- **Trigger for revival.** Together with USDA soil orders backlog item.
-- **Cost.** Half a day after soils land.
+- **Shipped with USDA soil orders (above):** waterlogged Histosol cells override
+  to `biomes::WETLAND` (id 15). Conservative by design — the other orders mostly
+  agree with Köppen, so only the genuinely-additive wetland case overrides. A
+  richer substrate→biome coupling (e.g. Vertisol favouring grassland over forest
+  in seasonal subtropics) remains a future option if it proves non-redundant.
 - **Origin.** Research brief in commit `44ec18f`.
 
 ### Reach unused biome IDs from the Köppen path

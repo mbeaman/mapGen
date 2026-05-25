@@ -24,6 +24,10 @@ pub const SEA_DEEP: u8 = 13;
 /// near-river cells) that pass through arid surroundings, modeling the
 /// Nile-through-Sahara effect. Counts as biome 14.
 pub const RIPARIAN: u8 = 14;
+/// Wetland / marsh / swamp / bog (Phase 6.1.4) — a soil-driven override
+/// applied to waterlogged Histosol cells (flat, low-lying, well-watered).
+/// Fills a real ecological gap the pure-climate Köppen palette can't reach.
+pub const WETLAND: u8 = 15;
 
 /// Sentinel for "not yet assigned." Tests rely on this.
 pub const UNASSIGNED: u8 = u8::MAX;
@@ -42,6 +46,12 @@ pub const UNASSIGNED: u8 = u8::MAX;
 /// `apply_biome_patches` runs at the end so lore overrides take effect.
 pub fn classify(world: &mut WorldData) {
     let n = world.mesh.cell_count();
+
+    // Soil order (6.1.4) is derived from the same climate + drainage inputs and
+    // feeds the WETLAND override below, so classify it here at the head of the
+    // Biomes stage. Pure data layer — no RNG, native↔wasm byte-identical.
+    crate::soils::classify(world);
+
     let seasonal = world.climate.temperature_summer.len() == n
         && world.climate.temperature_winter.len() == n
         && world.climate.precipitation_summer.len() == n
@@ -124,6 +134,18 @@ pub fn classify(world: &mut WorldData) {
             } else {
                 TROPICAL_RAINFOREST
             };
+        }
+    }
+
+    // Soil-driven override (6.1.4): waterlogged Histosol cells are marshes /
+    // swamps / bogs — the one biome the pure-climate Köppen palette can't
+    // express. Applied before riparian/patches so a lore patch still wins.
+    let soil = &world.climate.soil;
+    if soil.len() == n {
+        for i in 0..n {
+            if elev[i] > 0.0 && soil[i] == crate::soils::HISTOSOL {
+                biome[i] = WETLAND;
+            }
         }
     }
 

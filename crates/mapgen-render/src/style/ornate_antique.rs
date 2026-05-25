@@ -1864,6 +1864,7 @@ fn ornate_biome_color(biome: u8, elev: f32) -> &'static str {
         SHRUBLAND => "#a59868",
         ALPINE => "#9a9a8a",
         RIPARIAN => "#6a9a4a",
+        WETLAND => "#7e9483", // marsh — muted reedy green-grey
         _ => "#b8a880",
     }
 }
@@ -1881,6 +1882,7 @@ const TROPICAL_DRY_FOREST: u8 = 9;
 const SHRUBLAND: u8 = 10;
 const ALPINE: u8 = 11;
 const RIPARIAN: u8 = 14;
+const WETLAND: u8 = 15;
 
 /// Per-element deterministic offset in `[-1, 1]`, derived from a u32
 /// pair via SplitMix64-style hashing. Reproducible across runs.

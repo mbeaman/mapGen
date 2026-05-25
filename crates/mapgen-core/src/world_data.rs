@@ -53,7 +53,12 @@ use crate::{
 ///   distinct from HolyWar / DynasticConflict / Chronicle). Both goldens
 ///   re-anchor for the `schema_version` byte; `seed42_full` additionally for the
 ///   re-woven arcs (HolyWar now requires a real schism; wars cite schisms).
-pub const SCHEMA_VERSION: u32 = 13;
+/// * v14 — Phase 6.1.4: per-cell USDA soil order (`ClimateData::soil`, filled by
+///   `soils::classify`) plus a soil-driven `biomes::WETLAND` (id 15) override for
+///   waterlogged Histosol cells. Both goldens re-anchor for the `schema_version`
+///   byte and the new `soil` array; `seed42_full`/`seed42_phase2` additionally
+///   for any cells that flip to WETLAND.
+pub const SCHEMA_VERSION: u32 = 14;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -215,6 +220,12 @@ pub struct ClimateData {
     pub precipitation: Vec<f32>,
     pub temperature: Vec<f32>,
     pub biome: Vec<u8>,
+    /// Per-cell USDA soil order (Phase 6.1.4). One of the 12 `soils::*` order
+    /// ids on land; `soils::OCEAN` on sea cells. Filled by `soils::classify`
+    /// (run at the head of the Biomes stage, after climate + hydrology).
+    /// Empty on pre-v14 worlds and before the Biomes stage runs.
+    #[serde(default)]
+    pub soil: Vec<u8>,
     /// Per-cell temperature delta from ocean currents (gyre limbs +
     /// upwelling). Computed by `ocean::run` before `climate::run`. Empty
     /// if ocean stage hasn't run.
