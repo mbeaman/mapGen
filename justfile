@@ -81,6 +81,12 @@ web-setup:
 web-test:
     cd web && npm test
 
+# Frontend e2e smoke (Playwright) — load → generate → toggle a lens → narrate.
+# Needs the wasm pkg built (just web-build) and a Chromium (npx playwright
+# install chromium). Builds the bundle first, since `vite preview` serves dist/.
+web-e2e:
+    cd web && npm run build && npm run e2e
+
 # Rebuild the wasm package the frontend consumes (run after Rust changes).
 web-build:
     cd web && npm run build:wasm

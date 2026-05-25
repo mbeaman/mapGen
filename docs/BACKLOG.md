@@ -913,17 +913,23 @@ note.
 Surfaced while reviewing Phases 6–7. Each is a real gap not otherwise on this
 list; promote when its trigger fires.
 
-### Frontend test suite — Vitest DONE (2026-05-25); Playwright smoke pending
+### Frontend test suite — Vitest + Playwright smoke DONE (2026-05-25)
 
-- **Done.** The bug-prone nav geometry was extracted to a pure `web/src/sector.ts`
-  and covered by Vitest (`sector.test.ts`): sector tiling, click→child mapping +
-  clamping, breadcrumb ancestors, per-stage style. `main.ts`/`worker.ts` use it,
-  so the tests cover shipped code. Runs in CI (build-web job) + `just web-test`.
-- **Still open: a Playwright smoke** (load → generate → SVG paints → drill-in →
-  breadcrumb-up) — needs browser binaries, so it's CI-only; not yet wired (can't
-  verify headless-browser in the dev sandbox). The DOM glue in `main.ts` (event
-  wiring, worker round-trips) is still only exercised by typecheck.
-- **Cost.** ~½ d remaining for the Playwright smoke + CI browser install.
+- **Vitest (pure logic).** The bug-prone nav geometry lives in a pure
+  `web/src/sector.ts` covered by `sector.test.ts`; the layer/preset/toggle logic
+  in `layers.ts` by `layers.test.ts` (24 tests total). Runs in CI + `just web-test`.
+  Vitest is scoped to `src/**/*.test.ts` (vite.config) so it ignores the e2e specs.
+- **Playwright smoke DONE.** `web/e2e/smoke.spec.ts` drives a real browser through
+  load → engine-ready → generate → map paints → apply the Climate lens (asserts
+  the root `<svg>` gains `on-climate`) → narration enables — the worker + wasm +
+  DOM glue the unit tests can't reach. `vite preview` serves the built bundle;
+  wired into the CI build-web job (`npx playwright install --with-deps chromium`
+  then `npm run e2e`) and `just web-e2e`. CI-only by nature (needs a browser);
+  the dev sandbox is Ubuntu 26.04 which Playwright's chromium doesn't support, so
+  it's validated locally via `playwright test --list` (spec + config compile,
+  test discovered) and executes for real on CI's Ubuntu 24.04.
+- **Still thin:** the smoke is one happy-path flow; drill-in/breadcrumb and
+  error paths aren't covered yet — extend the spec as the UI grows.
 
 ### Refine-path cross-platform golden — DONE (2026-05-25)
 
@@ -934,13 +940,17 @@ list; promote when its trigger fires.
   path (sub-region mesh, projection, seam-pinning) is byte-identical across
   targets; passed first run (no fmath bypass in the new arithmetic). In CI.
 
-### Per-component perf budgets
+### Per-component perf budgets — DONE (2026-05-25)
 
-- **Gap.** Only `generate_full` is benched (`examples/perf_baseline.rs`). Render,
-  the history sim, and `refine_sector` latency have no budget — yet sector-gen
-  latency is user-facing in the atlas (the navigation brief flags "seconds per
-  sector"). **Trigger.** A perf regression in render/refine. **Cost.** ~1 d; add
-  to `just perf`.
+- **Shipped.** `examples/perf_baseline.rs` now budgets `render` (4k/15k) and
+  `refine_sector` (a level-2 tile) alongside `generate_full`, same convention
+  (median of 3 ≤ baseline × 1.5; `just perf` exits non-zero on a breach).
+  Render landed at ~22/78 ms — nearly the cost of generation — and a sector at
+  ~68 ms, the latency the navigation ADR flagged. Baselines anchored to this box
+  and mirrored in `docs/perf_baseline.md`.
+- **Still open:** the history sim isn't isolated (it's covered inside the
+  `generate_full` budget — isolating a single pipeline stage wasn't worth the
+  plumbing); `just perf` remains a manual/local gate, not in CI.
 
 ### Atlas / world-bible export (`mapgen atlas`) — DONE (2026-05-25)
 

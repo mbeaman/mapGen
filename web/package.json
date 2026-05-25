@@ -9,9 +9,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "e2e": "playwright test",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@playwright/test": "^1.48.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.8"

@@ -79,3 +79,11 @@ jobs:
       - name: Build frontend (typecheck + bundle)
         working-directory: web
         run: npm run build
+      - name: Install Playwright Chromium (+ system deps)
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: E2E smoke (Playwright)
+        # Serves the dist/ built above via `vite preview`, then drives the
+        # load → generate → toggle-lens → narrate path in a real browser.
+        working-directory: web
+        run: npm run e2e
