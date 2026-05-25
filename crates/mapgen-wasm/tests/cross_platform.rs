@@ -15,7 +15,11 @@
 //! (the golden file below is the single source of truth, shared with the native
 //! test; re-anchoring the native golden re-anchors this one automatically.)
 
-use mapgen_world::{generate_full, GenerateParams};
+use mapgen_world::{
+    generate_full,
+    scale::{refine_sector, RefineParams, Sector},
+    GenerateParams,
+};
 use wasm_bindgen_test::*;
 
 /// Must stay identical to `fixed_params(42)` in
@@ -37,6 +41,32 @@ fn hash_world(world: &mapgen_core::WorldData) -> String {
     let mut bytes = Vec::new();
     ciborium::into_writer(world, &mut bytes).unwrap();
     blake3::hash(&bytes).to_hex().to_string()
+}
+
+/// Phase 7 cross-platform refine golden: a fixed refined sector hashes identical
+/// under wasm32 to the native golden (`crates/mapgen-world/tests/golden/
+/// seed42_sector.blake3.txt`). Extends the 6.2 guarantee (which covered
+/// `generate_full`) to the refine path — sub-region mesh, projection,
+/// seam-pinning — which the multi-scale atlas regenerates in the browser.
+#[wasm_bindgen_test]
+fn refined_sector_golden_matches_native_under_wasm() {
+    let parent = generate_full(fixed_params(42));
+    let child = refine_sector(
+        &parent,
+        Sector {
+            level: 2,
+            sx: 1,
+            sy: 1,
+        },
+        RefineParams::default(),
+    );
+    let hash = hash_world(&child);
+    let committed = include_str!("../../mapgen-world/tests/golden/seed42_sector.blake3.txt").trim();
+    assert_eq!(
+        hash, committed,
+        "wasm32 refined sector diverged from the native golden — refine-path \
+         native↔wasm byte-identity broken"
+    );
 }
 
 /// Phase 7: the `refineSector` binding produces a renderable sector under wasm,

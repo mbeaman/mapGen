@@ -833,16 +833,17 @@ note.
 Surfaced while reviewing Phases 6–7. Each is a real gap not otherwise on this
 list; promote when its trigger fires.
 
-### Frontend test suite
+### Frontend test suite — Vitest DONE (2026-05-25); Playwright smoke pending
 
-- **Gap.** `web/` has *zero* tests — CI only typechecks (`tsc --noEmit`) and
-  bundles. The worker message protocol, the drill-in nav (click→sector mapping,
-  breadcrumb, coarse-first), and the narrate flow are unverified.
-- **Trigger.** Any frontend regression that typecheck didn't catch; or before
-  the frontend grows further.
-- **Cost.** ~1 d. Vitest unit tests for the worker protocol + a Playwright smoke
-  (load → generate → SVG paints → drill-in → breadcrumb-up). Add a `web` step to
-  CI + `just check`.
+- **Done.** The bug-prone nav geometry was extracted to a pure `web/src/sector.ts`
+  and covered by Vitest (`sector.test.ts`): sector tiling, click→child mapping +
+  clamping, breadcrumb ancestors, per-stage style. `main.ts`/`worker.ts` use it,
+  so the tests cover shipped code. Runs in CI (build-web job) + `just web-test`.
+- **Still open: a Playwright smoke** (load → generate → SVG paints → drill-in →
+  breadcrumb-up) — needs browser binaries, so it's CI-only; not yet wired (can't
+  verify headless-browser in the dev sandbox). The DOM glue in `main.ts` (event
+  wiring, worker round-trips) is still only exercised by typecheck.
+- **Cost.** ~½ d remaining for the Playwright smoke + CI browser install.
 
 ### Refine-path cross-platform golden
 

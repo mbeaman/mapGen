@@ -273,6 +273,33 @@ fn adjacent_sectors_agree_at_their_seam() {
     );
 }
 
+/// Golden hash of a fixed refined sector — the native anchor for the
+/// cross-platform refine golden (`crates/mapgen-wasm/tests/cross_platform.rs`
+/// hashes the same sector under wasm32 and compares to this file). Pins that the
+/// whole refine path — sub-region mesh, projection, seam-pinning — is
+/// deterministic; the wasm side pins it is *also* byte-identical across targets.
+#[test]
+fn refined_sector_golden_hash() {
+    let parent = generate_full(params());
+    let child = refine_sector(
+        &parent,
+        Sector {
+            level: 2,
+            sx: 1,
+            sy: 1,
+        },
+        RefineParams::default(),
+    );
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&child, &mut bytes).unwrap();
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+    let committed = include_str!("golden/seed42_sector.blake3.txt").trim();
+    assert_eq!(
+        hash, committed,
+        "refined sector drifted from committed golden"
+    );
+}
+
 /// Robustness: refining *every* sector across several levels — including all-
 /// ocean sectors, all-land inland sectors, world-edge corners, and deep levels —
 /// never panics and yields a structurally valid world (biome ids in range,
