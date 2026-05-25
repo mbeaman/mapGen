@@ -34,6 +34,18 @@ pub fn ner_lexicon(world: &WorldData) -> BTreeSet<String> {
     for n in &world.society.nations {
         set.insert(n.name.clone());
     }
+    // World-level proper nouns the WORLD BIBLE exposes to the chronicler: every
+    // people, every faith (the full roster — not just the schism-minted entity
+    // mirrors), every named tongue.
+    for c in &world.cultures.cultures {
+        set.insert(c.name.clone());
+    }
+    for r in &world.religions.religions {
+        set.insert(r.name.clone());
+    }
+    for l in &world.languages {
+        set.insert(l.name.clone());
+    }
     for a in &world.history.ages {
         set.insert(a.name.clone());
     }
