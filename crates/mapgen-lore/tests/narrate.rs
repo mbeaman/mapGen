@@ -154,6 +154,60 @@ fn ner_accepts_grounded_text_and_rejects_invented_names() {
 }
 
 #[test]
+fn lacunae_record_unfulfilled_prophecies() {
+    use mapgen_core::EventKind;
+    let mut w = seed42();
+    let focal = select_focal(&w, "auto-major-war").unwrap();
+    // Ground truth from the log: prophecies uttered but never fulfilled.
+    let fulfilled: std::collections::HashSet<u32> = w
+        .events
+        .events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::ProphecyFulfilled))
+        .flat_map(|e| e.cause_ids.iter().map(|c| c.0))
+        .collect();
+    let unfulfilled = w
+        .events
+        .events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::ProphecyUttered) && !fulfilled.contains(&e.id.0))
+        .count();
+
+    let work = narrate(&mut w, focal, &voice(), None).unwrap(); // template path
+    let recorded = work
+        .lacunae
+        .iter()
+        .filter(|l| l.contains("unfulfilled"))
+        .count();
+    assert_eq!(
+        recorded,
+        unfulfilled.min(3),
+        "engine should record up to 3 unfulfilled prophecies as lacunae (even offline)"
+    );
+}
+
+#[test]
+fn paid_narration_respects_the_per_world_budget() {
+    use mapgen_lore::MAX_CALLS_PER_WORLD;
+    let mut w = seed42();
+    let focal = select_focal(&w, "auto-major-war").unwrap();
+    let summary = w.events.events[focal.0 as usize].summary_canonical.clone();
+    let json =
+        serde_json::json!({"title":"A Tale","body":summary,"references":[focal.0],"lacunae":[]})
+            .to_string();
+    let client = Canned(json);
+
+    // Fill the world to the cap with (free, uncapped) offline narrations.
+    for _ in 0..MAX_CALLS_PER_WORLD {
+        narrate(&mut w, focal, &voice(), None).unwrap();
+    }
+    // A paid call beyond the cap is refused …
+    assert!(narrate(&mut w, focal, &voice(), Some(&client)).is_err());
+    // … but offline narration stays free and allowed.
+    assert!(narrate(&mut w, focal, &voice(), None).is_ok());
+}
+
+#[test]
 fn ner_rejects_validator_bypasses() {
     // Invented names must not slip through hyphen/dash/slash compounds, embedded
     // digits, curly-apostrophe possessives, or the title.

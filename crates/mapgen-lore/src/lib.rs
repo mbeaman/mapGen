@@ -72,16 +72,35 @@ pub fn select_focal(world: &WorldData, spec: &str) -> anyhow::Result<EventId> {
         .ok_or_else(|| anyhow::anyhow!("the world has no events to narrate"))
 }
 
+/// Per-world ceiling on paid (Claude) narrations, per ARCHITECTURE §7
+/// (`max_calls_per_world`). Counted against the works already persisted on the
+/// world; the free offline template narrator is never capped.
+pub const MAX_CALLS_PER_WORLD: usize = 20;
+
+/// Cap on engine-derived lacunae attached to a chronicle (so a world's standing
+/// mysteries don't flood the list).
+const MAX_LACUNAE: usize = 3;
+
 /// Narrate `focal` (and its causal lead-up) in `voice`, persist the result as a
 /// `Work` on `world`, and return it. With `client = None` (or on any client
 /// failure / repeated NER violation) the deterministic template narrator is
-/// used, so this never fails for lack of a working model.
+/// used, so this never fails for lack of a working model — except when the paid
+/// per-world budget is exhausted (a deliberate cost guard, not a model failure).
 pub fn narrate(
     world: &mut WorldData,
     focal: EventId,
     voice: &VoiceCard,
     client: Option<&dyn LlmClient>,
 ) -> anyhow::Result<Work> {
+    // Cost guard: cap paid calls per world. Offline (template) narration is free
+    // and uncapped.
+    if client.is_some() && world.works.len() >= MAX_CALLS_PER_WORLD {
+        anyhow::bail!(
+            "per-world narration budget reached ({MAX_CALLS_PER_WORLD} chronicles); \
+             narrate offline (drop --features lore or unset ANTHROPIC_API_KEY) or start a fresh world"
+        );
+    }
+
     let focal_event = world
         .events
         .events
@@ -108,12 +127,20 @@ pub fn narrate(
         .map(|e| e.year)
         .max()
         .unwrap_or(0);
+    // Engine-derived lacunae (the age's unresolved threads) merged with any the
+    // model self-reported — so gaps are recorded even on the template path.
+    let mut lacunae = draft.lacunae;
+    for l in world_lacunae(world) {
+        if !lacunae.contains(&l) {
+            lacunae.push(l);
+        }
+    }
     let work = Work {
         title: draft.title,
         body: draft.body,
         in_world_author: voice.author.clone(),
         references: draft.references.iter().map(|&r| EventId(r)).collect(),
-        lacunae: draft.lacunae,
+        lacunae,
         written_year,
     };
     world.works.push(work.clone());
@@ -124,6 +151,28 @@ pub fn narrate(
 fn resolve<'a>(world: &'a WorldData, ids: &[EventId]) -> Vec<&'a Event> {
     ids.iter()
         .filter_map(|id| world.events.events.get(id.0 as usize))
+        .collect()
+}
+
+/// The age's unresolved threads, derived from the persisted log: prophecies that
+/// were uttered but no deed ever fulfilled. The history sim leaves these
+/// dangling deliberately (`SimState.pending_prophecies`), so they are genuine
+/// `[lacuna]`s a chronicler would note. Capped so they don't flood the list.
+fn world_lacunae(world: &WorldData) -> Vec<String> {
+    let fulfilled: std::collections::BTreeSet<u32> = world
+        .events
+        .events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::ProphecyFulfilled))
+        .flat_map(|e| e.cause_ids.iter().map(|c| c.0))
+        .collect();
+    world
+        .events
+        .events
+        .iter()
+        .filter(|e| matches!(e.kind, EventKind::ProphecyUttered) && !fulfilled.contains(&e.id.0))
+        .map(|e| format!("A prophecy left unfulfilled: \"{}\"", e.summary_canonical))
+        .take(MAX_LACUNAE)
         .collect()
 }
 
