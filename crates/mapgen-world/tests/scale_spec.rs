@@ -254,6 +254,23 @@ fn adjacent_sectors_agree_at_their_seam() {
         "seam land/sea agreement {:.0}% too low",
         agree * 100.0
     );
+
+    // Rivers (projected from the shared parent network) are continuous too: both
+    // sectors agree on whether significant flow is present along the seam.
+    let mut river_agree = 0;
+    for k in 0..40 {
+        let y = y_lo + (y_hi - y_lo) * k as f32 / 39.0;
+        let pt = [edge_x, y];
+        let fa = a.hydrology.flow[nearest(&a.mesh.sites, pt)];
+        let fb = b.hydrology.flow[nearest(&b.mesh.sites, pt)];
+        if (fa > 20.0) == (fb > 20.0) {
+            river_agree += 1;
+        }
+    }
+    assert!(
+        river_agree >= 34,
+        "seam river-presence agreement {river_agree}/40 too low"
+    );
 }
 
 /// Distinct sectors are genuinely different worlds (no accidental aliasing of

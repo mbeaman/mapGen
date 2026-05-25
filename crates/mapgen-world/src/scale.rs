@@ -22,26 +22,27 @@
 //! distinct per sector. Because the added octaves are zero-mean, they average
 //! away under coarsening — the contract still holds.
 //!
-//! ## Halo
+//! ## Halo + seams
 //!
 //! Erosion / hydrology / climate are neighbour-coupled, so a bare sector would
-//! show edge artifacts (rivers with nowhere to flow, clipped erosion). We build
-//! the mesh over the sector grown by a halo margin and run the stages over the
-//! whole thing; the output `mesh.region` is the *true* sector, so the renderer's
-//! viewport clips the halo away. The halo is context, not a pinned boundary —
-//! adjacent sectors therefore agree only approximately (they share the same base
-//! field); exact seam-pinning across the stateful stages is future work (it
-//! needs per-stage Dirichlet boundary masks). The drill-in use case views one
-//! sector at a time, so approximate seams are not yet exercised.
+//! show edge artifacts. We build the mesh over the sector grown by a halo margin
+//! and run the stages over the whole thing; the output `mesh.region` is the
+//! *true* sector, so the renderer's viewport clips the halo away. The halo is
+//! context for the interior. Seam *consistency* between adjacent sectors is then
+//! achieved explicitly: [`pin_edges_to_shared`] blends each sector's terrain back
+//! to the shared base field toward its edges, so two neighbours agree on
+//! elevation/coast along their seam while keeping their own interior detail.
 //!
 //! ## Scope (v1)
 //!
 //! Refines the *physical* map: terrain → erosion → hydrology → ocean → climate →
-//! biomes (+ soils + rivers/Strahler/regime, which the stages carry). Society is
-//! **projected** from the parent ([`project_society`]) — the same towns, polity
-//! borders, and roads, remapped onto the finer mesh — rather than re-rolled, so a
-//! drill-in shows this world's cities, not different ones. History stays at world
-//! scale on the parent (a sector has no chronicle of its own).
+//! biomes (+ soils). Two layers are **projected from the parent** rather than
+//! re-rolled, so a drill-in shows *this* world (not a different one) and stays
+//! seam-consistent (both neighbours sample the same global parent): society
+//! ([`project_society`] — towns, borders, roads) and hydrology
+//! ([`project_hydrology`] — the river network + flow, which a sector can't
+//! compute correctly anyway since the upstream catchment is global). History
+//! stays at world scale on the parent (a sector has no chronicle of its own).
 
 use mapgen_core::{
     world_data::{CulturesData, Road, SocietyData},
@@ -260,6 +261,15 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     climate_seasonal::run(&mut world, ClimateParams::default());
     biomes::classify(&mut world);
 
+    // Project the parent's river network onto the sector. Rivers are derived
+    // from flow accumulation, which needs the *global* upstream catchment — a
+    // sector only sees its own cells, so its rivers can't be globally correct or
+    // seam-consistent. The parent's network is both; projecting it (like society)
+    // gives correct drainage and makes a river cross a sector seam identically on
+    // both sides. Runs after biomes (which used the sector's own flow), so this
+    // only re-bases what the renderer draws.
+    project_hydrology(parent, &mut world, halo);
+
     // Project the parent's society onto the sector — the same towns, borders,
     // and roads, remapped to the finer mesh. Society is generated once at world
     // scale and never re-rolled per sector, so drilling in shows *this* world's
@@ -293,6 +303,116 @@ fn pin_edges_to_shared(world: &mut WorldData, rect: [f32; 4], shared: &[f32]) {
         let w = t * t * (3.0 - 2.0 * t); // smoothstep
         elev[i] = shared[i] + (elev[i] - shared[i]) * w;
     }
+}
+
+/// Project the root world's hydrology onto a refined sector: per-cell `flow` and
+/// `strahler` are sampled from the nearest parent cell, and the parent's rivers
+/// and lakes are remapped (their in-halo cells → nearest sector cell), carrying
+/// width / name / order / regime. Because the parent network is global and both
+/// neighbours sample the *same* parent, a river crosses their shared seam
+/// identically. A physical-only parent (no hydrology) is a no-op.
+fn project_hydrology(parent: &WorldData, world: &mut WorldData, halo: [f32; 4]) {
+    if parent.hydrology.flow.len() != parent.mesh.cell_count() {
+        return;
+    }
+    let psite = |c: u32| parent.mesh.sites[c as usize];
+    let in_halo = |c: u32| in_rect(psite(c), halo);
+    let n = world.mesh.cell_count();
+
+    // Per sector cell, the nearest parent cell (restricted to the haloed rect) —
+    // its flow and Strahler order carry over (drives river width / classing).
+    let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
+        .filter(|&i| in_halo(i))
+        .collect();
+    let mut flow = vec![0.0_f32; n];
+    let has_strahler = parent.hydrology.strahler.len() == parent.mesh.cell_count();
+    let mut strahler = if has_strahler {
+        vec![0u8; n]
+    } else {
+        Vec::new()
+    };
+    if !parent_in_halo.is_empty() {
+        for i in 0..n {
+            let p = world.mesh.sites[i];
+            let mut best = parent_in_halo[0];
+            let mut bd = f32::MAX;
+            for &pc in &parent_in_halo {
+                let s = psite(pc);
+                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                if d < bd {
+                    bd = d;
+                    best = pc;
+                }
+            }
+            flow[i] = parent.hydrology.flow[best as usize];
+            if has_strahler {
+                strahler[i] = parent.hydrology.strahler[best as usize];
+            }
+        }
+    }
+
+    // Remap parent rivers/lakes — keep each chain's in-halo cells, snapped to the
+    // nearest sector cell.
+    let sites = world.mesh.sites.clone();
+    let nearest_sector = |p: [f32; 2]| -> u32 {
+        let mut best = 0u32;
+        let mut bd = f32::MAX;
+        for (i, s) in sites.iter().enumerate() {
+            let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+            if d < bd {
+                bd = d;
+                best = i as u32;
+            }
+        }
+        best
+    };
+    let rivers = parent
+        .hydrology
+        .rivers
+        .iter()
+        .filter_map(|r| {
+            let cells: Vec<u32> = r
+                .cells
+                .iter()
+                .copied()
+                .filter(|&c| in_halo(c))
+                .map(|c| nearest_sector(psite(c)))
+                .collect();
+            if cells.len() < 2 {
+                return None;
+            }
+            let mut r2 = r.clone();
+            r2.cells = cells;
+            Some(r2)
+        })
+        .collect();
+    let lakes = parent
+        .hydrology
+        .lakes
+        .iter()
+        .filter_map(|l| {
+            let cells: Vec<u32> = l
+                .cells
+                .iter()
+                .copied()
+                .filter(|&c| in_halo(c))
+                .map(|c| nearest_sector(psite(c)))
+                .collect();
+            if cells.is_empty() {
+                return None;
+            }
+            let mut l2 = l.clone();
+            l2.cells = cells;
+            Some(l2)
+        })
+        .collect();
+
+    world.hydrology.flow = flow;
+    if has_strahler {
+        world.hydrology.strahler = strahler;
+    }
+    world.hydrology.rivers = rivers;
+    world.hydrology.lakes = lakes;
 }
 
 /// Carry the root world's society into a refined sector. Settlements/roads in
