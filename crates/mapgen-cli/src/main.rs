@@ -1,5 +1,7 @@
 //! `mapgen` — native developer CLI.
 
+#[cfg(feature = "lore")]
+mod serve;
 mod sweep;
 
 use std::{
@@ -117,6 +119,17 @@ enum Cmd {
         /// Optionally write the world back with the new chronicle persisted.
         #[arg(long, value_name = "WORLD")]
         out: Option<PathBuf>,
+    },
+    /// Run a local narration sidecar (`POST /narrate`) so the browser frontend
+    /// can request chronicles without the API key leaving this process. Only
+    /// available with `--features lore`.
+    #[cfg(feature = "lore")]
+    Serve {
+        #[arg(long, default_value_t = 7878)]
+        port: u16,
+        /// World to narrate when a request omits its own `world`.
+        #[arg(long, value_name = "WORLD")]
+        r#in: Option<PathBuf>,
     },
 }
 
@@ -305,6 +318,14 @@ fn main() -> Result<()> {
                     world.works.len()
                 );
             }
+        }
+        #[cfg(feature = "lore")]
+        Cmd::Serve { port, r#in } => {
+            let startup = match r#in {
+                Some(p) => Some(read_world(&p)?),
+                None => None,
+            };
+            serve::run(port, startup)?;
         }
     }
     Ok(())

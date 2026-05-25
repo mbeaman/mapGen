@@ -11,10 +11,10 @@ name = "mapgen"
 path = "src/main.rs"
 
 [features]
-# Opt-in real Claude narration: `cargo build -p mapgen-cli --features lore`.
-# Off by default, so `mapgen lore` narrates offline (template) and a stock build
-# pulls in no network deps.
-lore = ["mapgen-lore/lore"]
+# Opt-in real Claude narration + the `mapgen serve` sidecar:
+# `cargo build -p mapgen-cli --features lore`. Off by default, so `mapgen lore`
+# narrates offline (template) and a stock build pulls in no network deps.
+lore = ["mapgen-lore/lore", "dep:tiny_http", "dep:serde"]
 
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
@@ -24,8 +24,11 @@ mapgen-render = { path = "../mapgen-render" }
 mapgen-lore = { path = "../mapgen-lore" }
 clap = { workspace = true }
 anyhow = { workspace = true }
+serde = { workspace = true, optional = true }
 serde_json = { workspace = true }
 flate2 = { workspace = true }
+# The `mapgen serve` sidecar (lore feature only) — a small blocking HTTP server.
+tiny_http = { version = "0.12", optional = true }
 resvg = { workspace = true }
 usvg = { workspace = true }
 tiny-skia = { workspace = true }
