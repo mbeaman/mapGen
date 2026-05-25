@@ -41,15 +41,24 @@ export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string }
   | { type: "render"; style: string }
   | { type: "refine"; level: number; sx: number; sy: number; style: string }
+  | { type: "renderYear"; style: string; year: number }
   | { type: "narrate"; event: string; voice: string; sidecar: string };
 
 export type WorkerResponse =
   | { type: "ready" }
   | { type: "progress"; info: StageInfo }
   | { type: "frame"; svg: string; info: StageInfo }
-  | { type: "generated"; svg: string; genMs: number; totalMs: number; frameCount: number }
+  | {
+      type: "generated";
+      svg: string;
+      genMs: number;
+      totalMs: number;
+      frameCount: number;
+      historyYears: number[];
+    }
   | { type: "rendered"; svg: string; ms: number }
   | { type: "refined"; svg: string; level: number; sx: number; sy: number; ms: number }
+  | { type: "yearFrame"; svg: string; year: number }
   | { type: "chronicle"; work: Work }
   | { type: "error"; message: string };
 
@@ -89,7 +98,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       root = gen.finish();
       const svg = root.render(msg.style);
       const totalMs = performance.now() - t0;
-      post({ type: "generated", svg, genMs, totalMs, frameCount });
+      const historyYears = Array.from(root.historyYears());
+      post({ type: "generated", svg, genMs, totalMs, frameCount, historyYears });
     } else if (msg.type === "refine") {
       if (!root) {
         post({ type: "error", message: "no world generated yet" });
@@ -120,6 +130,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const t0 = performance.now();
       const svg = v.render(msg.style);
       post({ type: "rendered", svg, ms: performance.now() - t0 });
+    } else if (msg.type === "renderYear") {
+      // Time-slider applies to the whole world (history is world-scale).
+      if (!root) {
+        post({ type: "error", message: "no world generated yet" });
+        return;
+      }
+      const svg = root.renderAtYear(msg.style, msg.year);
+      post({ type: "yearFrame", svg, year: msg.year });
     } else if (msg.type === "narrate") {
       // Narration always targets the whole world (it owns the history/events);
       // a refined sector has no chronicle of its own.

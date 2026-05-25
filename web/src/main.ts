@@ -36,6 +36,9 @@ const voiceSelect = $<HTMLSelectElement>("voice");
 const narrateBtn = $<HTMLButtonElement>("narrate");
 const chronicleEl = $<HTMLDivElement>("chronicle");
 const breadcrumbEl = $<HTMLDivElement>("breadcrumb");
+const timesliderEl = $<HTMLDivElement>("timeslider");
+const timescrubInput = $<HTMLInputElement>("timescrub");
+const timeyearEl = $<HTMLSpanElement>("timeyear");
 
 /// The native narration sidecar (`mapgen serve`). The browser POSTs the world
 /// here so the API key never enters page JS.
@@ -62,6 +65,13 @@ let nav: Sector = { ...ROOT };
 // GenerateParams dims). Sector rectangles are computed against it.
 let worldW = 2048;
 let worldH = 1280;
+
+// ---- History time-slider (Phase 7+) ----
+// `[start, end]` years the map changed across, or empty if borders never moved.
+let historyYears: number[] = [];
+// Coalesce rapid scrubs: render one year at a time, remembering the latest.
+let yearBusy = false;
+let pendingYear: number | null = null;
 
 // Build-up frames cached for the scrubber/replay (JS-side only; no Rust
 // snapshots). Each entry is one rendered stage frame.
@@ -287,8 +297,9 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       nav = { ...ROOT };
       worldW = lastDims.w || worldW;
       worldH = lastDims.h || worldH;
+      historyYears = msg.historyYears;
       mapEl.classList.add("navigable");
-      updateBreadcrumb();
+      updateBreadcrumb(); // also reconciles the time-slider
       narrateBtn.disabled = false;
       setStatus(
         `Generated in ${(msg.genMs / 1000).toFixed(2)}s · ${msg.frameCount} frames · rendered in ${((msg.totalMs - msg.genMs) / 1000).toFixed(2)}s`,
@@ -314,6 +325,17 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
           : `Sector L${msg.level} (${msg.sx},${msg.sy}) · refined in ${(msg.ms / 1000).toFixed(2)}s`,
         "ok",
       );
+      break;
+    case "yearFrame":
+      // A time-slider frame: swap the SVG only (no refit/status churn while
+      // scrubbing), then send the latest pending year if the user moved on.
+      showSvg(msg.svg);
+      yearBusy = false;
+      if (pendingYear !== null) {
+        const p = pendingYear;
+        pendingYear = null;
+        requestYear(p);
+      }
       break;
     case "chronicle":
       setBusy(false);
@@ -342,6 +364,7 @@ const doGenerate = () => {
   setExportEnabled(false);
   hasWorld = false;
   nav = { ...ROOT };
+  historyYears = [];
   updateBreadcrumb();
   narrateBtn.disabled = true;
   chronicleEl.classList.add("hidden");
@@ -425,6 +448,7 @@ const updateBreadcrumb = () => {
     hint.textContent = "· click the map to zoom in";
     breadcrumbEl.append(hint);
   }
+  refreshTimeslider(); // nav changed → show at world scale, hide in a sector
 };
 
 const requestRefine = () => {
@@ -474,6 +498,42 @@ mapEl.addEventListener("pointerup", (e) => {
   const c = panzoom.clientToContent(e.clientX, e.clientY);
   const cur = sectorRect(nav, worldW, worldH);
   drillAt(cur.x0 + c.x, cur.y0 + c.y);
+});
+
+// ---- History time-slider ----
+// Shown only at the world scale (history is world-wide) and only when borders
+// actually moved. Drilling into a sector hides it (sectors have no timeline).
+const refreshTimeslider = () => {
+  const show = hasWorld && nav.level === 0 && historyYears.length === 2;
+  timesliderEl.classList.toggle("hidden", !show);
+  if (!show) return;
+  const [start, end] = historyYears;
+  timescrubInput.min = String(start);
+  timescrubInput.max = String(end);
+  timescrubInput.value = String(end); // start at the present
+  timeyearEl.textContent = "present";
+};
+
+const labelYear = (y: number) => {
+  const end = historyYears[1] ?? 0;
+  timeyearEl.textContent = y >= end ? "present" : `year ${y}`;
+};
+
+// Coalesce scrubs: one render in flight, remember only the latest target.
+const requestYear = (y: number) => {
+  if (yearBusy) {
+    pendingYear = y;
+    return;
+  }
+  yearBusy = true;
+  send({ type: "renderYear", style: currentState().style, year: y });
+};
+
+timescrubInput.addEventListener("input", () => {
+  if (busy) return;
+  const y = Number(timescrubInput.value);
+  labelYear(y);
+  requestYear(y);
 });
 
 // ---- Export ----

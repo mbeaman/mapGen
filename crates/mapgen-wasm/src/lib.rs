@@ -96,6 +96,31 @@ impl WorldHandle {
     pub fn world_json(&self) -> Result<String, JsError> {
         serde_json::to_string(&self.inner).map_err(|e| JsError::new(&e.to_string()))
     }
+
+    /// Render the map as its borders stood at the end of `year` (the
+    /// time-slider). Polity territory is reconstructed from the recorded
+    /// territorial timeline; everything else (terrain, settlements, labels) is
+    /// the present state. Cheap — call repeatedly while scrubbing.
+    #[wasm_bindgen(js_name = renderAtYear)]
+    pub fn render_at_year(&mut self, style: &str, year: i32) -> Result<String, JsError> {
+        let style = Style::from_str(style).map_err(|e| JsError::new(&e))?;
+        let past = self.inner.control_at_year(year);
+        let saved = std::mem::replace(&mut self.inner.society.control, past);
+        let svg = mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e));
+        self.inner.society.control = saved; // restore the present
+        svg
+    }
+
+    /// `[start, end]` years for the time-slider — `start` at the founding map,
+    /// `end` at the present — or an empty array if borders never moved (so the
+    /// frontend can hide the slider).
+    #[wasm_bindgen(js_name = historyYears)]
+    pub fn history_years(&self) -> Vec<i32> {
+        match self.inner.border_change_year_span() {
+            Some((_, last)) => vec![0, last],
+            None => Vec::new(),
+        }
+    }
 }
 
 /// Per-step progress descriptor handed back to JS. A plain serializable

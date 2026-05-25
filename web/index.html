@@ -74,6 +74,12 @@
 
         <div id="breadcrumb" class="breadcrumb" role="navigation" aria-label="Map scale"></div>
 
+        <div id="timeslider" class="timeslider hidden" role="group" aria-label="History year">
+          <span class="ts-caption" title="Scrub through history">⏳</span>
+          <input id="timescrub" type="range" min="0" max="0" value="0" aria-label="History year" />
+          <span id="timeyear" class="ts-year">—</span>
+        </div>
+
         <div class="zoom" role="group" aria-label="Zoom controls">
           <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
           <button id="zoom-fit" type="button" aria-label="Fit to screen">⤢</button>

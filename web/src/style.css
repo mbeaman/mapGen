@@ -300,6 +300,33 @@ section.map.navigable.grabbing { cursor: grabbing; }
   margin-left: 0.2rem;
 }
 
+/* History time-slider (top-center) — scrub the map through the conquest years. */
+.timeslider {
+  position: absolute;
+  top: 0.8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: min(360px, 55%);
+  padding: 0.4rem 0.8rem;
+  background: rgba(244, 233, 207, 0.92);
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  font-family: "IM Fell English", Georgia, serif;
+  font-size: 0.9rem;
+  color: var(--ink);
+  z-index: 5;
+}
+.timeslider.hidden { display: none; }
+.timeslider input[type="range"] { flex: 1; min-width: 0; }
+.ts-year {
+  min-width: 7ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Generating overlay */
 .overlay {
   position: absolute;
