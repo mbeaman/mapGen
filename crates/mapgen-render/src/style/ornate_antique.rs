@@ -1101,6 +1101,52 @@ fn draw_city_plan(
             .unwrap();
         }
     }
+
+    // 6. A named ward or two — small antique labels inside the walls. The
+    //    seaward ward gets a docks name; capitals get a second ward opposite.
+    let primary = if harbour.is_some() {
+        DOCK_NAMES[seed as usize % DOCK_NAMES.len()]
+    } else {
+        WARD_NAMES[seed as usize % WARD_NAMES.len()]
+    };
+    let (lx, ly) = match harbour {
+        Some([dx, dy]) => (cx + dx * r * 0.52, cy + dy * r * 0.52),
+        None => (mx, my - ps - r * 0.14),
+    };
+    draw_district_label(out, lx, ly, primary, r * 0.22);
+    if capital {
+        let second =
+            WARD_NAMES[(seed as usize).wrapping_mul(31).wrapping_add(7) % WARD_NAMES.len()];
+        draw_district_label(out, cx - r * 0.3, cy - r * 0.42, second, r * 0.22);
+    }
+}
+
+/// Small ward labels for a city plan. A curated antique pool, hash-picked per
+/// town; `DOCK_NAMES` for the seaward ward.
+const WARD_NAMES: &[&str] = &[
+    "Old Town",
+    "High Ward",
+    "Low Quarter",
+    "Stonegate",
+    "The Rows",
+    "Inner Ward",
+    "Kingsreach",
+    "New Town",
+    "The Heights",
+    "Greymarket",
+];
+const DOCK_NAMES: &[&str] = &["The Docks", "Harbour Ward", "Wharfside", "Saltgate"];
+
+/// One ward label: small EB Garamond italic with a parchment halo for legibility
+/// against the busy town fabric.
+fn draw_district_label(out: &mut String, x: f32, y: f32, name: &str, size: f32) {
+    write!(
+        out,
+        r##"<text x="{x:.1}" y="{y:.1}" font-family='"EB Garamond", Georgia, serif' font-style="italic" font-size="{size:.1}" fill="#2a2018" fill-opacity="0.9" stroke="#f0e3bf" stroke-width="{:.2}" paint-order="stroke" stroke-linejoin="round" text-anchor="middle">{}</text>"##,
+        size * 0.18,
+        xml_escape(name),
+    )
+    .unwrap();
 }
 
 /// Architecture-driven styling axis: stroke weight, fill darkening,
