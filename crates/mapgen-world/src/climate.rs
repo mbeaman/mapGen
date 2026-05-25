@@ -148,15 +148,20 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
             precipitation[c] = params.base_precip * band_base;
             continue;
         }
-        // Land: release rain proportional to upwind moisture, uplift, and band base.
-        // Baseline 25% per cell (was 10%): air masses lose water to
-        // surface friction, convection, and diurnal cycling even
-        // without orographic uplift.
+        // Land: release rain proportional to upwind moisture, uplift, and band
+        // base. A modest flat-land baseline (air loses water to friction /
+        // convection) plus a *strong* orographic term, so windward slopes wring
+        // out hard and leeward / deep-interior air arrives depleted. The lowered
+        // post-depletion floor (0.085, was 0.10) is what lets rain-shadow and
+        // subtropical cells reach true aridity — the old 0.10 floor kept
+        // everywhere wet enough that deserts almost never formed (6.1.1). Tuned
+        // against seeds 1/7/42/99 to ~20-30% desert + ~27% forest (was 1% / 46%);
+        // kept in lockstep with `climate_seasonal::one_pass`.
         let uplift = (elev[c] - uw_e).max(0.0);
-        let release = (0.25 + uplift * 4.0).min(0.9);
+        let release = (0.20 + uplift * 6.0).min(0.95);
         let rain = uw_m * release;
         moisture[c] = (uw_m - rain).max(0.0);
-        precipitation[c] = params.base_precip * band_base * (0.10 + rain);
+        precipitation[c] = params.base_precip * band_base * (0.085 + rain);
     }
 
     world.climate.temperature = temperature;

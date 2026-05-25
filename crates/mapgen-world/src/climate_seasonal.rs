@@ -159,11 +159,16 @@ fn one_pass(
             precipitation[c] = params.base_precip * band_base;
             continue;
         }
+        // Precip release — kept in lockstep with `climate::run` (the
+        // non-seasonal path the realism specs exercise). Strong orographic
+        // term + low post-depletion floor so rain shadows and subtropics reach
+        // true aridity (6.1.1). NOTE: this formula is duplicated across the two
+        // climate modules — a shared helper is a worthwhile follow-up refactor.
         let uplift = (elev[c] - uw_e).max(0.0);
-        let release = (0.25 + uplift * 4.0).min(0.9);
+        let release = (0.20 + uplift * 6.0).min(0.95);
         let rain = uw_m * release;
         moisture[c] = (uw_m - rain).max(0.0);
-        precipitation[c] = params.base_precip * band_base * (0.10 + rain);
+        precipitation[c] = params.base_precip * band_base * (0.085 + rain);
     }
 
     (temperature, precipitation)

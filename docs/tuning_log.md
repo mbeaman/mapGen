@@ -40,6 +40,29 @@ artifact that justified the pick, and the commit that landed the value.
 * **Source:** commit `117eafe` ("Fix five compounding realism bugs that
   produced desert-everywhere maps")
 
+### Orographic release + post-depletion floor (6.1.1)
+
+* **Current:** land precip `= base_precip · band · (0.085 + uw_m·release)`,
+  `release = (0.20 + uplift·6.0).min(0.95)`. Was `(0.10 + uw_m·(0.25 +
+  uplift·4.0).min(0.9))`.
+* **Why these values:** the prior `base_precip` fix over-corrected — by lifting
+  the whole distribution it left almost no arid land (seed 42: **1% desert, 46%
+  forest** — "everywhere the same humidity"). Three coupled changes widen the
+  spread: a stronger orographic term (`·6`) wrings windward slopes harder and
+  leaves leeward/deep-interior air depleted; a slightly lower flat-land baseline
+  (`0.20`); and critically a lower post-depletion **floor** (`0.085`, was `0.10`)
+  so rain-shadow and subtropical cells finally cross the Köppen aridity cutoff.
+  The floor is a knife-edge (precip clusters at the threshold): `0.10`→1% desert,
+  `0.07`→36%, `0.04`→68%. `0.085` lands the Earth-like band.
+* **Effect:** seed 42 → desert 23% / steppe 26% / forest 27%. Across seeds
+  1/7/42/99: desert 17–30%, forest 24–35%, steppe 23–33% (no degenerate worlds).
+* **Method:** tuned against seeds 1/7/42/99 (land biome histogram); realism band
+  specs (equatorial-wettest, subtropical-drier) still hold. Both goldens
+  re-anchored. **Note:** the release formula is duplicated in `climate.rs` and
+  `climate_seasonal.rs` (kept in lockstep) — a shared helper is a worthwhile
+  follow-up refactor.
+* **Source:** Phase 6.1.1; `climate.rs` / `climate_seasonal.rs`.
+
 ### `lapse_rate`
 
 * **Current:** `0.45` (normalized °C per unit elevation)
