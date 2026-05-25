@@ -45,7 +45,9 @@ export interface Preset {
 }
 
 /// Curated views. `enabled` lists *only* the layers that should be on; every
-/// other layer is off. (Keep names in sync with `LAYERS`.)
+/// other layer is off. (Keep names in sync with `LAYERS` — and with the native
+/// mirror `crates/mapgen-render/src/layers.rs`, which the `mapgen atlas` export
+/// renders one page per preset from.)
 export const PRESETS: Preset[] = [
   // The default cartographic view: every feature, no data overlay.
   { name: "antique", label: "Antique", enabled: LAYERS.filter((l) => !l.overlay).map((l) => l.name) },

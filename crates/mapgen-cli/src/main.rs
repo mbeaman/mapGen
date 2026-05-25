@@ -94,6 +94,24 @@ enum Cmd {
         #[arg(long, default_value = "maps/world.svg")]
         out: PathBuf,
     },
+    /// Render the world under every curated preset into one shareable HTML
+    /// atlas (a multi-page "world bible"). Each page bakes a layer state into
+    /// the ornate render, so the file is self-contained — no scripts, no
+    /// external assets — and prints to PDF cleanly (one preset per page).
+    Atlas {
+        #[arg(long)]
+        seed: u64,
+        /// Cells per map. Kept modest by default: the atlas embeds the SVG
+        /// once per preset, so file size scales with this × the preset count.
+        #[arg(long, default_value_t = 6_000)]
+        cells: usize,
+        #[arg(long, default_value_t = 14)]
+        plates: usize,
+        #[arg(long, default_value_t = 8)]
+        nations: usize,
+        #[arg(long, default_value = "atlas.html")]
+        out: PathBuf,
+    },
     /// Sweep one parameter knob across a range and render every step
     /// plus an `index.html` grid for eyeball selection.
     Sweep {
@@ -258,6 +276,37 @@ fn main() -> Result<()> {
             }
             fs::write(&out, svg).with_context(|| format!("writing {}", out.display()))?;
             eprintln!("wrote svg: {}", out.display());
+        }
+        Cmd::Atlas {
+            seed,
+            cells,
+            plates,
+            nations,
+            out,
+        } => {
+            let params = GenerateParams {
+                seed,
+                cell_count: cells,
+                plate_count: plates,
+                nation_count: nations,
+                ..Default::default()
+            };
+            let world = mapgen_world::generate_full(params);
+            // Render the ornate base once; each atlas page bakes a preset's
+            // layer state into a copy, so the simulation runs a single time.
+            let base =
+                mapgen_render::render(&world, Style::OrnateAntique).map_err(anyhow::Error::msg)?;
+            let html = build_atlas_html(&world, &base);
+            if let Some(parent) = out.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            fs::write(&out, &html).with_context(|| format!("writing {}", out.display()))?;
+            eprintln!(
+                "wrote atlas: {} ({} plates, {:.1} MB)",
+                out.display(),
+                mapgen_render::layers::PRESETS.len(),
+                html.len() as f64 / 1.0e6,
+            );
         }
         Cmd::Sweep {
             seed,
@@ -471,6 +520,62 @@ fn progressive_style(stage: PipelineStage) -> Style {
         Hydrology | Ocean | Climate | Biomes => Style::Biomes,
         Cultures | Religions | Polities | Naming | History => Style::Cultures,
     }
+}
+
+/// Assemble the self-contained HTML atlas: a parchment-themed page per preset,
+/// each embedding the ornate render with that preset's layer state baked in.
+fn build_atlas_html(world: &WorldData, base_svg: &str) -> String {
+    use mapgen_render::layers::{bake_layer_state_pruned, PRESETS};
+
+    let seed = world.meta.seed;
+    let cells = world.mesh.cell_count();
+    let nations = world.society.nations.len();
+    let plates = world.terrain.plates.len();
+
+    let mut html = String::with_capacity(base_svg.len() * PRESETS.len() + 4_096);
+    html.push_str(
+        r##"<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>An Atlas of the Known World</title>
+<style>
+*{box-sizing:border-box}
+:root{--ink:#2a2418;--soft:#5c513a;--parch:#f4e9cf;--accent:#8a3324;--line:#c8b89a}
+body{margin:0;background:#2a2418;color:var(--ink);font-family:"EB Garamond",Georgia,serif}
+.brand{text-align:center;padding:2.6rem 1rem 1.2rem;color:var(--parch)}
+.brand h1{font-family:Georgia,serif;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:2.2rem;margin:0}
+.brand .sub{color:#c9bd9c;font-style:italic;margin:.45rem 0 0}
+.plate{max-width:1100px;margin:1.6rem auto;background:var(--parch);border:1px solid #000;border-radius:4px;box-shadow:0 6px 24px rgba(0,0,0,.45);overflow:hidden}
+.plate-head{display:flex;align-items:baseline;gap:.6rem;padding:1rem 1.4rem .2rem}
+.plate-head .num{font-family:Georgia,serif;color:var(--accent);font-size:1.4rem;font-weight:700}
+.plate-head h2{font-family:Georgia,serif;letter-spacing:.14em;text-transform:uppercase;font-size:1.1rem;margin:0;color:var(--ink)}
+.map{padding:.3rem 1rem}
+.map svg{width:100%;height:auto;display:block;border:1px solid var(--line)}
+.caption{padding:.1rem 1.5rem 1.3rem;color:var(--soft);font-style:italic}
+footer{text-align:center;color:#8c8169;font-size:.85rem;padding:1.5rem 1rem 3rem;font-style:italic}
+@media print{body{background:#fff}.brand{color:var(--ink)}.plate{box-shadow:none;border:none;max-width:none;margin:0;page-break-after:always}}
+</style></head><body>
+"##,
+    );
+    html.push_str(&format!(
+        r#"<header class="brand"><h1>An Atlas of the Known World</h1><p class="sub">Seed {seed} · {nations} realms · {plates} tectonic plates · {cells} cells</p></header>"#,
+    ));
+
+    for (i, p) in PRESETS.iter().enumerate() {
+        // Prune the hidden groups so each page carries only what it shows.
+        let svg = bake_layer_state_pruned(base_svg, p.enabled);
+        html.push_str(&format!(
+            r#"<section class="plate"><div class="plate-head"><span class="num">{n}</span><h2>{label}</h2></div><div class="map">{svg}</div><p class="caption">{caption}</p></section>"#,
+            n = i + 1,
+            label = p.label,
+            caption = p.caption,
+        ));
+    }
+
+    html.push_str(
+        r#"<footer>Generated by mapgen — the same world, six ways. Print to PDF for a bound atlas.</footer></body></html>"#,
+    );
+    html
 }
 
 fn write_world(path: &Path, world: &WorldData) -> Result<()> {

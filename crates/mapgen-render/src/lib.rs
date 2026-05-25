@@ -1,6 +1,7 @@
 //! Map renderer. Pure function of `WorldData` → SVG string. Style modules are
 //! pluggable; the same world re-renders in any style without re-simulating.
 
+pub mod layers;
 pub mod style;
 
 use mapgen_core::WorldData;

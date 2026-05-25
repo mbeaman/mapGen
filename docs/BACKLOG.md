@@ -742,12 +742,11 @@ note.
   - **Per-layer SVG export** (just rivers, just labels) for external compositing;
     **GM vs player** layer sets; **opacity sliders** and **legends** per overlay;
     **hover tooltips** (each layer is a hit-testable group).
-- **Trigger for next slice.** Highest-leverage remaining: (a) **thematic atlas
-  export** (`mapgen atlas` — render the six presets to a single shareable
-  HTML/PDF; the payoff packaging), (b) a **soil or cultural** overlay (clone the
-  choropleth substrate), or (c) wire the active layer state into the frontend's
-  **PNG/SVG export** so a chosen lens can be downloaded (export currently emits
-  the default state).
+- **Trigger for next slice.** Thematic atlas export shipped (see the `mapgen
+  atlas` item below). Highest-leverage remaining: (a) a **soil or cultural**
+  overlay (clone the choropleth substrate — adds a Cultural atlas plate too),
+  or (b) wire the active layer state into the frontend's **PNG/SVG export** so a
+  chosen lens can be downloaded (export currently emits the default state).
 - **Origin.** "Implement overlays to toggle components on/off" (2026-05-25).
 
 ### Alternative render styles
@@ -917,13 +916,27 @@ list; promote when its trigger fires.
   sector"). **Trigger.** A perf regression in render/refine. **Cost.** ~1 d; add
   to `just perf`.
 
-### Atlas / world-bible export (`mapgen atlas`)
+### Atlas / world-bible export (`mapgen atlas`) — DONE (2026-05-25)
 
-- **Gap.** No single command packages a world into a shareable artifact
-  (overview map + key sectors + chronicle + entity glossary as one HTML/PDF). The
-  pieces exist; the e2e payoff packaging doesn't. (PDF export is a separate stub
-  item; this is the integrated deliverable.) **Trigger.** Wanting to share/show a
-  generated world. **Cost.** ~1 d.
+- **Shipped.** `mapgen atlas --seed N [--cells --plates --nations --out]`
+  generates the world once, renders the ornate base once, and bakes each of the
+  six layer presets into one self-contained, parchment-themed HTML file — a
+  multi-page "world bible" (Antique / Political / Physical / Climate / Relief /
+  Rainfall), each page captioned, with `@media print` page-breaks so it prints
+  to PDF cleanly (covering the PDF-export want without a resvg→PDF pipeline). No
+  scripts, no external assets. The native `mapgen_render::layers` module is the
+  canonical preset/layer source (mirrored by `web/src/layers.ts`) and supplies
+  `bake_layer_state` (toggle `display`) + `bake_layer_state_pruned` (also drop
+  the hidden groups via balanced `<g>` matching — ~67% smaller files: a 6-plate
+  seed-42 atlas is ~7.6 MB at the 6 000-cell default). Tested in
+  `mapgen-render` (bake/prune mechanics) + `mapgen-cli/tests/atlas.rs` (every
+  declared layer is actually emitted; each preset bakes a self-contained,
+  pruned page).
+- **Open follow-ups.** Richer pages: embed the chronicle + an entity glossary +
+  drilled-in key sectors (Phase 7 refine) as additional plates; per-page font
+  de-dup (the embedded TTFs repeat across plates — a lean-artifact win); a
+  Cultural plate once that overlay lands; wiring the active frontend lens into
+  the in-browser PNG/SVG export (still emits the default state).
 
 ### Borders that move with history — ALREADY DONE (corrected 2026-05-25)
 
