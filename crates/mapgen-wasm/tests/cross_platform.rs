@@ -55,6 +55,17 @@ fn refine_sector_binding_renders_a_sector() {
     assert!(svg.len() > 10_000, "sector SVG should have real content");
 }
 
+/// `refineSector` rejects out-of-range coordinates rather than panicking across
+/// the wasm boundary (which would surface as an opaque unreachable trap).
+#[wasm_bindgen_test]
+fn refine_sector_rejects_out_of_range() {
+    let root = mapgen_wasm::generate(42, 2000, 6);
+    // At level 1 only sx,sy in 0..2 are valid; sx = 5 must error.
+    assert!(root.refine_sector(1, 5, 0, 1000).is_err());
+    // A valid one still succeeds.
+    assert!(root.refine_sector(1, 1, 0, 1000).is_ok());
+}
+
 #[wasm_bindgen_test]
 fn full_pipeline_golden_hash_matches_native_under_wasm() {
     let world = generate_full(fixed_params(42));

@@ -273,6 +273,75 @@ fn adjacent_sectors_agree_at_their_seam() {
     );
 }
 
+/// Robustness: refining *every* sector across several levels — including all-
+/// ocean sectors, all-land inland sectors, world-edge corners, and deep levels —
+/// never panics and yields a structurally valid world (biome ids in range,
+/// rivers/settlements/control referencing real cells). The edge cases that bite
+/// on-demand generation (a sector with no land, no rivers, or clamped halo at the
+/// world border) are exactly what's swept here.
+#[test]
+fn refine_is_robust_across_sectors() {
+    let p = params();
+    let parent = generate_full(p.clone());
+
+    let mut sectors: Vec<Sector> = Vec::new();
+    for level in 1..=2u32 {
+        let span = 1u32 << level;
+        for sy in 0..span {
+            for sx in 0..span {
+                sectors.push(Sector { level, sx, sy });
+            }
+        }
+    }
+    // A handful of deep + corner sectors (clamped halos, tiny cell counts).
+    for &(level, sx, sy) in &[
+        (3, 0, 0),
+        (3, 7, 3),
+        (4, 0, 0),
+        (4, 15, 9),
+        (5, 0, 0),
+        (5, 31, 19),
+    ] {
+        sectors.push(Sector { level, sx, sy });
+    }
+
+    for sec in sectors {
+        assert!(sec.is_valid());
+        let c = refine_sector(&parent, sec, RefineParams::default());
+        let n = c.mesh.cell_count();
+        assert!(n > 0, "{sec:?}: empty mesh");
+        assert!(c.mesh.region.is_some(), "{sec:?}: no region");
+        assert_eq!(c.climate.biome.len(), n, "{sec:?}: biome length");
+        for &b in &c.climate.biome {
+            assert!(b <= 15, "{sec:?}: biome id {b} out of range");
+        }
+        for r in &c.hydrology.rivers {
+            for &cell in &r.cells {
+                assert!(
+                    (cell as usize) < n,
+                    "{sec:?}: river cell {cell} out of range"
+                );
+            }
+        }
+        for s in &c.society.settlements {
+            assert!(
+                (s.cell as usize) < n,
+                "{sec:?}: settlement cell out of range"
+            );
+            assert!(
+                (s.polity_id as usize) < c.society.nations.len(),
+                "{sec:?}: settlement polity out of range"
+            );
+        }
+        for ctrl in c.society.control.iter().flatten() {
+            assert!(
+                (*ctrl as usize) < c.society.nations.len(),
+                "{sec:?}: control polity {ctrl} out of range"
+            );
+        }
+    }
+}
+
 /// Distinct sectors are genuinely different worlds (no accidental aliasing of
 /// the per-sector seed).
 #[test]
