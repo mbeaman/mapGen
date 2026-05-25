@@ -10,6 +10,12 @@ description = "Claude integration. Native-only; never compiled for WASM."
 [lib]
 path = "src/lib.rs"
 
+[features]
+# Opt-in: enables the real Anthropic HTTP client (Phase 5e). OFF by default, so a
+# stock build pulls in no network deps and cannot make a paid API call. The
+# offline template narrator and the whole grounding pipeline compile regardless.
+lore = []
+
 [dependencies]
 mapgen-core = { path = "../mapgen-core" }
 mapgen-history = { path = "../mapgen-history" }
