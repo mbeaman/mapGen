@@ -171,6 +171,39 @@ button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 button.primary:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 
+/* Layers panel */
+.layers-panel { border-top: 1px solid var(--line); padding-top: 0.6rem; }
+.layers-panel > summary {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+  list-style: none;
+}
+.layers-panel > summary::-webkit-details-marker { display: none; }
+.layers-panel > summary::before { content: "▸ "; color: var(--accent); }
+.layers-panel[open] > summary::before { content: "▾ "; }
+.layers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0 0.1rem;
+}
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "EB Garamond", serif;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.layer-row input { accent-color: var(--accent); cursor: pointer; }
+/* Data overlays read distinctly from feature toggles. */
+.layer-row.overlay { font-style: italic; color: var(--accent); }
+
 .export { display: flex; gap: 0.5rem; }
 .export button {
   flex: 1;

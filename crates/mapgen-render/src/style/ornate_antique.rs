@@ -100,6 +100,7 @@ pub fn render(world: &WorldData) -> String {
 </radialGradient>
 </defs>"##,
     );
+    out.push_str(LAYER_STYLE);
     write!(
         out,
         r##"<rect x="{vx:.0}" y="{vy:.0}" width="{w:.0}" height="{h:.0}" fill="url(#parchment)"/>"##
@@ -111,21 +112,40 @@ pub fn render(world: &WorldData) -> String {
     // glyphs gain detail when zoomed in; at 1.0 the world renders byte-identical.
     let detail = (mesh.width / w).max(1.0);
 
-    render_land_fill(world, &mut out);
-    render_ocean_hatching(world, &mut out);
-    render_coastline_ripples(world, &mut out, detail);
-    render_rivers(world, &mut out);
-    render_mountains(world, &mut out, detail);
-    render_forest_scatter(world, &mut out, detail);
-    render_roads(world, &mut out);
-    render_polity_borders(world, &mut out);
-    render_settlements(world, &mut out, detail);
-    render_sacred_sites(world, &mut out);
-    render_polity_labels(world, &mut out);
-    render_settlement_labels(world, &mut out);
-    render_sacred_site_labels(world, &mut out);
-    render_feature_labels(world, &mut out);
-    render_mountain_range_labels(world, &mut out);
+    // Each step is wrapped in a named, toggleable layer group (see `layer`).
+    // The default (no root classes) rasterizes identically to before — features
+    // visible, the `political` data overlay hidden — so level-0 stays byte-stable;
+    // the frontend flips layers via the `LAYER_STYLE` rules.
+    layer(&mut out, "land", false, |o| render_land_fill(world, o));
+    layer(&mut out, "political", true, |o| render_political(world, o));
+    layer(&mut out, "ocean", false, |o| {
+        render_ocean_hatching(world, o)
+    });
+    layer(&mut out, "coastline", false, |o| {
+        render_coastline_ripples(world, o, detail)
+    });
+    layer(&mut out, "rivers", false, |o| render_rivers(world, o));
+    layer(&mut out, "mountains", false, |o| {
+        render_mountains(world, o, detail)
+    });
+    layer(&mut out, "forests", false, |o| {
+        render_forest_scatter(world, o, detail)
+    });
+    layer(&mut out, "roads", false, |o| render_roads(world, o));
+    layer(&mut out, "borders", false, |o| {
+        render_polity_borders(world, o)
+    });
+    layer(&mut out, "settlements", false, |o| {
+        render_settlements(world, o, detail)
+    });
+    layer(&mut out, "sacred", false, |o| render_sacred_sites(world, o));
+    layer(&mut out, "labels", false, |o| {
+        render_polity_labels(world, o);
+        render_settlement_labels(world, o);
+        render_sacred_site_labels(world, o);
+        render_feature_labels(world, o);
+        render_mountain_range_labels(world, o);
+    });
 
     // Decorative top-of-stack overlays. The edge-burn overlay darkens
     // the periphery (intentionally fading edge labels into "aged"
@@ -141,6 +161,64 @@ pub fn render(world: &WorldData) -> String {
 
     out.push_str("</svg>");
     out
+}
+
+/// Browser-side layer toggles. A feature layer hides when the root `<svg>`
+/// carries `off-<layer>`; the `political` data overlay (off by default via a
+/// `display` attribute resvg also honours) shows when the root carries
+/// `on-political`. resvg ignores these class selectors, so the *rasterized*
+/// default — features on, overlays off — is byte-stable. Keep the layer names in
+/// sync with the frontend panel (`web/src/layers.ts`).
+const LAYER_STYLE: &str = r##"<style>
+svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coastline,svg.off-rivers .layer-rivers,svg.off-mountains .layer-mountains,svg.off-forests .layer-forests,svg.off-roads .layer-roads,svg.off-borders .layer-borders,svg.off-settlements .layer-settlements,svg.off-sacred .layer-sacred,svg.off-labels .layer-labels{display:none}
+svg.on-political .layer-political{display:inline !important}
+</style>"##;
+
+/// Wrap a render step in a named, toggleable layer group. `hidden` adds a
+/// `display="none"` presentation attribute — honoured by both resvg and the
+/// browser — so a data overlay starts off; the frontend flips it via CSS.
+fn layer(out: &mut String, name: &str, hidden: bool, f: impl FnOnce(&mut String)) {
+    let attr = if hidden { r##" display="none""## } else { "" };
+    write!(out, r##"<g class="layer-{name}"{attr}>"##).unwrap();
+    f(out);
+    out.push_str("</g>");
+}
+
+/// Political-territory overlay (a data layer, off by default): each controlled
+/// land cell washed in its realm's colour. Pairs with the time-slider to show
+/// empires rise and fall. Mirrors `render_land_fill`'s per-cell polygon.
+fn render_political(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let control = &world.society.control;
+    if control.is_empty() {
+        return;
+    }
+    let elev = &world.terrain.elevation;
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            continue; // land only
+        }
+        let Some(pid) = control.get(i).copied().flatten() else {
+            continue;
+        };
+        let Some(nation) = world.society.nations.get(pid as usize) else {
+            continue;
+        };
+        let [r, g, b] = nation.color;
+        out.push_str(r##"<polygon points=""##);
+        for (k, &vi) in verts.iter().enumerate() {
+            let v = mesh.vertices[vi as usize];
+            if k > 0 {
+                out.push(' ');
+            }
+            write!(out, "{:.1},{:.1}", v[0], v[1]).unwrap();
+        }
+        write!(
+            out,
+            r##"" fill="#{r:02x}{g:02x}{b:02x}" fill-opacity="0.42"/>"##
+        )
+        .unwrap();
+    }
 }
 
 /// Soft biome-tinted fill, muted with parchment so the map reads as

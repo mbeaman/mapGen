@@ -1,4 +1,5 @@
 import "./style.css";
+import { applyLayers, defaultLayerState, LAYERS } from "./layers";
 import { PanZoom } from "./panzoom";
 import { ancestors, childSectorAt, ROOT, sectorRect, type Sector } from "./sector";
 import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
@@ -36,6 +37,7 @@ const voiceSelect = $<HTMLSelectElement>("voice");
 const narrateBtn = $<HTMLButtonElement>("narrate");
 const chronicleEl = $<HTMLDivElement>("chronicle");
 const breadcrumbEl = $<HTMLDivElement>("breadcrumb");
+const layersEl = $<HTMLDivElement>("layers");
 const timesliderEl = $<HTMLDivElement>("timeslider");
 const timescrubInput = $<HTMLInputElement>("timescrub");
 const timeyearEl = $<HTMLSpanElement>("timeyear");
@@ -72,6 +74,9 @@ let historyYears: number[] = [];
 // Coalesce rapid scrubs: render one year at a time, remembering the latest.
 let yearBusy = false;
 let pendingYear: number | null = null;
+
+// ---- Layer toggles ---- (which layers are enabled; applied to every SVG swap)
+const layerState = defaultLayerState();
 
 // Build-up frames cached for the scrubber/replay (JS-side only; no Rust
 // snapshots). Each entry is one rendered stage frame.
@@ -148,6 +153,7 @@ const showSvg = (svg: string) => {
   contentEl.innerHTML = svg;
   const el = contentEl.querySelector("svg");
   if (!el) return;
+  applyLayers(el, layerState); // re-apply toggles to the freshly-injected SVG
   // Let the wrapper transform drive size; pin SVG to its natural box.
   const dims = parseDims(el);
   const dimsChanged = dims.w !== lastDims.w || dims.h !== lastDims.h;
@@ -592,7 +598,28 @@ const copyLink = async () => {
   }
 };
 
+// ---- Layer panel ----
+const buildLayerPanel = () => {
+  layersEl.replaceChildren();
+  for (const l of LAYERS) {
+    const row = document.createElement("label");
+    row.className = l.overlay ? "layer-row overlay" : "layer-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = layerState.has(l.name);
+    cb.addEventListener("change", () => {
+      if (cb.checked) layerState.add(l.name);
+      else layerState.delete(l.name);
+      const svg = contentEl.querySelector("svg");
+      if (svg) applyLayers(svg, layerState);
+    });
+    row.append(cb, document.createTextNode(` ${l.label}`));
+    layersEl.append(row);
+  }
+};
+
 // ---- Wire up ----
+buildLayerPanel();
 cellsInput.addEventListener("input", syncLabels);
 nationsInput.addEventListener("input", syncLabels);
 diceBtn.addEventListener("click", () => {
