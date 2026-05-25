@@ -10,55 +10,67 @@
 //! with no CSS at all (resvg, PDF, static embedding) — the basis of the
 //! `mapgen atlas` export and any server-side per-lens rasterization.
 //!
-//! [`LAYERS`] and [`PRESETS`] mirror `web/src/layers.ts`; keep the two in sync.
-//! (A test below asserts every layer/preset name here actually appears in the
-//! ornate render, which catches drift on this side.)
+//! This module is the **single source of truth** for the layer + preset lists.
+//! The frontend does not re-declare them: [`manifest_json`] serializes them to
+//! `web/src/layers.manifest.json` (a committed, generated file that
+//! `web/src/layers.ts` imports), and `web_manifest_is_in_sync` (below) fails if
+//! that file drifts from this module — so the two can never silently diverge. A
+//! separate test in `mapgen-cli/tests/atlas.rs` asserts every name here is
+//! actually emitted by the ornate render, catching drift against the renderer.
+
+use serde::Serialize;
 
 /// One toggleable layer. An `overlay` data layer is off by default (the frontend
 /// reveals it with `on-NAME`); a feature layer is on by default (hidden with
 /// `off-NAME`). `legend` marks the scalar overlays that emit a companion
-/// `legend-NAME` group revealed alongside the tint.
+/// `legend-NAME` group revealed alongside the tint. `label` is the UI caption.
+#[derive(Serialize)]
 pub struct LayerInfo {
     pub name: &'static str,
+    pub label: &'static str,
     pub overlay: bool,
     pub legend: bool,
 }
 
-const fn feature(name: &'static str) -> LayerInfo {
+const fn feature(name: &'static str, label: &'static str) -> LayerInfo {
     LayerInfo {
         name,
+        label,
         overlay: false,
         legend: false,
     }
 }
-const fn overlay(name: &'static str, legend: bool) -> LayerInfo {
+const fn overlay(name: &'static str, label: &'static str, legend: bool) -> LayerInfo {
     LayerInfo {
         name,
+        label,
         overlay: true,
         legend,
     }
 }
 
-/// Every layer the ornate renderer emits, mirroring `web/src/layers.ts`.
+/// Every layer the ornate renderer emits. The order is the panel's top-to-bottom
+/// order (overlays first), independent of the SVG draw order.
 pub const LAYERS: &[LayerInfo] = &[
-    overlay("political", false),
-    overlay("climate", true),
-    overlay("relief", true),
-    overlay("precip", true),
-    feature("labels"),
-    feature("settlements"),
-    feature("sacred"),
-    feature("borders"),
-    feature("roads"),
-    feature("rivers"),
-    feature("forests"),
-    feature("mountains"),
-    feature("coastline"),
-    feature("ocean"),
-    feature("land"),
+    overlay("political", "Political territory", false),
+    overlay("climate", "Temperature", true),
+    overlay("relief", "Elevation", true),
+    overlay("precip", "Rainfall", true),
+    feature("labels", "Labels"),
+    feature("settlements", "Settlements"),
+    feature("sacred", "Sacred sites"),
+    feature("borders", "Borders"),
+    feature("roads", "Roads"),
+    feature("rivers", "Rivers"),
+    feature("forests", "Forests"),
+    feature("mountains", "Mountains"),
+    feature("coastline", "Coastline"),
+    feature("ocean", "Ocean hatching"),
+    feature("land", "Land fill"),
 ];
 
 /// A named "lens": the exact set of layers enabled for one view.
+#[derive(Serialize)]
 pub struct Preset {
     pub name: &'static str,
     pub label: &'static str,
@@ -138,11 +150,34 @@ pub const PRESETS: &[Preset] = &[
     },
 ];
 
+/// The layer + preset lists serialized as pretty JSON — the exact bytes of the
+/// committed `web/src/layers.manifest.json`, which the frontend imports instead
+/// of re-declaring the lists. Regenerate that file from this whenever the lists
+/// change (the `web_manifest_is_in_sync` test below enforces it).
+pub fn manifest_json() -> String {
+    #[derive(Serialize)]
+    struct Manifest {
+        layers: &'static [LayerInfo],
+        presets: &'static [Preset],
+    }
+    serde_json::to_string_pretty(&Manifest {
+        layers: LAYERS,
+        presets: PRESETS,
+    })
+    .expect("layer manifest serializes")
+}
+
 /// Bake a layer state into a rendered ornate SVG: reveal the enabled data
 /// overlays (and their legends) and hide the disabled feature layers, by
 /// toggling each group's `display` attribute. The result is self-contained — it
 /// renders correctly without the root-class CSS machinery (resvg, PDF, static
 /// embedding). Baking the `antique` preset is a no-op (it equals the default).
+///
+/// This is a deliberately small, targeted string transform — *not* an XML
+/// parser — so it depends on the exact group-tag spelling the `layer()` helper
+/// in `ornate_antique.rs` emits. That coupling is guarded by the
+/// `render_emits_every_declared_layer_group` test in `mapgen-cli/tests/atlas.rs`,
+/// which fails the moment the emitted shape and this consumer drift apart.
 pub fn bake_layer_state(svg: &str, enabled: &[&str]) -> String {
     let mut s = svg.to_string();
     for layer in LAYERS {
@@ -244,6 +279,38 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn antique_preset_enables_exactly_all_features() {
+        // The default view must list every feature layer and no overlay — so a
+        // newly-added feature can't silently vanish from the default / atlas.
+        let antique = PRESETS.iter().find(|p| p.name == "antique").unwrap();
+        let mut want: Vec<&str> = LAYERS
+            .iter()
+            .filter(|l| !l.overlay)
+            .map(|l| l.name)
+            .collect();
+        let mut got: Vec<&str> = antique.enabled.to_vec();
+        want.sort_unstable();
+        got.sort_unstable();
+        assert_eq!(
+            got, want,
+            "antique preset must equal exactly the feature layers"
+        );
+    }
+
+    #[test]
+    fn web_manifest_is_in_sync() {
+        // The frontend imports this committed file instead of re-declaring the
+        // lists. If it drifts from the Rust source, regenerate it:
+        //   the manifest is `manifest_json()` + a trailing newline.
+        let committed = include_str!("../../../web/src/layers.manifest.json");
+        assert_eq!(
+            committed.trim_end(),
+            manifest_json().trim_end(),
+            "web/src/layers.manifest.json is stale — regenerate from manifest_json()"
+        );
     }
 
     #[test]

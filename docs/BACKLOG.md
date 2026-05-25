@@ -703,9 +703,11 @@ note.
   Toggling is pure CSS on the root element — instant, no re-render, and it
   survives restyle / drill-in / year-scrub SVG swaps. Default rasterization is
   byte-stable (overlays hidden via a `display="none"` attribute resvg honours),
-  so the visual-regression and refine goldens are unaffected. Frontend logic
-  lives in `web/src/layers.ts` (pure, unit-tested); `LAYERS` there must stay in
-  sync with `LAYER_STYLE` in `crates/mapgen-render/src/style/ornate_antique.rs`.
+  so the visual-regression and refine goldens are unaffected. Frontend toggle
+  logic lives in `web/src/layers.ts` (pure, unit-tested); the layer + preset
+  *lists* are the single Rust source (`mapgen_render::layers`), serialized to a
+  committed `web/src/layers.manifest.json` the frontend imports (a Rust test
+  fails if it drifts — see Hardening below).
   Overlays shipped: **political territory** (per-cell nation tint) and
   **temperature**, **elevation/relief**, and **precipitation** scalar
   choropleths, each with a per-world-normalized gradient legend keyed off its
@@ -742,6 +744,30 @@ note.
   - **Per-layer SVG export** (just rivers, just labels) for external compositing;
     **GM vs player** layer sets; **opacity sliders** and **legends** per overlay;
     **hover tooltips** (each layer is a hit-testable group).
+- **Hardening pass — DONE (2026-05-25)** (from an engineering review of the
+  above):
+  - **Single source of truth.** Layer/preset lists no longer duplicated across
+    Rust + TS; `mapgen_render::layers` is canonical, emits
+    `web/src/layers.manifest.json` (which TS imports), and `web_manifest_is_in_sync`
+    fails on drift. The `antique` preset is pinned to *exactly* the feature
+    layers by a test, so a new feature can't silently vanish from the default.
+  - **One colour source.** The `#thermal`/`#hypso`/`#precip` legend gradients are
+    generated from the same `ramp` stop tables the tints sample, so legend and
+    map can't diverge.
+  - **Visual regression.** `every_preset_rasterizes_to_a_sane_image` rasterizes
+    all six presets and asserts opaque / non-uniform / multi-coloured / on-band —
+    catching a broken tint/ramp/prune that structure tests miss.
+  - **Single-overlay invariant.** `toggleLayer` turns other overlays off when one
+    is enabled, so tints don't stack and the one bottom-left legend never collides.
+  - **Polish.** `fill_cells` takes `f32` opacity; `render_overlay_legend` args
+    bundled into `LegendSpec` (no `#[allow(too_many_arguments)]`); bake's
+    intentional string-transform coupling documented + guarded by the atlas test.
+  - **Documented, not coded** (deliberate calls): overlays normalize per-world,
+    so a refined sector's colour scale differs from the world's — a cross-scale-
+    stable variant would thread an explicit range from the parent (product
+    decision). Still-open debt: atlas font de-dup (~4.5 MB repeated TTFs);
+    interactive panel wiring lacks tests (awaits the Playwright smoke); layer
+    state isn't persisted to the permalink/reload.
 - **Trigger for next slice.** Thematic atlas export shipped (see the `mapgen
   atlas` item below). Highest-leverage remaining: (a) a **soil or cultural**
   overlay (clone the choropleth substrate — adds a Cultural atlas plate too),

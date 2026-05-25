@@ -1,11 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, svgLayerClasses } from "./layers";
+import {
+  applyLayers,
+  defaultLayerState,
+  LAYERS,
+  PRESETS,
+  presetState,
+  svgLayerClasses,
+  toggleLayer,
+} from "./layers";
 
 describe("defaultLayerState", () => {
   it("enables features and disables overlays", () => {
     const s = defaultLayerState();
     expect(s.has("rivers")).toBe(true);
     expect(s.has("political")).toBe(false); // overlay, off by default
+  });
+});
+
+describe("manifest-backed lists", () => {
+  it("loads the layers + presets from the shared Rust manifest", () => {
+    // Sanity that the JSON import resolved to real data (not an empty stub).
+    expect(LAYERS.length).toBeGreaterThan(10);
+    expect(LAYERS.find((l) => l.name === "climate")?.label).toBe("Temperature");
+    expect(PRESETS.map((p) => p.name)).toContain("rainfall");
+  });
+});
+
+describe("toggleLayer", () => {
+  it("toggles a feature layer independently", () => {
+    const s = defaultLayerState();
+    expect(toggleLayer(s, "rivers", false).has("rivers")).toBe(false);
+    expect(toggleLayer(s, "rivers", true).has("rivers")).toBe(true);
+  });
+
+  it("enabling one overlay turns the others off (single-overlay invariant)", () => {
+    let s = defaultLayerState();
+    s = toggleLayer(s, "climate", true);
+    s = toggleLayer(s, "relief", true); // should evict climate
+    expect(s.has("relief")).toBe(true);
+    expect(s.has("climate")).toBe(false);
+    expect(s.has("precip")).toBe(false);
+    // At most one overlay ever enabled.
+    expect([...s].filter((n) => LAYERS.find((l) => l.name === n)?.overlay).length).toBe(1);
+  });
+
+  it("does not mutate the input set", () => {
+    const s = defaultLayerState();
+    const before = s.size;
+    toggleLayer(s, "climate", true);
+    expect(s.size).toBe(before);
+    expect(s.has("climate")).toBe(false);
   });
 });
 

@@ -1,9 +1,14 @@
 /// Map layer toggles (pure, unit-tested). The renderer emits each component as a
 /// `<g class="layer-NAME">` and a stylesheet keyed off root-`<svg>` classes
-/// (`off-NAME` hides a feature, `on-NAME` shows a data overlay). This module
-/// owns the layer list + the root-class computation; `main.ts` wires it to the
-/// DOM. Keep `LAYERS` in sync with `LAYER_STYLE` in
-/// `crates/mapgen-render/src/style/ornate_antique.rs`.
+/// (`off-NAME` hides a feature, `on-NAME` shows a data overlay). This module owns
+/// the root-class computation + the DOM-free toggle logic; `main.ts` wires it up.
+///
+/// The layer + preset *lists* are NOT declared here — they're imported from
+/// `layers.manifest.json`, which is generated from the single Rust source of
+/// truth (`crates/mapgen-render/src/layers.rs::manifest_json`), so the frontend
+/// and the renderer/atlas can never silently diverge (a Rust test fails if the
+/// committed manifest drifts).
+import manifest from "./layers.manifest.json";
 
 export interface Layer {
   name: string;
@@ -13,23 +18,7 @@ export interface Layer {
   overlay: boolean;
 }
 
-export const LAYERS: Layer[] = [
-  { name: "political", label: "Political territory", overlay: true },
-  { name: "climate", label: "Temperature", overlay: true },
-  { name: "relief", label: "Elevation", overlay: true },
-  { name: "precip", label: "Rainfall", overlay: true },
-  { name: "labels", label: "Labels", overlay: false },
-  { name: "settlements", label: "Settlements", overlay: false },
-  { name: "sacred", label: "Sacred sites", overlay: false },
-  { name: "borders", label: "Borders", overlay: false },
-  { name: "roads", label: "Roads", overlay: false },
-  { name: "rivers", label: "Rivers", overlay: false },
-  { name: "forests", label: "Forests", overlay: false },
-  { name: "mountains", label: "Mountains", overlay: false },
-  { name: "coastline", label: "Coastline", overlay: false },
-  { name: "ocean", label: "Ocean hatching", overlay: false },
-  { name: "land", label: "Land fill", overlay: false },
-];
+export const LAYERS: Layer[] = manifest.layers;
 
 /// The set of enabled layer names at startup: feature layers on, overlays off.
 export function defaultLayerState(): Set<string> {
@@ -44,30 +33,28 @@ export interface Preset {
   enabled: string[];
 }
 
-/// Curated views. `enabled` lists *only* the layers that should be on; every
-/// other layer is off. (Keep names in sync with `LAYERS` — and with the native
-/// mirror `crates/mapgen-render/src/layers.rs`, which the `mapgen atlas` export
-/// renders one page per preset from.)
-export const PRESETS: Preset[] = [
-  // The default cartographic view: every feature, no data overlay.
-  { name: "antique", label: "Antique", enabled: LAYERS.filter((l) => !l.overlay).map((l) => l.name) },
-  // Realm tint + human geography over a calm base (terrain decluttered).
-  {
-    name: "political",
-    label: "Political",
-    enabled: ["land", "ocean", "coastline", "rivers", "roads", "borders", "settlements", "sacred", "labels", "political"],
-  },
-  // Natural features only — no human geography.
-  { name: "physical", label: "Physical", enabled: ["land", "ocean", "coastline", "rivers", "mountains", "forests", "labels"] },
-  // Thematic lenses: one data overlay over a stripped base (sea shows the tint).
-  { name: "climate", label: "Climate", enabled: ["coastline", "rivers", "labels", "climate"] },
-  { name: "relief", label: "Relief", enabled: ["coastline", "rivers", "mountains", "labels", "relief"] },
-  { name: "rainfall", label: "Rainfall", enabled: ["coastline", "rivers", "labels", "precip"] },
-];
+export const PRESETS: Preset[] = manifest.presets;
 
 /// The enabled set for a preset, as a fresh mutable `Set`.
 export function presetState(preset: Preset): Set<string> {
   return new Set(preset.enabled);
+}
+
+/// Toggle one layer in `enabled`, enforcing that at most one data *overlay* is
+/// active at a time: enabling an overlay turns the others off, so tints never
+/// stack and the single bottom-left legend never collides. Pure — returns a new
+/// set (feature layers toggle independently).
+export function toggleLayer(enabled: Set<string>, name: string, on: boolean): Set<string> {
+  const next = new Set(enabled);
+  if (!on) {
+    next.delete(name);
+    return next;
+  }
+  next.add(name);
+  if (LAYERS.find((l) => l.name === name)?.overlay) {
+    for (const l of LAYERS) if (l.overlay && l.name !== name) next.delete(l.name);
+  }
+  return next;
 }
 
 /// Root-`<svg>` classes for a given enabled set: `off-NAME` for a disabled

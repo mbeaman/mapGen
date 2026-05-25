@@ -10,6 +10,7 @@ description = "SVG renderer with pluggable style modules."
 mapgen-core = { path = "../mapgen-core" }
 svg = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 libm = { workspace = true }
 base64 = { workspace = true }
 roughr = { workspace = true }

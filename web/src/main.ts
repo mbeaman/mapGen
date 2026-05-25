@@ -1,5 +1,5 @@
 import "./style.css";
-import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState } from "./layers";
+import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, toggleLayer } from "./layers";
 import { PanZoom } from "./panzoom";
 import { ancestors, childSectorAt, ROOT, sectorRect, type Sector } from "./sector";
 import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
@@ -601,7 +601,12 @@ const copyLink = async () => {
 // ---- Layer panel ----
 const layerChecks = new Map<string, HTMLInputElement>();
 
-const applyLayerState = () => {
+// Replace the whole enabled set, then re-sync the checkboxes + the live SVG.
+// (`toggleLayer` can turn other overlays off, so every checkbox is reconciled.)
+const setLayerState = (next: Set<string>) => {
+  layerState.clear();
+  for (const n of next) layerState.add(n);
+  for (const [name, cb] of layerChecks) cb.checked = layerState.has(name);
   const svg = contentEl.querySelector("svg");
   if (svg) applyLayers(svg, layerState);
 };
@@ -618,12 +623,7 @@ const buildLayerPanel = () => {
     btn.type = "button";
     btn.className = "layer-preset";
     btn.textContent = p.label;
-    btn.addEventListener("click", () => {
-      layerState.clear();
-      for (const n of presetState(p)) layerState.add(n);
-      for (const [name, cb] of layerChecks) cb.checked = layerState.has(name);
-      applyLayerState();
-    });
+    btn.addEventListener("click", () => setLayerState(presetState(p)));
     presets.append(btn);
   }
   layersEl.append(presets);
@@ -635,11 +635,7 @@ const buildLayerPanel = () => {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = layerState.has(l.name);
-    cb.addEventListener("change", () => {
-      if (cb.checked) layerState.add(l.name);
-      else layerState.delete(l.name);
-      applyLayerState();
-    });
+    cb.addEventListener("change", () => setLayerState(toggleLayer(layerState, l.name, cb.checked)));
     layerChecks.set(l.name, cb);
     row.append(cb, document.createTextNode(` ${l.label}`));
     layersEl.append(row);

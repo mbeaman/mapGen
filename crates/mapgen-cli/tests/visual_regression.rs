@@ -14,7 +14,12 @@
 //! content rendered off-canvas, or a missing major colour layer — none of which
 //! the SVG-text invariants can see.
 
-use mapgen_render::{render, style::Style, FONTS_TTF};
+use mapgen_render::{
+    layers::{bake_layer_state_pruned, PRESETS},
+    render,
+    style::Style,
+    FONTS_TTF,
+};
 use mapgen_world::{generate_full, GenerateParams};
 
 fn rasterize(svg: &str) -> tiny_skia::Pixmap {
@@ -109,4 +114,66 @@ fn ornate_render_rasterizes_to_a_sane_image() {
         "no water rendered ({:.4} blue pixels)",
         frac(water)
     );
+}
+
+/// Every atlas preset must rasterize to a *sane* image — opaque, non-uniform,
+/// multi-coloured, on the parchment midtone band. The palette-specific checks
+/// above can't be reused (a thermal lens is blue→red, not warm parchment), so
+/// these are deliberately palette-agnostic; what they catch is exactly what the
+/// structure tests can't: a baked overlay that rasterizes blank, off-canvas, or
+/// as a single flat fill — i.e. a broken tint, ramp, or prune.
+#[test]
+fn every_preset_rasterizes_to_a_sane_image() {
+    let world = generate_full(GenerateParams {
+        seed: 42,
+        width: 1024.0,
+        height: 640.0,
+        cell_count: 3_000,
+        plate_count: 12,
+        nation_count: 8,
+    });
+    let base = render(&world, Style::OrnateAntique).expect("ornate render");
+
+    for p in PRESETS {
+        let pixmap = rasterize(&bake_layer_state_pruned(&base, p.enabled));
+        let total = (pixmap.width() * pixmap.height()) as f64;
+        let (mut opaque, mut sum, mut sumsq) = (0u64, 0.0f64, 0.0f64);
+        let mut colours = std::collections::HashSet::new();
+        for px in pixmap.data().chunks_exact(4) {
+            if px[3] > 200 {
+                opaque += 1;
+            }
+            let lum = 0.299 * px[0] as f64 + 0.587 * px[1] as f64 + 0.114 * px[2] as f64;
+            sum += lum;
+            sumsq += lum * lum;
+            if colours.len() < 1_000 {
+                colours.insert([px[0], px[1], px[2]]);
+            }
+        }
+        let mean = sum / total;
+        let variance = (sumsq / total - mean * mean).max(0.0);
+        let opaque_frac = opaque as f64 / total;
+
+        assert!(
+            opaque_frac > 0.8,
+            "preset {}: not opaque ({opaque_frac:.3})",
+            p.name
+        );
+        assert!(
+            variance > 150.0,
+            "preset {}: ~uniform (variance {variance:.0}) — blank/broken tint",
+            p.name
+        );
+        assert!(
+            (40.0..=225.0).contains(&mean),
+            "preset {}: mean luminance {mean:.0} off the midtone band",
+            p.name
+        );
+        assert!(
+            colours.len() > 20,
+            "preset {}: only {} distinct colours — likely a flat fill",
+            p.name,
+            colours.len()
+        );
+    }
 }

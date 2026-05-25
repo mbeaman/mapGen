@@ -1,0 +1,179 @@
+{
+  "layers": [
+    {
+      "name": "political",
+      "label": "Political territory",
+      "overlay": true,
+      "legend": false
+    },
+    {
+      "name": "climate",
+      "label": "Temperature",
+      "overlay": true,
+      "legend": true
+    },
+    {
+      "name": "relief",
+      "label": "Elevation",
+      "overlay": true,
+      "legend": true
+    },
+    {
+      "name": "precip",
+      "label": "Rainfall",
+      "overlay": true,
+      "legend": true
+    },
+    {
+      "name": "labels",
+      "label": "Labels",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "settlements",
+      "label": "Settlements",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "sacred",
+      "label": "Sacred sites",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "borders",
+      "label": "Borders",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "roads",
+      "label": "Roads",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "rivers",
+      "label": "Rivers",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "forests",
+      "label": "Forests",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "mountains",
+      "label": "Mountains",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "coastline",
+      "label": "Coastline",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "ocean",
+      "label": "Ocean hatching",
+      "overlay": false,
+      "legend": false
+    },
+    {
+      "name": "land",
+      "label": "Land fill",
+      "overlay": false,
+      "legend": false
+    }
+  ],
+  "presets": [
+    {
+      "name": "antique",
+      "label": "Antique",
+      "caption": "The cartographer's full hand — every feature, no thematic wash.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "mountains",
+        "forests",
+        "roads",
+        "borders",
+        "settlements",
+        "sacred",
+        "labels"
+      ]
+    },
+    {
+      "name": "political",
+      "label": "Political",
+      "caption": "Realms washed in their colours over a decluttered base.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "roads",
+        "borders",
+        "settlements",
+        "sacred",
+        "labels",
+        "political"
+      ]
+    },
+    {
+      "name": "physical",
+      "label": "Physical",
+      "caption": "The natural world alone — terrain, water, woods and peaks.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "mountains",
+        "forests",
+        "labels"
+      ]
+    },
+    {
+      "name": "climate",
+      "label": "Climate",
+      "caption": "Temperature, frigid poles to torrid equator, over land and sea.",
+      "enabled": [
+        "coastline",
+        "rivers",
+        "labels",
+        "climate"
+      ]
+    },
+    {
+      "name": "relief",
+      "label": "Relief",
+      "caption": "Elevation as hypsometric tint, with bathymetry beneath the waves.",
+      "enabled": [
+        "coastline",
+        "rivers",
+        "mountains",
+        "labels",
+        "relief"
+      ]
+    },
+    {
+      "name": "rainfall",
+      "label": "Rainfall",
+      "caption": "Precipitation, parched drylands to humid green.",
+      "enabled": [
+        "coastline",
+        "rivers",
+        "labels",
+        "precip"
+      ]
+    }
+  ]
+}

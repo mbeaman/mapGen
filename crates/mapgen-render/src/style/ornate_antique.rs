@@ -97,29 +97,14 @@ pub fn render(world: &WorldData) -> String {
 <stop offset="40%" stop-color="#2a1c0d" stop-opacity="0"/>
 <stop offset="78%" stop-color="#2a1c0d" stop-opacity="0.30"/>
 <stop offset="100%" stop-color="#1a1208" stop-opacity="0.72"/>
-</radialGradient>
-<linearGradient id="thermal" x1="0%" y1="0%" x2="100%" y2="0%">
-<stop offset="0%" stop-color="#263678"/>
-<stop offset="25%" stop-color="#3a96be"/>
-<stop offset="50%" stop-color="#d6c784"/>
-<stop offset="75%" stop-color="#d88238"/>
-<stop offset="100%" stop-color="#a82c1e"/>
-</linearGradient>
-<linearGradient id="hypso" x1="0%" y1="0%" x2="100%" y2="0%">
-<stop offset="0%" stop-color="#5a8a4a"/>
-<stop offset="35%" stop-color="#c8be7e"/>
-<stop offset="65%" stop-color="#9a6a3e"/>
-<stop offset="85%" stop-color="#6e4a30"/>
-<stop offset="100%" stop-color="#f2f0ec"/>
-</linearGradient>
-<linearGradient id="precip" x1="0%" y1="0%" x2="100%" y2="0%">
-<stop offset="0%" stop-color="#d8c89a"/>
-<stop offset="40%" stop-color="#b8c87a"/>
-<stop offset="70%" stop-color="#6aa86a"/>
-<stop offset="100%" stop-color="#2a7a6a"/>
-</linearGradient>
-</defs>"##,
+</radialGradient>"##,
     );
+    // The overlay legend gradients are generated from the same ramp tables the
+    // tints sample (`THERMAL`/`HYPSO`/`PRECIP`), so legend and map can't drift.
+    write_legend_gradient(&mut out, "thermal", &THERMAL);
+    write_legend_gradient(&mut out, "hypso", &HYPSO);
+    write_legend_gradient(&mut out, "precip", &PRECIP);
+    out.push_str("</defs>");
     out.push_str(LAYER_STYLE);
     write!(
         out,
@@ -177,33 +162,31 @@ pub fn render(world: &WorldData) -> String {
     // Overlay legends, drawn after the edge-burn so they stay crisp. Each is
     // hidden unless its `on-<overlay>` root class is set; they share the
     // bottom-left anchor (one overlay shows at a time under the presets).
-    render_overlay_legend(
-        &mut out,
-        vx,
-        vy,
-        w,
-        h,
-        "climate",
-        "TEMPERATURE",
-        "thermal",
-        "Frigid",
-        "Torrid",
-    );
-    render_overlay_legend(
-        &mut out,
-        vx,
-        vy,
-        w,
-        h,
-        "relief",
-        "ELEVATION",
-        "hypso",
-        "Lowland",
-        "Peaks",
-    );
-    render_overlay_legend(
-        &mut out, vx, vy, w, h, "precip", "RAINFALL", "precip", "Arid", "Humid",
-    );
+    for spec in [
+        LegendSpec {
+            class: "climate",
+            title: "TEMPERATURE",
+            grad_id: "thermal",
+            lo: "Frigid",
+            hi: "Torrid",
+        },
+        LegendSpec {
+            class: "relief",
+            title: "ELEVATION",
+            grad_id: "hypso",
+            lo: "Lowland",
+            hi: "Peaks",
+        },
+        LegendSpec {
+            class: "precip",
+            title: "RAINFALL",
+            grad_id: "precip",
+            lo: "Arid",
+            hi: "Humid",
+        },
+    ] {
+        render_overlay_legend(&mut out, vx, vy, w, h, spec);
+    }
     // The compass and title cartouche are whole-world chrome anchored to the
     // canvas corners; a refined sector (Phase 7) is a detail view, so it gets a
     // clean framed map without them. Level-0 worlds are unaffected.
@@ -284,6 +267,14 @@ fn render_political(world: &WorldData, out: &mut String) {
 // lens preset) for a clean thematic view. The matching legend rides top-of-
 // stack via the same `on-<name>` class. All three share `fill_cells` (the
 // polygon loop), `ramp` (stop interpolation), and `render_overlay_legend`.
+//
+// KNOWN LIMITATION (deliberate): each overlay normalizes to *this world's* own
+// min/max (`field_range`), maximizing within-map contrast. The trade-off is
+// that a Phase-7 refined sector normalizes to the sector's range, so the same
+// physical value can map to a different colour at world vs. zoomed-in scale —
+// the qualitative legend ("Frigid…Torrid") hides this, it doesn't resolve it.
+// A cross-scale-stable variant would thread an explicit `(lo, hi)` range down
+// from the parent; deferred as a product call (see docs/BACKLOG.md → overlays).
 
 /// Colour-ramp stops: `(t, [r,g,b])` with `t` ascending over [0,1].
 type Stops = [(f32, [f32; 3])];
@@ -318,7 +309,7 @@ fn render_climate(world: &WorldData, out: &mut String) {
     let temp = &world.climate.temperature;
     let (lo, hi) = field_range(temp);
     let span = (hi - lo).max(1e-3);
-    fill_cells(world, out, "0.6", |i| {
+    fill_cells(world, out, 0.6, |i| {
         temp.get(i).map(|&t| ramp(&THERMAL, (t - lo) / span))
     });
 }
@@ -328,7 +319,7 @@ fn render_climate(world: &WorldData, out: &mut String) {
 fn render_relief(world: &WorldData, out: &mut String) {
     let elev = &world.terrain.elevation;
     let (min_e, max_e) = field_range(elev);
-    fill_cells(world, out, "0.8", |i| {
+    fill_cells(world, out, 0.8, |i| {
         elev.get(i).map(|&e| relief_color(e, min_e, max_e))
     });
 }
@@ -338,7 +329,7 @@ fn render_precip(world: &WorldData, out: &mut String) {
     let precip = &world.climate.precipitation;
     let (lo, hi) = field_range(precip);
     let span = (hi - lo).max(1e-3);
-    fill_cells(world, out, "0.6", |i| {
+    fill_cells(world, out, 0.6, |i| {
         precip.get(i).map(|&p| ramp(&PRECIP, (p - lo) / span))
     });
 }
@@ -349,7 +340,7 @@ fn render_precip(world: &WorldData, out: &mut String) {
 fn fill_cells(
     world: &WorldData,
     out: &mut String,
-    opacity: &str,
+    opacity: f32,
     color: impl Fn(usize) -> Option<[u8; 3]>,
 ) {
     let mesh = &world.mesh;
@@ -406,6 +397,29 @@ fn ramp(stops: &Stops, t: f32) -> [u8; 3] {
     [mix(c0[0], c1[0]), mix(c0[1], c1[1]), mix(c0[2], c1[2])]
 }
 
+/// Emit a `<linearGradient id="{id}">` whose stops are exactly `stops`. The
+/// overlay legend bars reference these, so a legend always matches the tint its
+/// overlay paints with `ramp(stops, …)` — one source of colour, no drift.
+fn write_legend_gradient(out: &mut String, id: &str, stops: &Stops) {
+    write!(
+        out,
+        r##"<linearGradient id="{id}" x1="0%" y1="0%" x2="100%" y2="0%">"##
+    )
+    .unwrap();
+    for &(t, [r, g, b]) in stops {
+        write!(
+            out,
+            r##"<stop offset="{:.0}%" stop-color="#{:02x}{:02x}{:02x}"/>"##,
+            t * 100.0,
+            r as u8,
+            g as u8,
+            b as u8,
+        )
+        .unwrap();
+    }
+    out.push_str("</linearGradient>");
+}
+
 /// Two-part relief colour: bathymetry (≤ sea level) shallow→deep blue, land
 /// (> sea level) through the hypsometric ramp, each normalized on its own side.
 fn relief_color(elev: f32, min_e: f32, max_e: f32) -> [u8; 3] {
@@ -433,19 +447,24 @@ fn relief_color(elev: f32, min_e: f32, max_e: f32) -> [u8; 3] {
 /// default; revealed alongside its tint by the `on-{class}` root class. All
 /// share the bottom-left anchor (clearing the compass NW + cartouche SE); since
 /// the presets enable one overlay at a time, they don't visually collide.
-#[allow(clippy::too_many_arguments)]
-fn render_overlay_legend(
-    out: &mut String,
-    vx: f32,
-    vy: f32,
-    w: f32,
-    h: f32,
-    class: &str,
-    title: &str,
-    grad_id: &str,
-    lo: &str,
-    hi: &str,
-) {
+/// The text + gradient descriptors for one overlay's legend (the geometry is
+/// passed separately so all legends share the bottom-left anchor).
+struct LegendSpec {
+    class: &'static str,
+    title: &'static str,
+    grad_id: &'static str,
+    lo: &'static str,
+    hi: &'static str,
+}
+
+fn render_overlay_legend(out: &mut String, vx: f32, vy: f32, w: f32, h: f32, spec: LegendSpec) {
+    let LegendSpec {
+        class,
+        title,
+        grad_id,
+        lo,
+        hi,
+    } = spec;
     let scale = (w.min(h) / 1280.0).clamp(0.7, 1.5);
     let bar_w = 200.0 * scale;
     let bar_h = 12.0 * scale;

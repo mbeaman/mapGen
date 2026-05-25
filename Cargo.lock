@@ -959,6 +959,7 @@ dependencies = [
  "mapgen-world",
  "roughr",
  "serde",
+ "serde_json",
  "svg",
 ]
 
