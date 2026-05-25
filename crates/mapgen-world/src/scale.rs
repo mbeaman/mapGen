@@ -37,11 +37,16 @@
 //! ## Scope (v1)
 //!
 //! Refines the *physical* map: terrain → erosion → hydrology → ocean → climate →
-//! biomes (+ soils + rivers/Strahler/regime, which the stages carry). Society
-//! (cultures / polities / history) stays at world scale on the parent; per-sector
-//! settlements and roads are a follow-up.
+//! biomes (+ soils + rivers/Strahler/regime, which the stages carry). Society is
+//! **projected** from the parent ([`project_society`]) — the same towns, polity
+//! borders, and roads, remapped onto the finer mesh — rather than re-rolled, so a
+//! drill-in shows this world's cities, not different ones. History stays at world
+//! scale on the parent (a sector has no chronicle of its own).
 
-use mapgen_core::{Stage, StageRng, WorldData, WorldMeta};
+use mapgen_core::{
+    world_data::{CulturesData, Road, SocietyData},
+    Stage, StageRng, WorldData, WorldMeta,
+};
 use mapgen_geom::{Mesh, RegionMeshParams};
 
 use crate::{
@@ -139,16 +144,26 @@ fn area(rect: [f32; 4]) -> f32 {
     ((rect[2] - rect[0]) * (rect[3] - rect[1])).max(1.0)
 }
 
-/// Refine `sector` of the world described by root `params`, returning a
-/// renderable [`WorldData`] confined to that sector. `params` must be the same
-/// `GenerateParams` the parent/root world was built with (seed + world dims +
-/// plate count drive the shared base field). Pure and deterministic in
-/// `(params, sector, refine)` — see the module docs.
-pub fn refine_sector(params: GenerateParams, sector: Sector, refine: RefineParams) -> WorldData {
+/// Refine `sector` of `parent` (the root, level-0 world), returning a renderable
+/// [`WorldData`] confined to that sector. The shared base field is recomputed
+/// from the root's seed + world dims + plate count — all recovered from `parent`
+/// (plate count = its plate-roster length) — and the parent's society is
+/// projected onto the sector (see [`project_society`]). Pure and deterministic in
+/// `(parent, sector, refine)`; see the module docs.
+pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -> WorldData {
     assert!(
         sector.is_valid(),
         "sector {sector:?} out of range for its level"
     );
+
+    let params = GenerateParams {
+        seed: parent.meta.seed,
+        width: parent.mesh.width,
+        height: parent.mesh.height,
+        cell_count: 0, // unused — the sector's density is `refine.target_cells`
+        plate_count: parent.terrain.plates.len(),
+        nation_count: 0, // unused — polities come from the projected society
+    };
 
     let root_rng = StageRng::new(params.seed);
     let sec_rng = root_rng.sector(sector.level, sector.sx, sector.sy);
@@ -231,5 +246,125 @@ pub fn refine_sector(params: GenerateParams, sector: Sector, refine: RefineParam
     climate_seasonal::run(&mut world, ClimateParams::default());
     biomes::classify(&mut world);
 
+    // Project the parent's society onto the sector — the same towns, borders,
+    // and roads, remapped to the finer mesh. Society is generated once at world
+    // scale and never re-rolled per sector, so drilling in shows *this* world's
+    // cities, not different ones.
+    project_society(parent, &mut world, rect, halo);
+
     world
+}
+
+fn in_rect(p: [f32; 2], r: [f32; 4]) -> bool {
+    p[0] >= r[0] && p[0] < r[2] && p[1] >= r[1] && p[1] < r[3]
+}
+
+/// Carry the root world's society into a refined sector. Settlements/roads in
+/// view are kept and their cell indices remapped to the nearest sector cell;
+/// per-cell `control` and `culture_id` are sampled from the nearest parent cell
+/// (restricted to the haloed rect, which keeps this cheap); the polity and
+/// culture rosters are copied verbatim. A physical-only parent (no society) is a
+/// no-op.
+fn project_society(parent: &WorldData, world: &mut WorldData, rect: [f32; 4], halo: [f32; 4]) {
+    if parent.society.nations.is_empty() && parent.society.settlements.is_empty() {
+        return;
+    }
+    let psite = |c: u32| parent.mesh.sites[c as usize];
+    let sites = world.mesh.sites.clone();
+    let n = sites.len();
+
+    // Nearest sector cell to a world point — used for the handful of settlement
+    // / capital / road cells, so brute force is fine.
+    let nearest_sector = |p: [f32; 2]| -> u32 {
+        let mut best = 0u32;
+        let mut bd = f32::MAX;
+        for (i, s) in sites.iter().enumerate() {
+            let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+            if d < bd {
+                bd = d;
+                best = i as u32;
+            }
+        }
+        best
+    };
+
+    // Only parent cells inside the haloed rect can influence the sector;
+    // restricting the per-sector-cell nearest search to them keeps it cheap.
+    let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
+        .filter(|&i| in_rect(psite(i), halo))
+        .collect();
+
+    let mut control = vec![None; n];
+    let has_cultures = parent.cultures.culture_id.len() == parent.mesh.cell_count();
+    let mut culture_id = if has_cultures {
+        vec![None; n]
+    } else {
+        Vec::new()
+    };
+    if !parent_in_halo.is_empty() {
+        for (i, &p) in sites.iter().enumerate() {
+            let mut best = parent_in_halo[0];
+            let mut bd = f32::MAX;
+            for &pc in &parent_in_halo {
+                let s = psite(pc);
+                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                if d < bd {
+                    bd = d;
+                    best = pc;
+                }
+            }
+            control[i] = parent.society.control.get(best as usize).copied().flatten();
+            if has_cultures {
+                culture_id[i] = parent.cultures.culture_id[best as usize];
+            }
+        }
+    }
+
+    let settlements = parent
+        .society
+        .settlements
+        .iter()
+        .filter(|s| in_rect(psite(s.cell), rect))
+        .map(|s| {
+            let mut s2 = s.clone();
+            s2.cell = nearest_sector(psite(s.cell));
+            s2
+        })
+        .collect();
+
+    // Keep all polities (so settlement/control `polity_id`s resolve); remap each
+    // capital to the nearest sector cell for the founding-culture glyph lookup.
+    let nations = parent
+        .society
+        .nations
+        .iter()
+        .map(|nn| {
+            let mut n2 = nn.clone();
+            n2.capital_cell = nearest_sector(psite(nn.capital_cell));
+            n2
+        })
+        .collect();
+
+    let roads = parent
+        .society
+        .roads
+        .iter()
+        .filter(|r| r.cells.iter().any(|&c| in_rect(psite(c), halo)))
+        .map(|r| Road {
+            cells: r.cells.iter().map(|&c| nearest_sector(psite(c))).collect(),
+        })
+        .collect();
+
+    world.society = SocietyData {
+        nations,
+        settlements,
+        roads,
+        control,
+    };
+    if has_cultures {
+        world.cultures = CulturesData {
+            cultures: parent.cultures.cultures.clone(),
+            culture_id,
+        };
+    }
 }

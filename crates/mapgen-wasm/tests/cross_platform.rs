@@ -44,7 +44,9 @@ fn hash_world(world: &mapgen_core::WorldData) -> String {
 /// `512 320 512 320`).
 #[wasm_bindgen_test]
 fn refine_sector_binding_renders_a_sector() {
-    let handle = mapgen_wasm::refine_sector(42, 14, 2, 1, 1, 2000).expect("refine ok");
+    // Refine off a whole-world handle (its society is projected onto the sector).
+    let root = mapgen_wasm::generate(42, 4000, 6);
+    let handle = root.refine_sector(2, 1, 1, 2000).expect("refine ok");
     let svg = handle.render("ornate").expect("render ok");
     assert!(
         svg.contains(r#"viewBox="512 320 512 320""#),

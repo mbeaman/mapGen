@@ -223,18 +223,20 @@ fn main() -> Result<()> {
                     sector.span()
                 );
             }
-            // World dims/seed/plates define the shared base field; the parent's
-            // own cell count is irrelevant (plates + noise are position-based).
+            // Build the parent world, then project its society onto the sector.
+            // (The physical base field only needs seed/dims/plates, but towns &
+            // borders are carried from the parent — so we generate it.)
             let params = GenerateParams {
                 seed,
                 plate_count: plates,
                 ..Default::default()
             };
+            let parent = mapgen_world::generate_full(params);
             let refine = RefineParams {
                 target_cells: cells,
                 ..Default::default()
             };
-            let world = refine_sector(params, sector, refine);
+            let world = refine_sector(&parent, sector, refine);
             let style: Style = style.parse().map_err(anyhow::Error::msg)?;
             let svg = mapgen_render::render(&world, style).map_err(anyhow::Error::msg)?;
             if let Some(parent) = out.parent() {

@@ -2,19 +2,17 @@
 /// the UI. The `WorldHandle`/`Generation` are opaque WASM objects that
 /// cannot cross the worker boundary, so they stay here: the main thread
 /// sends commands and gets back progress + SVG strings.
-import init, { Generation, refineSector, type WorldHandle } from "../pkg/mapgen_wasm";
+import init, { Generation, type WorldHandle } from "../pkg/mapgen_wasm";
 
 let ready: Promise<unknown> | null = null;
 // The whole-world (level-0) handle and the current refined sector (Phase 7).
 // `sector === null` means we're viewing the root world. The root is kept so
-// drilling back up never regenerates; sectors are cheap to re-refine on demand.
+// drilling back up never regenerates; sectors are cheap to re-refine on demand,
+// and `refineSector` is a method on the root (its society is projected in).
 let root: WorldHandle | null = null;
 let sector: WorldHandle | null = null;
-let seed = 0n;
 /// Cells per refined sector — finer than the parent yet quick (~100 ms).
 const SECTOR_CELLS = 4_000;
-/// Whole-world plate count (matches `generate`'s default GenerateParams).
-const WORLD_PLATES = 14;
 const view = (): WorldHandle | null => sector ?? root;
 
 /// Mirrors the Rust `StageInfo` struct (a plain serializable object).
@@ -92,9 +90,8 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       sector?.free();
       root = null;
       sector = null;
-      seed = BigInt(msg.seed);
 
-      const gen = new Generation(seed, msg.cells, msg.nations);
+      const gen = new Generation(BigInt(msg.seed), msg.cells, msg.nations);
       let frameCount = 0;
       for (;;) {
         const info = gen.step() as StageInfo | undefined;
@@ -120,9 +117,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       // Sectors are stateless, so navigating up just re-refines the parent.
       const prev = sector;
       sector =
-        msg.level === 0
-          ? null
-          : refineSector(seed, WORLD_PLATES, msg.level, msg.sx, msg.sy, SECTOR_CELLS);
+        msg.level === 0 ? null : root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
       prev?.free();
       const svg = view()!.render(msg.style);
       post({

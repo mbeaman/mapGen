@@ -5,6 +5,7 @@
 
 use mapgen_render::{render, style::Style, FONTS_TTF};
 use mapgen_world::{
+    generate_full,
     scale::{refine_sector, RefineParams, Sector},
     GenerateParams,
 };
@@ -33,7 +34,8 @@ fn refined_sector_renders_its_own_viewport_and_is_not_blank() {
         sx: 2,
         sy: 1,
     };
-    let world = refine_sector(params.clone(), sector, RefineParams::default());
+    let parent = generate_full(params.clone());
+    let world = refine_sector(&parent, sector, RefineParams::default());
     let svg = render(&world, Style::OrnateAntique).expect("ornate render");
 
     // viewBox is the sector's world-space rectangle, not the whole world.

@@ -84,7 +84,7 @@ fn refined_sector_reproduces_parent_within_tolerance() {
             sy: 1,
         },
     ] {
-        let child = refine_sector(p.clone(), sec, RefineParams::default());
+        let child = refine_sector(&parent, sec, RefineParams::default());
         let rect = sec.rect(p.width, p.height);
 
         let mut n = 0;
@@ -151,7 +151,8 @@ fn refined_sector_is_finer_and_self_describing() {
         sx: 1,
         sy: 1,
     };
-    let child = refine_sector(p.clone(), sec, RefineParams::default());
+    let parent = generate_full(p.clone());
+    let child = refine_sector(&parent, sec, RefineParams::default());
     let rect = sec.rect(p.width, p.height);
 
     // Full-world extent preserved (plate scatter / climate latitude stay global).
@@ -184,8 +185,9 @@ fn refinement_is_deterministic() {
         sx: 0,
         sy: 1,
     };
-    let a = refine_sector(p.clone(), sec, RefineParams::default());
-    let b = refine_sector(p.clone(), sec, RefineParams::default());
+    let parent = generate_full(p.clone());
+    let a = refine_sector(&parent, sec, RefineParams::default());
+    let b = refine_sector(&parent, sec, RefineParams::default());
 
     let hash = |w: &mapgen_core::WorldData| {
         let mut bytes = Vec::new();
@@ -200,8 +202,9 @@ fn refinement_is_deterministic() {
 #[test]
 fn distinct_sectors_differ() {
     let p = params();
+    let parent = generate_full(p.clone());
     let a = refine_sector(
-        p.clone(),
+        &parent,
         Sector {
             level: 2,
             sx: 0,
@@ -210,7 +213,7 @@ fn distinct_sectors_differ() {
         RefineParams::default(),
     );
     let b = refine_sector(
-        p.clone(),
+        &parent,
         Sector {
             level: 2,
             sx: 3,
