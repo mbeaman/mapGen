@@ -154,6 +154,25 @@ fn ner_accepts_grounded_text_and_rejects_invented_names() {
 }
 
 #[test]
+fn work_round_trips_through_serde() {
+    use mapgen_core::Work;
+    let w = Work {
+        title: "A Lay of Vae".into(),
+        body: "It came to pass.".into(),
+        in_world_author: "an anonymous skald".into(),
+        references: vec![EventId(1), EventId(7)],
+        lacunae: vec!["a gap".into()],
+        written_year: 312,
+    };
+    let json = serde_json::to_string(&w).unwrap();
+    let back: Work = serde_json::from_str(&json).unwrap();
+    assert_eq!(
+        w, back,
+        "Work must survive serde (the persisted-chronicle promise)"
+    );
+}
+
+#[test]
 fn lacunae_record_unfulfilled_prophecies() {
     use mapgen_core::EventKind;
     let mut w = seed42();

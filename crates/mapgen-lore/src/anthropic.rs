@@ -88,6 +88,15 @@ impl LlmClient for AnthropicClient {
         };
 
         let v: serde_json::Value = resp.into_json()?;
+        // A max_tokens truncation yields an unbalanced JSON body that would later
+        // fail to parse as an opaque "no JSON object" error; surface it clearly
+        // (the caller then falls back to the template).
+        if v["stop_reason"].as_str() == Some("max_tokens") {
+            anyhow::bail!(
+                "Anthropic response was truncated at max_tokens ({MAX_TOKENS}); \
+                 raise MAX_TOKENS or narrate a smaller event slice"
+            );
+        }
         // `content` is an array of blocks; concatenate the text of each.
         let text: String = v["content"]
             .as_array()

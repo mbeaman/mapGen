@@ -107,7 +107,7 @@ impl EventLog {
 
 /// A Claude-narrated chronicle. Persisted into the world so future chronicles
 /// can cite it — the canon grows.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Work {
     pub title: String,
     pub body: String,

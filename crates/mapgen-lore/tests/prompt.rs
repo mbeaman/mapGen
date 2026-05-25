@@ -80,3 +80,16 @@ fn event_closure_includes_focal_and_its_transitive_causes_sorted() {
         "closure must be id-ascending (chronological)"
     );
 }
+
+#[test]
+fn every_register_voice_appears_in_its_prompt() {
+    let w = seed42();
+    let focal = linked_event(&w).id;
+    for &reg in Register::ALL {
+        let p = prompt::build(&w, focal, &VoiceCard::for_register(reg));
+        assert!(
+            p.focal.contains(reg.style_hint()),
+            "{reg:?} style hint missing from its prompt"
+        );
+    }
+}

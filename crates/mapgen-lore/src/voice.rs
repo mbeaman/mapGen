@@ -90,3 +90,22 @@ impl VoiceCard {
         VoiceCard { author, register }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn register_str_round_trips_for_all() {
+        for &r in Register::ALL {
+            assert_eq!(
+                Register::parse(r.as_str()),
+                Some(r),
+                "{r:?} did not round-trip"
+            );
+            assert!(!r.style_hint().is_empty());
+        }
+        assert_eq!(Register::ALL.len(), 5);
+        assert_eq!(Register::parse("not-a-register"), None);
+    }
+}

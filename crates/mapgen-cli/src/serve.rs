@@ -3,7 +3,7 @@
 //! without the API key ever leaving this process. Compiled only with the `lore`
 //! feature. Blocking, single-threaded — fine for a single local user.
 
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 use anyhow::{Context, Result};
 use mapgen_core::WorldData;
@@ -53,22 +53,47 @@ pub fn run(port: u16, startup: Option<WorldData>) -> Result<()> {
     Ok(())
 }
 
+/// Reject request bodies larger than this (a serialized world is a few MB).
+const MAX_BODY: u64 = 64 * 1024 * 1024;
+
 fn route(req: &mut tiny_http::Request, startup: Option<&WorldData>) -> Resp {
-    match (req.method().clone(), req.url().to_string().as_str()) {
-        (Method::Options, _) => cors(empty(204)), // CORS preflight
-        (Method::Get, "/health") => cors(json(200, r#"{"status":"ok"}"#)),
+    // Capture the Origin before consuming the body, so CORS can be scoped to it.
+    let origin = req
+        .headers()
+        .iter()
+        .find(|h| h.field.to_string().eq_ignore_ascii_case("origin"))
+        .map(|h| h.value.as_str().to_string());
+
+    let base = match (req.method().clone(), strip_query(req.url())) {
+        (Method::Options, _) => empty(204), // CORS preflight
+        (Method::Get, "/health") => json(200, r#"{"status":"ok"}"#),
         (Method::Post, "/narrate") => {
             let mut body = String::new();
-            if req.as_reader().read_to_string(&mut body).is_err() {
-                return cors(error(400, "could not read request body"));
-            }
-            match narrate_request(&body, startup) {
-                Ok(work_json) => cors(json(200, &work_json)),
-                Err(e) => cors(error(400, &e.to_string())),
+            // Bound the read so an oversized body can't exhaust memory.
+            if req
+                .as_reader()
+                .take(MAX_BODY)
+                .read_to_string(&mut body)
+                .is_err()
+            {
+                error(
+                    400,
+                    "could not read request body (or it exceeded the size limit)",
+                )
+            } else {
+                match narrate_request(&body, startup) {
+                    Ok(work_json) => json(200, &work_json),
+                    Err(e) => error(400, &e.to_string()),
+                }
             }
         }
-        _ => cors(error(404, "not found")),
-    }
+        _ => error(404, "not found"),
+    };
+    cors(base, origin.as_deref())
+}
+
+fn strip_query(url: &str) -> &str {
+    url.split('?').next().unwrap_or(url)
 }
 
 fn narrate_request(body: &str, startup: Option<&WorldData>) -> Result<String> {
@@ -105,13 +130,57 @@ fn empty(status: u16) -> Resp {
     Response::from_string("").with_status_code(StatusCode(status))
 }
 
-/// Allow the browser frontend (a different origin) to call the sidecar.
-fn cors(resp: Resp) -> Resp {
-    resp.with_header(header("Access-Control-Allow-Origin", "*"))
+/// Allow only a localhost browser origin (the dev frontend) to call the sidecar
+/// — not any random site the user happens to be visiting (which could otherwise
+/// spend their API credits and read their generated worlds). Non-localhost
+/// origins get `null`, which browsers reject. (curl and other non-browser
+/// clients don't enforce CORS, so the offline/manual paths are unaffected.)
+fn cors(resp: Resp, origin: Option<&str>) -> Resp {
+    let allow = match origin {
+        Some(o) if is_localhost(o) => o,
+        _ => "null",
+    };
+    resp.with_header(header("Access-Control-Allow-Origin", allow))
         .with_header(header("Access-Control-Allow-Methods", "POST, GET, OPTIONS"))
         .with_header(header("Access-Control-Allow-Headers", "Content-Type"))
 }
 
+fn is_localhost(origin: &str) -> bool {
+    ["http://localhost", "http://127.0.0.1"]
+        .iter()
+        .any(|p| origin == *p || origin.starts_with(&format!("{p}:")))
+}
+
 fn header(name: &str, value: &str) -> Header {
     Header::from_bytes(name.as_bytes(), value.as_bytes()).expect("static header is valid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn narrate_request_rejects_malformed_and_unknown_voice() {
+        // Both fail before any client/network call — deterministic, no key needed.
+        assert!(narrate_request("not json", None).is_err());
+
+        let w = mapgen_world::generate_full(mapgen_world::GenerateParams {
+            seed: 42,
+            cell_count: 4_000,
+            ..Default::default()
+        });
+        let body = format!(
+            r#"{{"world":{},"event":"auto-major-war","voice":"bogus-voice"}}"#,
+            serde_json::to_string(&w).unwrap()
+        );
+        assert!(narrate_request(&body, None).is_err()); // unknown voice → Err
+    }
+
+    #[test]
+    fn is_localhost_only_allows_loopback_origins() {
+        assert!(is_localhost("http://localhost:5173"));
+        assert!(is_localhost("http://127.0.0.1:8080"));
+        assert!(!is_localhost("https://evil.example.com"));
+        assert!(!is_localhost("http://localhost.evil.com"));
+    }
 }

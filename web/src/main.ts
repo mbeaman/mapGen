@@ -286,6 +286,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
       break;
     case "chronicle":
+      setBusy(false);
       narrateBtn.disabled = false;
       renderChronicle(msg.work);
       setStatus(`Chronicle set down by ${msg.work.in_world_author}.`, "ok");
@@ -342,8 +343,9 @@ const renderChronicle = (work: Work) => {
 };
 
 const doNarrate = () => {
-  if (!hasWorld) return;
+  if (!hasWorld || busy) return;
   narrateBtn.disabled = true;
+  setBusy(true); // also blocks a regenerate landing mid-narration
   setStatus("Composing the chronicle…", "busy");
   send({ type: "narrate", event: "auto-major-war", voice: voiceSelect.value, sidecar: SIDECAR });
 };
