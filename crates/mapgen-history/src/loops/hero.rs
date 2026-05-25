@@ -23,6 +23,11 @@ const PROPHECY_PROB: f32 = 0.020;
 const MEGABEAST_PROB: f32 = 0.025;
 /// Per-beast yearly chance a champion arises and slays it.
 const SLAY_PROB: f32 = 0.18;
+/// Chance a risen beast is a "great wyrm" — too mighty to be slain. It is
+/// recorded but never enters the slay queue, so it haunts the age as a standing
+/// danger (its `MegabeastRise` is left without a `MegabeastSlain` — a Phase-5
+/// lacuna / lingering menace rather than a tidy 100%-kill cassette).
+const GREAT_BEAST_PROB: f32 = 0.30;
 /// Assumed age of a newly-arisen champion (so `born_year` predates the deed).
 const HERO_AGE: i32 = 25;
 
@@ -40,13 +45,19 @@ impl CausalLoop for Hero {
         // 1. A prophecy is foretold (queued until a deed fulfils it).
         if unit_f32(ctx.rng) < PROPHECY_PROB {
             if let Some(cell) = random_capital(ctx) {
+                let line = match ctx.rng.next_u32() % 3 {
+                    0 => "A seer foretold that a great evil would rise, and a champion to end it.",
+                    1 => {
+                        "A prophet spoke of a coming darkness, and one who would stand against it."
+                    }
+                    _ => "A dire omen was read in the heavens: a scourge would rise, and a savior.",
+                };
                 let ev = Emit::new(
                     year,
                     EventKind::ProphecyUttered,
                     cell,
                     0.5,
-                    "A seer foretold that a great evil would rise, and a champion to end it."
-                        .to_string(),
+                    line.to_string(),
                 )
                 .push(ctx.world);
                 ctx.state.pending_prophecies.push(ev);
@@ -61,16 +72,19 @@ impl CausalLoop for Hero {
                     .world
                     .entities
                     .insert(Entity::Megabeast(Megabeast { name: name.clone() }));
-                let ev = Emit::new(
-                    year,
-                    EventKind::MegabeastRise,
-                    cell,
-                    0.80,
-                    format!("{name}, a monstrous beast, rose to ravage the land."),
-                )
-                .actors(&[beast])
-                .push(ctx.world);
-                ctx.state.active_megabeasts.push((cell, ev, beast, name));
+                let line = match ctx.rng.next_u32() % 3 {
+                    0 => format!("{name}, a monstrous beast, rose to ravage the land."),
+                    1 => format!("{name} emerged from the wastes to terrorize the realm."),
+                    _ => format!("{name}, a dread wyrm, awoke and laid the country waste."),
+                };
+                let ev = Emit::new(year, EventKind::MegabeastRise, cell, 0.80, line)
+                    .actors(&[beast])
+                    .push(ctx.world);
+                // Most beasts can be slain; a "great wyrm" is too mighty and
+                // never enters the slay queue — it endures as a standing menace.
+                if unit_f32(ctx.rng) >= GREAT_BEAST_PROB {
+                    ctx.state.active_megabeasts.push((cell, ev, beast, name));
+                }
             }
         }
 
@@ -103,48 +117,50 @@ impl CausalLoop for Hero {
             // The cassette is causally chained so it weaves into one HeroSaga
             // arc: the beast's rise summons the champion (ascension), who slays
             // it, forges a relic from the spoils, and fulfils the old prophecy.
-            Emit::new(
-                year,
-                EventKind::Ascension,
-                cell,
-                0.82,
-                format!("{hero_name} arose as a champion of the age."),
-            )
-            .actors(&[hero])
-            .causes(&[rise_ev])
-            .push(ctx.world);
-            let slain_ev = Emit::new(
-                year,
-                EventKind::MegabeastSlain,
-                cell,
-                0.88,
-                format!("{hero_name} slew the beast {beast}."),
-            )
-            .actors(&[hero])
-            .patients(&[beast_id])
-            .causes(&[rise_ev])
-            .push(ctx.world);
+            let ascension_line = match ctx.rng.next_u32() % 3 {
+                0 => format!("{hero_name} arose as a champion of the age."),
+                1 => format!("{hero_name} took up the sword against the terror."),
+                _ => format!("{hero_name} was hailed as the realm's champion."),
+            };
+            Emit::new(year, EventKind::Ascension, cell, 0.82, ascension_line)
+                .actors(&[hero])
+                .causes(&[rise_ev])
+                .push(ctx.world);
+            let slain_line = match ctx.rng.next_u32() % 3 {
+                0 => format!("{hero_name} slew the beast {beast}."),
+                1 => format!("{hero_name} cut down {beast} in single combat."),
+                _ => format!("{hero_name} brought the beast {beast} to its end."),
+            };
+            let slain_ev = Emit::new(year, EventKind::MegabeastSlain, cell, 0.88, slain_line)
+                .actors(&[hero])
+                .patients(&[beast_id])
+                .causes(&[rise_ev])
+                .push(ctx.world);
             let artifact_name = legendary_name(ctx.world, ctx.rng);
             let artifact = ctx.world.entities.insert(Entity::Artifact(Artifact {
                 name: artifact_name.clone(),
             }));
-            Emit::new(
-                year,
-                EventKind::ArtifactForged,
-                cell,
-                0.6,
-                format!("{hero_name} forged {artifact_name} from the beast's remains."),
-            )
-            .actors(&[hero, artifact])
-            .causes(&[slain_ev])
-            .push(ctx.world);
+            let artifact_line = match ctx.rng.next_u32() % 3 {
+                0 => format!("{hero_name} forged {artifact_name} from the beast's remains."),
+                1 => format!("{hero_name} wrought {artifact_name} from the slain beast's hoard."),
+                _ => format!("{hero_name} fashioned {artifact_name} from the beast's spoils."),
+            };
+            Emit::new(year, EventKind::ArtifactForged, cell, 0.6, artifact_line)
+                .actors(&[hero, artifact])
+                .causes(&[slain_ev])
+                .push(ctx.world);
             if let Some(uttered) = ctx.state.pending_prophecies.pop() {
+                let fulfilled_line = match ctx.rng.next_u32() % 3 {
+                    0 => format!("The old prophecy was fulfilled in {hero_name}'s triumph."),
+                    1 => format!("{hero_name}'s victory bore out the ancient prophecy."),
+                    _ => format!("The prophecy of old came to pass with {hero_name}'s deed."),
+                };
                 Emit::new(
                     year,
                     EventKind::ProphecyFulfilled,
                     cell,
                     0.86,
-                    format!("The old prophecy was fulfilled in {hero_name}'s triumph."),
+                    fulfilled_line,
                 )
                 .actors(&[hero])
                 .causes(&[uttered, slain_ev])

@@ -473,11 +473,14 @@ intact:
   "Dark" now counts only acute catastrophes (realms falling / plague / migration),
   not baseline war/famine. Golden is reachable (seed 1: Founding/Golden/Dark/Heroic);
   seed 42 reads all-Dark because it genuinely is a conquest-grim world.
-* **Deferred (noted, not built):** hero-saga summary phrasing variety (the
-  "X slew the beast Y" lines are still templated — the arc layer groups them, but
-  the sentences repeat on monster-heavy seeds); megabeasts have a 100% kill rate
-  (lower `SLAY_PROB` to leave standing threats); finer age epithets within a motif
-  (a grim seed shows "Age of Strife" thrice). All low-priority polish.
+* **Polish (built in a follow-up):** (a) hero-event phrasing variety — 3
+  deterministic phrasings each for prophecy/rise/ascension/slaying/forging/
+  fulfilment, so monster-heavy seeds don't read as one template; (b)
+  `GREAT_BEAST_PROB = 0.30` — ~30% of risen beasts are "great wyrms" too mighty
+  to be slain (never enter the slay queue), leaving standing menaces / Phase-5
+  lacunae instead of a 100% kill rate (seed 11: 20 rises, 12 slain); (c)
+  `age_name` picks among several epithets per motif by age index, so a grim seed
+  reads "Founding / Shadow / Ruin / Woe" rather than "Strife" thrice.
 * **Source:** Phase 4k; `loops/{mearsheimer,hero,schism}.rs`, `lib.rs`,
   `extract.rs`, `entities.rs`/`history.rs` (schema v12 Megabeast, v13 Conquest).
 

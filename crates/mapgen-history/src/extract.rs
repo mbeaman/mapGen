@@ -304,12 +304,15 @@ fn age_name(motif: AgeMotif, index: i32) -> String {
         .get(index as usize)
         .copied()
         .unwrap_or("Latter");
-    let epithet = match motif {
-        AgeMotif::Founding => "Founding",
-        AgeMotif::Heroic => "Heroes",
-        AgeMotif::Golden => "Plenty",
-        AgeMotif::Dark => "Strife",
+    // Several epithets per motif, chosen by age index, so two ages of the same
+    // character (e.g. a grim seed's three Dark ages) don't read identically.
+    let epithets: &[&str] = match motif {
+        AgeMotif::Founding => &["Founding", "Dawn", "Genesis"],
+        AgeMotif::Heroic => &["Heroes", "Valor", "Champions", "Legend"],
+        AgeMotif::Golden => &["Plenty", "Concord", "Splendor", "the Long Peace"],
+        AgeMotif::Dark => &["Strife", "Shadow", "Ruin", "Woe", "the Sundering"],
     };
+    let epithet = epithets[(index as usize) % epithets.len()];
     format!("The {ordinal} Age, an Age of {epithet}")
 }
 
