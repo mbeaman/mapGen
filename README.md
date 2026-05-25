@@ -198,6 +198,16 @@ against the world's closed proper-noun set (rejecting any hallucinated name, one
 retry, then the template fallback), and never invents people, places, or dates.
 Without the feature or the key it stays on the offline template narrator.
 
+For the browser frontend, run the narration **sidecar** (so the API key never
+enters page JS) and click "Narrate a major event":
+
+```sh
+cargo run -p mapgen-cli --features lore -- serve --port 7878   # POST /narrate
+```
+
+The frontend POSTs the world it generated to the sidecar and renders the returned
+chronicle. The sidecar also narrates offline (template) when no key is set.
+
 ## Parameter sweep (manual tuning)
 
 Render N maps with one knob varied across a range, plus an `index.html` grid
