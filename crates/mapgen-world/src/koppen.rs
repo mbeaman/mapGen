@@ -184,12 +184,17 @@ pub fn to_biome(c: KoppenClass) -> u8 {
     match c {
         KoppenClass::None => UNASSIGNED,
         KoppenClass::Af => TROPICAL_RAINFOREST,
-        KoppenClass::Am => TROPICAL_RAINFOREST,
+        // Tropical monsoon: very wet but strongly seasonal — moist deciduous /
+        // monsoon forest, distinct from Af evergreen rainforest (6.1.3).
+        KoppenClass::Am => TROPICAL_DRY_FOREST,
         KoppenClass::Aw => SAVANNA,
         KoppenClass::BWh => DESERT,
         KoppenClass::BWk => DESERT,
+        // Hot steppe = thornscrub / semi-desert; cold steppe = prairie / Eurasian
+        // steppe, which is grassland in real ecology — routing it there reaches
+        // the previously-orphaned TEMPERATE_GRASSLAND id (6.1.3).
         KoppenClass::BSh => SHRUBLAND,
-        KoppenClass::BSk => SHRUBLAND,
+        KoppenClass::BSk => TEMPERATE_GRASSLAND,
         // Mediterranean is shrubland-grassland in real ecology (chaparral,
         // maquis, garrigue) — not a wet grassland.
         KoppenClass::Csa | KoppenClass::Csb => SHRUBLAND,

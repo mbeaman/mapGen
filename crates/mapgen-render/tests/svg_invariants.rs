@@ -99,31 +99,22 @@ fn no_nan_coordinates_in_output() {
 fn always_present_biome_colors_emitted_on_reference_world() {
     // What this asserts and what it does not:
     //
-    // The 14-biome palette is documented as "all colors emit on a
-    // representative world." Empirically, on seed 42 / 4k cells via the
-    // current Köppen-Geiger path, two biome IDs are *never assigned*
-    // because no `KoppenClass` maps to them in `mapgen-world::koppen`:
+    // The common-and-Köppen-reachable subset of the 14-biome palette must
+    // render on the seed-42 reference world. A regression that collapses any
+    // of these into another color, removes a color, or breaks the riparian
+    // override fires this test. TEMPERATE_GRASSLAND (id 4) joined this set in
+    // 6.1.1/6.1.3 (cold steppe `BSk` now routes to grassland — it's a major
+    // biome, ~20% of land, no longer the orphaned id it once was).
     //
-    //   * TEMPERATE_GRASSLAND (id 4)
-    //   * TROPICAL_DRY_FOREST (id 9)
-    //
-    // The Whittaker fallback emits both, but it only runs when seasonal
-    // climate data is absent. This is the known palette-collapse issue
-    // tracked as "Wider biome palette" in `docs/BACKLOG.md` (revival
-    // trigger: render needs to distinguish humid-subtropical from
-    // oceanic-temperate visually).
-    //
-    // Likewise, several Köppen-reachable biomes (SNOW, TAIGA,
-    // TEMPERATE_RAINFOREST) require narrow climate-band conditions —
-    // they show on some seeds but not seed 42 at 4k cells.
-    //
-    // What we *do* enforce: the common-and-Köppen-reachable subset of
-    // the palette renders. A regression that collapses any of these
-    // into another color, removes a color from the palette, or breaks
-    // the riparian override fires this test.
+    // Still *not* required (climate-band-dependent, absent on seed 42 at 4k):
+    // TROPICAL_DRY_FOREST (id 9, only where `Am` monsoon climate occurs),
+    // SNOW, TAIGA, TEMPERATE_RAINFOREST. The remaining palette-collapse work
+    // (splitting TEMPERATE_FOREST into humid-subtropical / oceanic) is tracked
+    // as "Wider biome palette" in `docs/BACKLOG.md`.
     let (_, svg) = render_ref_world();
     let must_emit: &[(&str, &str)] = &[
         ("#5d8a4e", "TEMPERATE_FOREST"),
+        ("#c2c97c", "TEMPERATE_GRASSLAND"),
         ("#e8d49a", "DESERT"),
         ("#d8ba6b", "SAVANNA"),
         ("#2e6b3e", "TROPICAL_RAINFOREST"),
