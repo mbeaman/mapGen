@@ -23,3 +23,7 @@ proptest = { workspace = true }
 serde_json = { workspace = true }
 ciborium = { workspace = true }
 blake3 = { workspace = true }
+# For the perf_baseline example only (render + sector budgets). A dev-dep, so
+# the normal build graph is unaffected and the cycle with render's own dev-dep
+# on this crate is permitted by Cargo.
+mapgen-render = { path = "../mapgen-render" }

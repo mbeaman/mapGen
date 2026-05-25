@@ -1,10 +1,15 @@
-# Performance baseline — `generate_full`
+# Performance baseline — per component
 
-Pre-Phase-3 reference point for the full geography pipeline (mesh → plates →
-noise → erosion → hydrology → ocean → seasonal climate → biomes). Phase 3
-will grow the pipeline (cultures, religions, polities, naming, ornate
-render); these numbers exist so the cost of each new stage is visible
-instead of hidden in compounding latency.
+Reference points for the three user-facing hot paths, so the cost of each is
+visible instead of hidden in compounding latency:
+
+- **`generate_full`** — the geography→society→history pipeline (mesh → plates →
+  noise → erosion → hydrology → ocean → seasonal climate → biomes → cultures →
+  religions → polities → naming → history);
+- **`render`** — the ornate SVG build over a generated world;
+- **`refine_sector`** — one on-demand zoom-in tile (Phase 7 multi-scale); the
+  navigation ADR flags sector latency as directly user-facing, so it carries its
+  own budget.
 
 ## Numbers
 
@@ -25,6 +30,18 @@ Release build, three seeds (1/2/3) per size, one untimed warmup. History adds a
 modest, war-count-bounded cost (per-war O(cells) capacity recompute) on top of
 the machine difference. Still roughly linear in cell count.
 
+**`render` and `refine_sector`** were added 2026-05-25 (anchored to the same
+box). Render is nearly as costly as generation — the ornate style emits forests,
+coastline ripples, mountains, glyphs and labels per cell. A refined sector
+recomputes the shared base field from the root seed, runs the physical pipeline
+over a haloed sub-mesh, and projects the parent society/hydrology.
+
+| component       | case       | median |
+|-----------------|------------|-------:|
+| `render`        | 4,000      |  22 ms |
+| `render`        | 15,000     |  78 ms |
+| `refine_sector` | 15k → 4k tile (L2) |  68 ms |
+
 ### Environment
 
 - The current dev box (replaced the Ryzen 9 5950X; ~1.6× slower) — see the
@@ -35,14 +52,23 @@ the machine difference. Still roughly linear in cell count.
 
 ## Regression budget
 
-**A `generate_full` measurement is a regression if it exceeds 1.5× the
-baseline median on the same hardware class.** Budget table:
+**A measurement is a regression if its median exceeds 1.5× the baseline on the
+same hardware class.** Budget tables:
 
-| target cells | baseline | budget (1.5×) |
-|--------------|---------:|--------------:|
-|        4,000 |    26 ms |         39 ms |
-|       15,000 |   111 ms |        166 ms |
-|       30,000 |   259 ms |        388 ms |
+| `generate_full` | baseline | budget (1.5×) |
+|-----------------|---------:|--------------:|
+|           4,000 |    26 ms |         39 ms |
+|          15,000 |   111 ms |        166 ms |
+|          30,000 |   259 ms |        388 ms |
+
+| `render`        | baseline | budget (1.5×) |
+|-----------------|---------:|--------------:|
+|           4,000 |    22 ms |         33 ms |
+|          15,000 |    78 ms |        117 ms |
+
+| `refine_sector`     | baseline | budget (1.5×) |
+|---------------------|---------:|--------------:|
+| 15k → 4k tile (L2)  |    68 ms |        102 ms |
 
 1.5× was chosen to absorb normal CPU/run noise (~5% × normal hardware
 spread × measurement count) while still flagging any single stage that
@@ -67,9 +93,9 @@ cargo run --release -p mapgen-world --example perf_baseline -- --check
 Both modes print a markdown table to stdout with a `status` column
 showing `ok` / `OVER` per size. `--check` adds a stderr summary and exits
 1 on any violation. The baseline + budget constants live in
-`BASELINES` at the top of
+`GEN_BASELINES` / `RENDER_BASELINES` / `REFINE_BASELINE` at the top of
 [`crates/mapgen-world/examples/perf_baseline.rs`](../crates/mapgen-world/examples/perf_baseline.rs)
-and must stay in sync with the table above.
+and must stay in sync with the tables above.
 
 If any size exceeds budget, identify which stage grew (`hyperfine` /
 `cargo flamegraph` on the example binary), and either:

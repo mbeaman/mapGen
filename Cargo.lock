@@ -991,6 +991,7 @@ dependencies = [
  "mapgen-core",
  "mapgen-geom",
  "mapgen-history",
+ "mapgen-render",
  "noise",
  "proptest",
  "rand 0.8.6",
