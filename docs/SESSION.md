@@ -35,21 +35,21 @@ fast; the others are stable.
 | 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | **done (+ reviewed & upleveled, 4k)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). A deep multi-agent review after 4j (verdict: substrate sound; presentation needed work) drove the **4k** pass — see "Currently in flight". `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` closer → `4k` review uplevel + polish. See `docs/TASKS.md` `## Phase 4`. |
-| 5 lore engine | **in progress — offline core done; opt-in** | The Claude narration engine, built offline-first. `5a` lore types + template narrator `9c88606` → `5b` prompt assembly `060b3ed` → `5c` NER validator + `narrate()` + Work persistence `0453cfc` → `5d` `mapgen lore` CLI `2df3915`. **Deferred (need an API key):** `5e` real Anthropic HTTP client behind the `lore` Cargo feature; `5f` `mapgen serve` sidecar + frontend "narrate" button. Opt-in: a stock build makes no paid call; `mapgen lore` runs the offline template narrator, Claude lights up only with `--features lore` + `ANTHROPIC_API_KEY`. |
+| 5 lore engine | **in progress — engine done (5a–5e); 5f remains; opt-in** | The Claude narration engine, built offline-first. `5a` lore types + template narrator `9c88606` → `5b` prompt assembly `060b3ed` → `5c` NER validator + `narrate()` + Work persistence `0453cfc` → `5d` `mapgen lore` CLI `2df3915` → `5e` real Anthropic client behind `--features lore` `6979e38`. **Deferred:** `5f` `mapgen serve` sidecar + frontend "narrate" button. Opt-in: a stock build makes no paid call; `mapgen lore` runs the offline template narrator, Claude lights up only with `--features lore` + `ANTHROPIC_API_KEY`. |
 
 ---
 
 ## Recently shipped (most recent first)
 
 ```
-(HEAD) 5d — `mapgen lore` CLI subcommand (offline-demonstrable)
+(HEAD) 5e — real Anthropic client behind the opt-in `lore` feature
+5d — `mapgen lore` CLI subcommand (offline-demonstrable)
 5c — NER validator + narrate() orchestration + Work persistence
 5b — prompt assembly (bible / context / slice / voice / schema)
 5a — lore types + offline template narrator (opt-in scaffold)
 1932398 docs: capture design influences + comparative positioning
 55b48b5 4k polish — hero phrasing, standing-threat beasts, varied age epithets
 d1a6197 4k — Golden ages + deduped arc titles + tighter arc bar + extract tests
-02d911e 4k — accurate HolyWar classification + Conquest arc kind (schema v13)
 ```
 
 Regenerate this list when stale:
@@ -73,13 +73,21 @@ Fully testable offline (13 lore tests) via a pluggable `LlmClient` with
 canned/failing fakes; `mapgen lore --in world.json.gz` produces grounded
 chronicles with no key.
 
-**Deferred (need an API key, gated behind `--features lore`):**
-- **5e** — the real Anthropic Messages-API HTTP client (with prompt caching),
-  behind the `lore` feature; you verify with `ANTHROPIC_API_KEY` (the sandbox has
-  no network, so this couldn't be exercised here). The NER stopword list in
-  `mapgen-lore/src/ner.rs` is expected to need tuning against real model output.
-- **5f** — `mapgen serve` native sidecar + frontend "narrate" button (the API key
-  never enters the browser).
+**5e shipped (`6979e38`) — real Anthropic client, opt-in.** `anthropic.rs`
+(`#[cfg(feature = "lore")]`): `AnthropicClient::from_env()` (ANTHROPIC_API_KEY +
+optional MAPGEN_LORE_MODEL), a blocking `ureq` POST to the Messages API with the
+rules + bible sent as `cache_control: ephemeral`. `Prompt` split at the cache
+boundary `{ system, world_bible, focal }`; the `LlmClient` trait takes `&Prompt`.
+CLI: `--features lore` narrates via Claude when a key is set, else a graceful
+template downgrade. **Verified here:** default `just check` green; `cargo
+{build,clippy,test} --features lore` green (ureq 2.12.1); no-key downgrade works.
+The live API call itself is unrun (no network in the sandbox) — verify with a key.
+
+**Still deferred:**
+- **5f** — `mapgen serve` native sidecar (POST /narrate wrapping `narrate`) +
+  frontend "narrate" button; the API key never enters the browser.
+- The NER stoplist in `mapgen-lore/src/ner.rs` will likely need tuning against
+  real model output (a false positive only triggers the safe template fallback).
 - Minor: the template narrator's title (`On the matter of <full summary>`) is a
   bit clunky — fine as the offline fallback; Claude writes the title for real.
 

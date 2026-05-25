@@ -170,6 +170,34 @@ cargo run --release -p mapgen-cli -- events --in worlds/w42.json.gz
 `--min-salience <0..1>` (default 0.8) sets the major-event threshold and
 `--limit <n>` caps how many are printed.
 
+## Narrate a chronicle (Phase 5, opt-in)
+
+Turn a major event into an in-world chronicle. **Offline by default** — a
+deterministic, grounded template narrator, no key or network:
+
+```sh
+cargo run --release -p mapgen-cli -- lore --in worlds/w42.json.gz \
+    --event auto-major-war --voice saga
+```
+
+`--voice` ∈ `saga | monastic-chronicle | hymn | courtly-letter | peasant-rumor`;
+`--event` takes a numeric id or `auto-major-war`; `--out world.json.gz` writes the
+world back with the chronicle persisted as a `Work`.
+
+**Real Claude narration is opt-in** at both build and run time, so a stock build
+makes no paid call:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...
+cargo run --release -p mapgen-cli --features lore -- lore --in worlds/w42.json.gz
+```
+
+With `--features lore` and a key set it calls Claude (default model
+`claude-sonnet-4-6`, override with `MAPGEN_LORE_MODEL`), validates the output
+against the world's closed proper-noun set (rejecting any hallucinated name, one
+retry, then the template fallback), and never invents people, places, or dates.
+Without the feature or the key it stays on the offline template narrator.
+
 ## Parameter sweep (manual tuning)
 
 Render N maps with one knob varied across a range, plus an `index.html` grid
