@@ -201,13 +201,17 @@ note.
     crowns, denser canopy); **mountains** gain a subordinate ridge peak;
     **coastline** ripples scale by 1/detail so the finer coast isn't drowned by a
     bloated haze.
-  - `detail ≥ 4` (local zoom): **settlements** bloom into a town footprint — a
+  - `detail ≥ 4` (regional zoom): **settlements** bloom into a town footprint — a
     building cluster around the landmark glyph, dashed wall ring for capitals,
     hamlet clusters for villages.
-- **Still open:** push settlement plans further (street grids/quarters at the
-  deepest zoom), and the *detail-decreasing* generalisation direction
+  - `detail ≥ 8` (local zoom): **full town plans** — an irregular wall enclosure
+    (capitals), a street network keyed to the founding culture's architecture
+    (chord grid for planned cultures, radial spokes + ring road for organic),
+    quarters of buildings, and the landmark glyph as the central citadel.
+- **Still open:** the *detail-decreasing* generalisation direction
   (Töpfer/Visvalingam line simplification + scale-rank label declutter when
-  zoomed *out* — see the navigation item's follow-ups).
+  zoomed *out* — see the navigation item's follow-ups). Possible further city
+  detail: named districts, a harbour/market at coastal capitals.
 - **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
   tree glyphs, finer rivers/coastline), but every feature still renders with the
   same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
