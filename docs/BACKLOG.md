@@ -246,9 +246,11 @@ note.
   `mapgen refine` CLI, and the browser drill-in (`web/src/{worker,main,panzoom}.ts`
   — click to zoom in, coarse-first focus, clickable breadcrumb). See the ADR's
   "Implementation status" for the done/deferred split.
-- **Remaining follow-ups (each its own future item):** exact Dirichlet
-  seam-pinning across the stateful stages (today the halo is context, so
-  adjacent-sector seams are only approximate); per-level cartographic
+- **Seam-pinning DONE (2026-05-25).** `scale::pin_edges_to_shared` blends each
+  sector's terrain back to the shared base field toward its edges, so adjacent
+  sectors agree along their seam (elevation MAD < 0.04 along a shared edge).
+  River-crossing continuity across seams is the remaining piece.
+- **Remaining follow-ups (each its own future item):** per-level cartographic
   generalisation (Töpfer budgets + Visvalingam simplification + scale-rank
   labels); rank-driven background prefetch; per-sector society (settlements/
   roads/local history); true cross-fade + raster pyramid (trigger-gated).

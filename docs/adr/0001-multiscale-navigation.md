@@ -203,11 +203,15 @@ Phase 7 + a first cut of 8.4 shipped (`crates/mapgen-world/src/scale.rs`,
   independent per-sector blake3 seeds (Q8 — `StageRng::sector`); the halo as
   simulation *context* (Q5, partial). The coarsening contract (Q8) is tested on
   the base field (94–98% coastline agreement).
+- **Seam-pinning (Q5) — DONE (2026-05-25).** `scale::pin_edges_to_shared` blends
+  each sector's eroded + detailed terrain back toward the *shared* base field
+  (plates + root-seed noise, which a neighbour recomputes identically) via a
+  smoothstep that ramps from 0 at the rectangle edge to 1 a short band inside.
+  Both sides of a seam reduce to the same field at the boundary, so adjacent
+  sectors agree (test: elevation MAD < 0.04 + >90% land/sea agreement along a
+  shared edge) while interiors keep full detail. Elevation/coast only; matching
+  *river* entry/exit across seams remains future work.
 - **Deferred (documented, not blocking the MVP).**
-  - **Exact seam-pinning (Q5).** The halo is context, not a pinned Dirichlet
-    boundary, so adjacent sectors agree only approximately (shared base field).
-    The drill-in views one sector at a time, so this isn't yet exercised; exact
-    pinning needs per-stage boundary masks in erosion/hydrology/climate.
   - **Cartographic generalisation (Q3) + scale-rank labels (Q4).** Per-level
     stylesheets, Visvalingam simplification, and Töpfer feature budgets are not
     yet applied — a sector currently renders its own cells directly. Strahler
