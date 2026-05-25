@@ -34,28 +34,65 @@ pub fn validate(
         }
     }
 
+    // Decompose every lexicon name with the *same* tokenizer used on the prose
+    // (split on whitespace + name-joining separators, trim punctuation), so a
+    // multi-word or hyphenated name validates piece-by-piece and the allowed set
+    // can't drift from the body side.
     let lexicon = ner_lexicon(world);
-    // Decompose names into whitespace tokens, so a multi-word name validates
-    // token-by-token ("House Varn" allows both "House" and "Varn").
-    let allowed: BTreeSet<&str> = lexicon.iter().flat_map(|n| n.split_whitespace()).collect();
+    let allowed: BTreeSet<&str> = lexicon.iter().flat_map(|n| name_pieces(n)).collect();
 
-    for raw in draft.body.split_whitespace() {
-        let w = raw.trim_matches(|c: char| !c.is_alphanumeric());
-        let w = w.strip_suffix("'s").unwrap_or(w);
-        let Some(first) = w.chars().next() else {
+    // Both the body *and the title* must be grounded — a hallucinated name in the
+    // title is shown to the user just the same.
+    check_grounded(&draft.title, &allowed).map_err(|w| {
+        format!("title names \"{w}\", which is not in the supplied world context (possible hallucination)")
+    })?;
+    check_grounded(&draft.body, &allowed).map_err(|w| {
+        format!("body names \"{w}\", which is not in the supplied world context (possible hallucination)")
+    })?;
+    Ok(())
+}
+
+/// Every proper-noun candidate in `text` must be an allowed name token or a
+/// common word. On the first violation, `Err(token)`.
+fn check_grounded(text: &str, allowed: &BTreeSet<&str>) -> Result<(), String> {
+    for w in name_pieces(text) {
+        let first = w.chars().next().expect("name_pieces yields non-empty");
+        // A proper-noun candidate is capitalized and contains a letter (so pure
+        // numbers — e.g. a year — are not treated as names here). A lone letter
+        // (an initial, a placeholder) is not a name.
+        if !first.is_uppercase() || !w.chars().any(|c| c.is_alphabetic()) || w.chars().count() == 1
+        {
             continue;
-        };
-        if !first.is_uppercase() || !w.chars().all(|c| c.is_alphabetic()) {
-            continue; // not a proper-noun candidate
         }
         if allowed.contains(w) || STOPWORDS.contains(&w.to_lowercase().as_str()) {
             continue;
         }
-        return Err(format!(
-            "body names \"{w}\", which is not in the supplied world context (possible hallucination)"
-        ));
+        return Err(w.to_string());
     }
     Ok(())
+}
+
+/// Split text into name "pieces": break on whitespace **and** on the separators
+/// that join names (hyphen, en/em dash, slash), strip a trailing possessive
+/// (ASCII `'s` or curly `’s`) and surrounding punctuation. Yields non-empty
+/// pieces. Using this on both the lexicon and the prose closes the bypasses
+/// where `Zxq-Wbb`, `R2dax`, or `Foo’s` slipped through the old all-alphabetic
+/// gate.
+fn name_pieces(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| c.is_whitespace() || matches!(c, '-' | '\u{2013}' | '\u{2014}' | '/'))
+        .filter_map(strip_piece)
+}
+
+fn strip_piece(piece: &str) -> Option<&str> {
+    // Keep apostrophes during the first trim so a possessive survives to be
+    // stripped, then drop any remaining edge punctuation.
+    let w = piece.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'' && c != '\u{2019}');
+    let w = w
+        .strip_suffix("'s")
+        .or_else(|| w.strip_suffix("\u{2019}s"))
+        .unwrap_or(w);
+    let w = w.trim_matches(|c: char| !c.is_alphanumeric());
+    (!w.is_empty()).then_some(w)
 }
 
 /// Common English words that legitimately appear capitalized (sentence-initial
@@ -516,4 +553,53 @@ const STOPWORDS: &[&str] = &[
     "line",
     "name",
     "names",
+    // narrative / title vocabulary (titles use these as common nouns, not names)
+    "account",
+    "accounts",
+    "lay",
+    "lays",
+    "saga",
+    "sagas",
+    "tale",
+    "tales",
+    "annal",
+    "annals",
+    "chronicle",
+    "chronicles",
+    "dispatch",
+    "story",
+    "stories",
+    "song",
+    "songs",
+    "deed",
+    "deeds",
+    "tidings",
+    "coming",
+    "passing",
+    "conquest",
+    "conquests",
+    "ruin",
+    "record",
+    "records",
+    "legend",
+    "legends",
+    "myth",
+    "myths",
+    "history",
+    "strife",
+    "struggle",
+    "glory",
+    "downfall",
+    "matter",
+    "talk",
+    "say",
+    "rise",
+    "making",
+    "taking",
+    "telling",
+    "fate",
+    "doom",
+    "lament",
+    "epic",
+    "true",
 ];

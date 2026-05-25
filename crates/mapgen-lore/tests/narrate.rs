@@ -154,6 +154,33 @@ fn ner_accepts_grounded_text_and_rejects_invented_names() {
 }
 
 #[test]
+fn ner_rejects_validator_bypasses() {
+    // Invented names must not slip through hyphen/dash/slash compounds, embedded
+    // digits, curly-apostrophe possessives, or the title.
+    let w = seed42();
+    let focal = select_focal(&w, "auto-major-war").unwrap();
+    let slice = event_closure(&w, focal);
+    let draft = |title: &str, body: &str| ChronicleDraft {
+        title: title.into(),
+        body: body.into(),
+        references: vec![focal.0],
+        lacunae: vec![],
+    };
+    for body in [
+        "Zxqbb-Wzz conquered all.",        // hyphen compound
+        "R2dax marched forth.",            // embedded digit
+        "Zxqbb\u{2019}s host was broken.", // curly-apostrophe possessive
+    ] {
+        assert!(
+            ner::validate(&draft("A Tale", body), &w, &slice).is_err(),
+            "should reject body: {body}"
+        );
+    }
+    // A hallucinated name in the *title* must be caught too.
+    assert!(ner::validate(&draft("The Saga of Zxqbb", "It came to pass."), &w, &slice).is_err());
+}
+
+#[test]
 fn ner_accepts_realistic_chronicle_prose() {
     // A paragraph of ordinary chronicle prose — common words plus two real realm
     // names — must pass; the expanded stoplist exists so this doesn't false-trip.

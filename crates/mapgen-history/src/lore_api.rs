@@ -46,6 +46,10 @@ pub fn ner_lexicon(world: &WorldData) -> BTreeSet<String> {
     for l in &world.languages {
         set.insert(l.name.clone());
     }
+    // Named heights the WORLD BIBLE lists ("Its named heights: …").
+    for m in &world.mountain_ranges {
+        set.insert(m.name.clone());
+    }
     for a in &world.history.ages {
         set.insert(a.name.clone());
     }
@@ -130,5 +134,18 @@ mod tests {
         };
         let closure: Vec<u32> = arc_event_closure(&w, &arc).iter().map(|e| e.0).collect();
         assert_eq!(closure, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn lexicon_includes_named_mountain_ranges() {
+        // Regression: the WORLD BIBLE lists named heights, so their names must be
+        // in the closed NER set — else a faithful chronicle naming a range is
+        // falsely rejected and the model is shown a forbidden name.
+        let mut w = WorldData::default();
+        w.mountain_ranges.push(mapgen_core::MountainRange {
+            cells: vec![],
+            name: "Aleb".into(),
+        });
+        assert!(ner_lexicon(&w).contains("Aleb"));
     }
 }
