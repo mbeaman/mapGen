@@ -197,6 +197,65 @@ fn refinement_is_deterministic() {
     assert_eq!(hash(&a), hash(&b), "refinement must be deterministic");
 }
 
+/// Seam-pinning: two horizontally-adjacent sectors agree along their shared
+/// edge. Each runs its own erosion + sector-specific detail noise, so without
+/// pinning their edges would diverge; pinning both back to the shared base field
+/// at the boundary makes the seam match (low elevation MAD, land/sea agreement).
+#[test]
+fn adjacent_sectors_agree_at_their_seam() {
+    let p = params();
+    let parent = generate_full(p.clone());
+    // Columns 1 and 2 of the level-2 grid share the vertical edge at x = width/2.
+    let a = refine_sector(
+        &parent,
+        Sector {
+            level: 2,
+            sx: 1,
+            sy: 1,
+        },
+        RefineParams::default(),
+    );
+    let b = refine_sector(
+        &parent,
+        Sector {
+            level: 2,
+            sx: 2,
+            sy: 1,
+        },
+        RefineParams::default(),
+    );
+
+    let edge_x = p.width * 0.5; // boundary between col 1 ([w/4,w/2]) and col 2
+    let cell_h = p.height / 4.0;
+    let (y_lo, y_hi) = (cell_h + 8.0, cell_h * 2.0 - 8.0); // row 1, inset from corners
+
+    let mut n = 0;
+    let mut mad = 0.0f32;
+    let mut sign = 0;
+    for k in 0..40 {
+        let y = y_lo + (y_hi - y_lo) * k as f32 / 39.0;
+        let pt = [edge_x, y];
+        let ea = a.terrain.elevation[nearest(&a.mesh.sites, pt)];
+        let eb = b.terrain.elevation[nearest(&b.mesh.sites, pt)];
+        n += 1;
+        mad += (ea - eb).abs();
+        if (ea > 0.0) == (eb > 0.0) {
+            sign += 1;
+        }
+    }
+    let mad = mad / n as f32;
+    let agree = sign as f32 / n as f32;
+    assert!(
+        mad < 0.04,
+        "seam elevation MAD {mad:.3} too high — sectors disagree"
+    );
+    assert!(
+        agree > 0.9,
+        "seam land/sea agreement {:.0}% too low",
+        agree * 100.0
+    );
+}
+
 /// Distinct sectors are genuinely different worlds (no accidental aliasing of
 /// the per-sector seed).
 #[test]

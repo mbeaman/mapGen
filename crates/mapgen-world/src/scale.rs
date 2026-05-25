@@ -211,6 +211,12 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
         &mut root_rng.stream(Stage::Noise),
     );
 
+    // Seam reference: the base field so far (plates + ROOT noise) is *shared* —
+    // an adjacent sector recomputes it identically. Snapshot it now, before the
+    // sector-specific detail noise and erosion, so we can pin the sector edges
+    // back to it and have neighbours agree along their shared boundary.
+    let shared_elev = world.terrain.elevation.clone();
+
     // 4. Sub-parent detail from the SECTOR stream: extra octaves at the
     // refinement frequency. Zero-mean, so it averages away under coarsening.
     if refine.detail_octaves > 0 {
@@ -237,6 +243,14 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
         erosion::ErosionParams::default(),
         &mut sec_rng.stream(Stage::Erosion),
     );
+
+    // Seam-pinning: blend the eroded + detailed terrain back toward the shared
+    // base field as we approach the sector edges, so two independently-generated
+    // neighbours agree along their shared boundary (their edge cells both reduce
+    // to the same shared field) while the interior keeps its full detail. Runs
+    // before hydrology so rivers/coast are derived from the pinned terrain.
+    pin_edges_to_shared(&mut world, rect, &shared_elev);
+
     hydrology::detect_coast(&mut world);
     hydrology::fill_depressions(&mut world);
     let flow_dir = hydrology::flow_directions(&world);
@@ -257,6 +271,28 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
 
 fn in_rect(p: [f32; 2], r: [f32; 4]) -> bool {
     p[0] >= r[0] && p[0] < r[2] && p[1] >= r[1] && p[1] < r[3]
+}
+
+/// Seam-pinning (Phase 7): blend each cell's elevation back toward the shared
+/// base field `shared` as it approaches the sector boundary, so adjacent sectors
+/// — which recompute the identical shared field — agree along their seam. The
+/// blend weight ramps via smoothstep from 0 at the rectangle edge (fully shared)
+/// to 1 a short band inside (the sector's own eroded + detailed terrain). Cells
+/// in the halo (outside the rectangle) stay fully shared.
+fn pin_edges_to_shared(world: &mut WorldData, rect: [f32; 4], shared: &[f32]) {
+    let [x0, y0, x1, y1] = rect;
+    let blend = ((x1 - x0).min(y1 - y0) * 0.12).max(1.0);
+    let sites = &world.mesh.sites;
+    let elev = &mut world.terrain.elevation;
+    let n = elev.len().min(shared.len()).min(sites.len());
+    for i in 0..n {
+        let p = sites[i];
+        // Distance *inside* the rectangle to the nearest edge (≤ 0 in the halo).
+        let d_in = (p[0] - x0).min(x1 - p[0]).min(p[1] - y0).min(y1 - p[1]);
+        let t = (d_in / blend).clamp(0.0, 1.0);
+        let w = t * t * (3.0 - 2.0 * t); // smoothstep
+        elev[i] = shared[i] + (elev[i] - shared[i]) * w;
+    }
 }
 
 /// Carry the root world's society into a refined sector. Settlements/roads in
