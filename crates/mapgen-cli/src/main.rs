@@ -102,6 +102,22 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         limit: usize,
     },
+    /// Narrate a major event into an in-world chronicle. Offline by default
+    /// (deterministic template narrator). With the `lore` feature +
+    /// ANTHROPIC_API_KEY it calls Claude (Phase 5e); otherwise it stays offline.
+    Lore {
+        #[arg(long, value_name = "WORLD")]
+        r#in: PathBuf,
+        /// Event to narrate: a numeric id or "auto-major-war".
+        #[arg(long, default_value = "auto-major-war")]
+        event: String,
+        /// Register: saga | monastic-chronicle | hymn | courtly-letter | peasant-rumor.
+        #[arg(long, default_value = "monastic-chronicle")]
+        voice: String,
+        /// Optionally write the world back with the new chronicle persisted.
+        #[arg(long, value_name = "WORLD")]
+        out: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -219,6 +235,58 @@ fn main() -> Result<()> {
                         a.member_events.len()
                     );
                 }
+            }
+        }
+        Cmd::Lore {
+            r#in,
+            event,
+            voice,
+            out,
+        } => {
+            use mapgen_lore::{narrate, select_focal, Register, VoiceCard};
+
+            let mut world = read_world(&r#in)?;
+            let register = Register::parse(&voice).ok_or_else(|| {
+                let opts: Vec<&str> = Register::ALL.iter().map(|r| r.as_str()).collect();
+                anyhow::anyhow!("unknown voice '{voice}' (options: {})", opts.join(", "))
+            })?;
+            let card = VoiceCard::for_register(register);
+            let focal = select_focal(&world, &event)?;
+            let focal_summary = world
+                .events
+                .events
+                .get(focal.0 as usize)
+                .map(|e| e.summary_canonical.clone())
+                .unwrap_or_default();
+
+            // 5d: offline template narrator (client = None). 5e wires the real
+            // Anthropic client behind the `lore` feature + ANTHROPIC_API_KEY.
+            let work = narrate(&mut world, focal, &card, None)?;
+
+            println!("# {}", work.title);
+            println!(
+                "*{}, in the {} year*\n",
+                work.in_world_author, work.written_year
+            );
+            println!("{}\n", work.body);
+            if !work.lacunae.is_empty() {
+                println!("Lacunae: {}\n", work.lacunae.join("; "));
+            }
+            println!(
+                "(narrated event [{}] \"{}\" — citing {} events, voice: {})",
+                focal.0,
+                focal_summary,
+                work.references.len(),
+                register.as_str()
+            );
+
+            if let Some(path) = out {
+                write_world(&path, &world)?;
+                eprintln!(
+                    "wrote {} ({} chronicle(s) now persisted)",
+                    path.display(),
+                    world.works.len()
+                );
             }
         }
     }
