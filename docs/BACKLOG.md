@@ -207,11 +207,13 @@ note.
   - `detail ≥ 8` (local zoom): **full town plans** — an irregular wall enclosure
     (capitals), a street network keyed to the founding culture's architecture
     (chord grid for planned cultures, radial spokes + ring road for organic),
-    quarters of buildings, and the landmark glyph as the central citadel.
+    quarters of buildings, a market plaza, the landmark glyph as the central
+    citadel, and a **harbour** (piers + moored boats) for coastal towns.
 - **Still open:** the *detail-decreasing* generalisation direction
-  (Töpfer/Visvalingam line simplification + scale-rank label declutter when
-  zoomed *out* — see the navigation item's follow-ups). Possible further city
-  detail: named districts, a harbour/market at coastal capitals.
+  (Töpfer/Visvalingam line simplification + scale-rank label declutter), which is
+  really only meaningful once a coarser-than-world (planet / multi-continent)
+  view exists above level 0 — see Phase 8.3 and the navigation item's follow-ups.
+  Optional further city detail: named districts/wards.
 - **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
   tree glyphs, finer rivers/coastline), but every feature still renders with the
   same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
