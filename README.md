@@ -26,6 +26,9 @@ Project docs:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — locked strategic plan.
 - [`docs/TASKS.md`](docs/TASKS.md) — active tactical work.
 - [`docs/BACKLOG.md`](docs/BACKLOG.md) — deferred items with revival triggers.
+- [`docs/design-influences.md`](docs/design-influences.md) — how the history
+  pipeline compares to Dwarf Fortress / RimWorld / Crusader Kings / Caves of Qud,
+  and the depth-vs-narratability scope choices behind it.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — dev process, validation gate,
   TDD discipline, commit conventions.
 - [`AGENTS.md`](AGENTS.md) — guidance for AI collaborators (persona,
