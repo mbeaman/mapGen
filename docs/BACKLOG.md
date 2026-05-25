@@ -674,6 +674,23 @@ note.
   `SimState`, and re-anchors `ages` to the Desolation cadence.
 - **Origin.** ARCHITECTURE.md §2 (deferred from MVP).
 
+### Resources & economy (trade, commodities)
+
+- **Gap (identified 2026-05-25 review).** The world has soils (6.1.4), biomes,
+  rivers, and roads, but nothing *consumes* them economically: no resource
+  deposits (ore / timber / fertile land / fisheries), no commodity flows, no
+  trade networks beyond the bare road graph. Settlement placement already weighs
+  habitat but not resource access; the history sim has no economic driver beyond
+  the Turchin fiscal loop's abstract surplus. ARCHITECTURE §-level mentions
+  "trade networks" as a concept but no concrete model exists.
+- **Trigger for revival.** Wanting settlement/wealth distribution to *read* as
+  resource-driven (a mining town in the mountains, a granary on river-valley
+  Mollisols, a port trading hub); or the history sim wanting trade-war / blockade
+  causes. Soils + Strahler rivers are the substrate it would build on.
+- **Cost.** Multi-day. A resource layer (per-cell deposits from geology + soil +
+  biome), settlement-economy scoring, and a trade-route pass over the road graph.
+- **Origin.** Surfaced in the 2026-05-25 missing-features review.
+
 ---
 
 ## Render
