@@ -12,7 +12,7 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | **HEAD** = `feat(web,wasm): Phase 7/8.4 — interactive multi-scale drill-in navigation` (run `git log -1` for the hash) |
+| Latest commit | Phase 7 complete — refinement framework + drill-in nav + scale-dependent render fidelity (forests→cities) + seam-pinning + projected rivers + hardening. Run `git log -1` for the head. |
 | Tree | clean |
 | Tests | full workspace suite green (adds `scale_spec`, `soils_spec`, `rivers_spec`, `refine_render`, sector-seed + `refineSector` wasm tests) + `--features lore` suite + web `tsc --noEmit`/vite build clean. **`wasm-pack test --node` (native↔wasm golden + refineSector) green** — in CI + `just test-wasm`. |
 | Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** (26/111/259 ms medians vs 39/166/388 budgets). |
@@ -36,7 +36,7 @@ fast; the others are stable.
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | **done (+ reviewed & upleveled, 4k)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). A deep multi-agent review after 4j (verdict: substrate sound; presentation needed work) drove the **4k** pass — see "Currently in flight". `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` closer → `4k` review uplevel + polish. See `docs/TASKS.md` `## Phase 4`. |
 | 6 realism + cross-cutting | **done** | 6.0 backlog housekeeping; 6.1.1 precip variance; 6.1.3 wider biomes; **6.1.4 USDA soils + WETLAND biome** (schema v14); **6.1.5 Strahler order + seasonal river regime, ephemeral rivers dashed** (schema v15); **6.2 cross-platform native↔wasm golden** — caught + fixed 2 real determinism bugs (usize `gen_range` in poisson, std `exp` in `band_precip`), fmath purity guard now workspace-wide, runs in CI; 6.3 navigation ADR (`docs/adr/0001`). |
-| 7 multi-scale atlas | **framework + MVP navigation done (2026-05-25)** | The keystone: `mapgen-world/src/scale.rs` (`Sector` quadtree + `refine_sector` — deterministic on-demand sector refinement through terrain→biomes; base field recomputed from the ROOT seed so it matches the parent, detail + stateful stages from a per-sector seed; halo for stage context; coarsening contract tested at 94–98% coastline agreement). `mapgen-wasm::refineSector` + `mapgen refine` CLI + browser drill-in (click-to-zoom, coarse-first focus, breadcrumb). Deferred (see ADR "Implementation status"): exact seam-pinning, per-level generalisation, prefetch, per-sector society. |
+| 7 multi-scale atlas | **done (2026-05-25)** | The keystone: `mapgen-world/src/scale.rs` (`Sector` quadtree + `refine_sector` — deterministic on-demand sector refinement; base field recomputed from the ROOT seed, detail + stateful stages from a per-sector seed; coarsening contract tested at 94–98% coastline agreement). **Society + river network projected** from the parent (towns/borders/roads + global drainage, seam-consistent). **Seam-pinning** (`pin_edges_to_shared`): neighbours agree on elevation/coast/rivers at shared edges (tested MAD < 0.04). **Scale-dependent render fidelity** (ornate LOD, gated on zoom so level-0 is byte-identical): forests→layered trees, ridged mountains, screen-consistent coastlines, settlements→town clusters→full city plans (walls/streets/quarters/market/harbour/wards). `mapgen-wasm::refineSector` (method) + `mapgen refine` CLI + browser drill-in (click-to-zoom, coarse-first focus, breadcrumb). Hardened: robustness sweep across all sectors + wasm error path. Open follow-ups (BACKLOG): planet view (zoom-out) + generalisation, prefetch. |
 | 5 lore engine | **done (5a–5f) + reviewed & remediated; opt-in** | The Claude narration engine, offline-first. `5a` lore types + template narrator `9c88606` → `5b` prompt assembly `060b3ed` → `5c` NER validator + `narrate()` + Work persistence `0453cfc` → `5d` `mapgen lore` CLI `2df3915` → `5e` real Anthropic client behind `--features lore` `6979e38` → polish (title + NER stoplist) `8d0ce02` → `5f` `mapgen serve` sidecar `3a8e003` + frontend narrate button `e1e1d69`. Opt-in: a stock build makes no paid call; `mapgen lore` runs the offline template narrator, Claude lights up only with `--features lore` + `ANTHROPIC_API_KEY`. **Live API call + browser click are unexercised in-sandbox** (no network/browser) — verify with a key; the sidecar was curl-verified and the frontend typechecks. A 4-agent deep review then drove remediation (`d42bb07`…`32e90ff`): NER lexicon blocker (mountain ranges) + validator bypasses (title/hyphen/digit/curly) fixed; request timeouts added; engine-populated lacunae + `max_calls_per_world` cap; CORS scoped to localhost + body cap; serve/register/serde tests. |
 
 ---
@@ -65,13 +65,14 @@ git log -8 --oneline
 ## Currently in flight
 
 **Nothing mid-flight.** Phases 5 (lore), 6 (realism + cross-cutting), and 7
-(multi-scale atlas framework + MVP drill-in navigation) are all complete and
-pushed. Natural next moves, all documented as follow-ups in
-`docs/adr/0001-multiscale-navigation.md` ("Implementation status") and the
-BACKLOG "Seamless inter-scale navigation" item: exact Dirichlet seam-pinning
-across the stateful stages; per-level cartographic generalisation
-(Töpfer/Visvalingam + scale-rank labels); rank-driven background prefetch;
-per-sector society (settlements/roads/local history). None is mid-flight.
+(multi-scale atlas — refinement, drill-in nav, projected society + rivers,
+seam-pinning, scale-dependent render fidelity, hardening) are all complete and
+pushed. Remaining follow-ups, documented in `docs/adr/0001-multiscale-navigation.md`
+("Implementation status") and the BACKLOG: **planet / multi-continent view above
+level 0** (zoom-out — also the prerequisite that makes cartographic
+generalisation meaningful: Töpfer/Visvalingam + scale-rank label declutter);
+rank-driven background prefetch; per-sector local history; the deferred Phase-8
+scale-consumer bands (urban interiors, planet). None is mid-flight.
 
 The full narration round-trip, built offline-first in `mapgen-lore`:
 voice/register types, a tolerant `ChronicleDraft` parser, prompt assembly (WORLD
