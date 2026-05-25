@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyLayers, defaultLayerState, LAYERS, svgLayerClasses } from "./layers";
+import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, svgLayerClasses } from "./layers";
 
 describe("defaultLayerState", () => {
   it("enables features and disables overlays", () => {
@@ -64,5 +64,28 @@ describe("applyLayers", () => {
     expect(s.has("climate")).toBe(false);
     s.add("climate");
     expect(svgLayerClasses(s)).toContain("on-climate");
+  });
+});
+
+describe("PRESETS", () => {
+  const known = new Set(LAYERS.map((l) => l.name));
+
+  it("every preset references only known layers and has a unique name", () => {
+    const names = new Set(PRESETS.map((p) => p.name));
+    expect(names.size).toBe(PRESETS.length);
+    for (const p of PRESETS) {
+      expect(p.label.length).toBeGreaterThan(0);
+      for (const n of p.enabled) expect(known.has(n)).toBe(true);
+    }
+  });
+
+  it("the antique preset reproduces the default state", () => {
+    const antique = PRESETS.find((p) => p.name === "antique")!;
+    expect(presetState(antique)).toEqual(defaultLayerState());
+  });
+
+  it("the climate preset turns the temperature overlay on", () => {
+    const climate = PRESETS.find((p) => p.name === "climate")!;
+    expect(svgLayerClasses(presetState(climate))).toContain("on-climate");
   });
 });

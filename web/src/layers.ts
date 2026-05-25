@@ -34,6 +34,36 @@ export function defaultLayerState(): Set<string> {
   return new Set(LAYERS.filter((l) => !l.overlay).map((l) => l.name));
 }
 
+/// A named "lens": one click swaps the whole enabled set to a curated view.
+export interface Preset {
+  name: string;
+  label: string;
+  /// The exact set of enabled layers for this view.
+  enabled: string[];
+}
+
+/// Curated views. `enabled` lists *only* the layers that should be on; every
+/// other layer is off. (Keep names in sync with `LAYERS`.)
+export const PRESETS: Preset[] = [
+  // The default cartographic view: every feature, no data overlay.
+  { name: "antique", label: "Antique", enabled: LAYERS.filter((l) => !l.overlay).map((l) => l.name) },
+  // Realm tint + human geography over a calm base (terrain decluttered).
+  {
+    name: "political",
+    label: "Political",
+    enabled: ["land", "ocean", "coastline", "rivers", "roads", "borders", "settlements", "sacred", "labels", "political"],
+  },
+  // Natural features only — no human geography.
+  { name: "physical", label: "Physical", enabled: ["land", "ocean", "coastline", "rivers", "mountains", "forests", "labels"] },
+  // The thermal lens: temperature over a stripped base (sea shows pure thermal).
+  { name: "climate", label: "Climate", enabled: ["coastline", "rivers", "labels", "climate"] },
+];
+
+/// The enabled set for a preset, as a fresh mutable `Set`.
+export function presetState(preset: Preset): Set<string> {
+  return new Set(preset.enabled);
+}
+
 /// Root-`<svg>` classes for a given enabled set: `off-NAME` for a disabled
 /// feature, `on-NAME` for an enabled overlay. (An enabled feature / disabled
 /// overlay is the default and needs no class.)

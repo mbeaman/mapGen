@@ -1,5 +1,5 @@
 import "./style.css";
-import { applyLayers, defaultLayerState, LAYERS } from "./layers";
+import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState } from "./layers";
 import { PanZoom } from "./panzoom";
 import { ancestors, childSectorAt, ROOT, sectorRect, type Sector } from "./sector";
 import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
@@ -599,8 +599,36 @@ const copyLink = async () => {
 };
 
 // ---- Layer panel ----
+const layerChecks = new Map<string, HTMLInputElement>();
+
+const applyLayerState = () => {
+  const svg = contentEl.querySelector("svg");
+  if (svg) applyLayers(svg, layerState);
+};
+
 const buildLayerPanel = () => {
   layersEl.replaceChildren();
+  layerChecks.clear();
+
+  // Preset "lenses": one click swaps the whole enabled set to a curated view.
+  const presets = document.createElement("div");
+  presets.className = "layer-presets";
+  for (const p of PRESETS) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "layer-preset";
+    btn.textContent = p.label;
+    btn.addEventListener("click", () => {
+      layerState.clear();
+      for (const n of presetState(p)) layerState.add(n);
+      for (const [name, cb] of layerChecks) cb.checked = layerState.has(name);
+      applyLayerState();
+    });
+    presets.append(btn);
+  }
+  layersEl.append(presets);
+
+  // Per-layer checkboxes (fine-grained control on top of the presets).
   for (const l of LAYERS) {
     const row = document.createElement("label");
     row.className = l.overlay ? "layer-row overlay" : "layer-row";
@@ -610,9 +638,9 @@ const buildLayerPanel = () => {
     cb.addEventListener("change", () => {
       if (cb.checked) layerState.add(l.name);
       else layerState.delete(l.name);
-      const svg = contentEl.querySelector("svg");
-      if (svg) applyLayers(svg, layerState);
+      applyLayerState();
     });
+    layerChecks.set(l.name, cb);
     row.append(cb, document.createTextNode(` ${l.label}`));
     layersEl.append(row);
   }
