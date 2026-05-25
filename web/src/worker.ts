@@ -3,6 +3,7 @@
 /// cannot cross the worker boundary, so they stay here: the main thread
 /// sends commands and gets back progress + SVG strings.
 import init, { Generation, type WorldHandle } from "../pkg/mapgen_wasm";
+import { styleForStage } from "./sector";
 
 let ready: Promise<unknown> | null = null;
 // The whole-world (level-0) handle and the current refined sector (Phase 7).
@@ -59,24 +60,6 @@ const ensureReady = async () => {
     ready = init().then(() => post({ type: "ready" }));
   }
   await ready;
-};
-
-/// Progressive richness: render the partial world in the richest style
-/// whose inputs exist by this stage. Ornate is never rendered mid-build
-/// (it is 2–3× costlier) — the final frame handles the chosen style.
-const styleForStage = (stage: string): string => {
-  switch (stage) {
-    case "terrain":
-    case "erosion":
-      return "greyscale";
-    case "hydrology":
-    case "ocean":
-    case "climate":
-    case "biomes":
-      return "biomes";
-    default:
-      return "cultures";
-  }
 };
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {

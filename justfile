@@ -77,6 +77,10 @@ web-setup:
     npm run build:wasm
     echo "==> web setup complete. Run 'just web-dev' to start the dev server."
 
+# Frontend unit tests (Vitest) — pure nav/geometry logic in web/src.
+web-test:
+    cd web && npm test
+
 # Rebuild the wasm package the frontend consumes (run after Rust changes).
 web-build:
     cd web && npm run build:wasm

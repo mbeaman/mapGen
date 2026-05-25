@@ -1,5 +1,6 @@
 import "./style.css";
 import { PanZoom } from "./panzoom";
+import { ancestors, childSectorAt, ROOT, sectorRect, type Sector } from "./sector";
 import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -54,23 +55,13 @@ let lastDims = { w: 0, h: 0 };
 let exportReady = false;
 
 // ---- Multi-scale navigation (Phase 7) ----
-interface Nav {
-  level: number;
-  sx: number;
-  sy: number;
-}
-let nav: Nav = { level: 0, sx: 0, sy: 0 };
+// Geometry lives in ./sector (pure + unit-tested); this module wires it to the
+// DOM, worker, and pan/zoom.
+let nav: Sector = { ...ROOT };
 // World extent in SVG/world units, captured from the root render (the default
 // GenerateParams dims). Sector rectangles are computed against it.
 let worldW = 2048;
 let worldH = 1280;
-
-const sectorRect = (n: Nav) => {
-  const span = 2 ** n.level;
-  const w = worldW / span;
-  const h = worldH / span;
-  return { x0: n.sx * w, y0: n.sy * h, w, h };
-};
 
 // Build-up frames cached for the scrubber/replay (JS-side only; no Rust
 // snapshots). Each entry is one rendered stage frame.
@@ -293,7 +284,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setupScrubber();
       hasWorld = true;
       // The root render establishes the world extent for sector geometry.
-      nav = { level: 0, sx: 0, sy: 0 };
+      nav = { ...ROOT };
       worldW = lastDims.w || worldW;
       worldH = lastDims.h || worldH;
       mapEl.classList.add("navigable");
@@ -350,7 +341,7 @@ const doGenerate = () => {
   setBusy(true);
   setExportEnabled(false);
   hasWorld = false;
-  nav = { level: 0, sx: 0, sy: 0 };
+  nav = { ...ROOT };
   updateBreadcrumb();
   narrateBtn.disabled = true;
   chronicleEl.classList.add("hidden");
@@ -410,24 +401,21 @@ const MAX_LEVEL = 6; // 2^6 sectors/axis — a level-6 sector is ~1/64 of the wo
 
 const updateBreadcrumb = () => {
   breadcrumbEl.replaceChildren();
-  for (let k = 0; k <= nav.level; k++) {
-    if (k > 0) {
+  for (const a of ancestors(nav)) {
+    if (a.level > 0) {
       const sep = document.createElement("span");
       sep.className = "crumb-sep";
       sep.textContent = "›";
       breadcrumbEl.append(sep);
     }
-    const shift = nav.level - k;
-    const ax = nav.sx >> shift;
-    const ay = nav.sy >> shift;
     const crumb = document.createElement("button");
     crumb.className = "crumb";
-    crumb.textContent = k === 0 ? "World" : `L${k} (${ax},${ay})`;
-    if (k === nav.level) {
+    crumb.textContent = a.level === 0 ? "World" : `L${a.level} (${a.sx},${a.sy})`;
+    if (a.level === nav.level) {
       crumb.classList.add("current");
       crumb.disabled = true;
     } else {
-      crumb.addEventListener("click", () => navTo({ level: k, sx: ax, sy: ay }));
+      crumb.addEventListener("click", () => navTo(a));
     }
     breadcrumbEl.append(crumb);
   }
@@ -454,11 +442,11 @@ const requestRefine = () => {
 
 // Navigate to an explicit sector (breadcrumb / up). Re-refines from the seed —
 // sectors are stateless, so this never needs the parent to be cached.
-const navTo = (target: Nav) => {
+const navTo = (target: Sector) => {
   if (busy || !hasWorld) return;
-  const parent = sectorRect(nav);
+  const parent = sectorRect(nav, worldW, worldH);
   nav = target;
-  const child = sectorRect(nav);
+  const child = sectorRect(nav, worldW, worldH);
   // Coarse-first: frame the target rectangle with the current (parent) pixels
   // so the zoom feels instant, then the refined sector swaps in over it.
   panzoom.focusContentRect(child.x0 - parent.x0, child.y0 - parent.y0, child.w, child.h);
@@ -467,13 +455,10 @@ const navTo = (target: Nav) => {
 
 // Drill into the child sector beneath a world-space point.
 const drillAt = (wx: number, wy: number) => {
-  if (busy || !hasWorld || nav.level >= MAX_LEVEL) return;
-  const nextLevel = nav.level + 1;
-  const span = 2 ** nextLevel;
-  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
-  const sx = clamp(Math.floor(wx / (worldW / span)), span - 1);
-  const sy = clamp(Math.floor(wy / (worldH / span)), span - 1);
-  navTo({ level: nextLevel, sx, sy });
+  if (busy || !hasWorld) return;
+  const child = childSectorAt(wx, wy, nav.level, worldW, worldH, MAX_LEVEL);
+  if (!child) return;
+  navTo(child);
 };
 
 // Treat a near-stationary pointer press as a click (drill in); a drag pans.
@@ -487,7 +472,7 @@ mapEl.addEventListener("pointerup", (e) => {
   downPt = null;
   if (moved > 6 || busy || !hasWorld) return;
   const c = panzoom.clientToContent(e.clientX, e.clientY);
-  const cur = sectorRect(nav);
+  const cur = sectorRect(nav, worldW, worldH);
   drillAt(cur.x0 + c.x, cur.y0 + c.y);
 });
 

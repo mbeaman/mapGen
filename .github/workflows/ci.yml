@@ -73,6 +73,9 @@ jobs:
       - name: Install web deps
         working-directory: web
         run: npm ci
+      - name: Frontend unit tests (Vitest)
+        working-directory: web
+        run: npm test
       - name: Build frontend (typecheck + bundle)
         working-directory: web
         run: npm run build
