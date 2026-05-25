@@ -1,6 +1,6 @@
 import "./style.css";
 import { PanZoom } from "./panzoom";
-import type { WorkerRequest, WorkerResponse, StageInfo } from "./worker";
+import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -31,6 +31,13 @@ const scrubberEl = $<HTMLDivElement>("scrubber");
 const scrubInput = $<HTMLInputElement>("scrub");
 const scrubLabel = $<HTMLSpanElement>("scrub-label");
 const replayBtn = $<HTMLButtonElement>("replay");
+const voiceSelect = $<HTMLSelectElement>("voice");
+const narrateBtn = $<HTMLButtonElement>("narrate");
+const chronicleEl = $<HTMLDivElement>("chronicle");
+
+/// The native narration sidecar (`mapgen serve`). The browser POSTs the world
+/// here so the API key never enters page JS.
+const SIDECAR = "http://127.0.0.1:7878";
 
 type Status = "idle" | "busy" | "ok" | "error";
 const setStatus = (text: string, kind: Status = "idle") => {
@@ -235,6 +242,7 @@ const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "modu
 const send = (req: WorkerRequest) => worker.postMessage(req);
 
 let busy = false;
+let hasWorld = false;
 const setBusy = (on: boolean) => {
   busy = on;
   generateBtn.disabled = on;
@@ -263,6 +271,8 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       showSvg(msg.svg);
       setExportEnabled(true);
       setupScrubber();
+      hasWorld = true;
+      narrateBtn.disabled = false;
       setStatus(
         `Generated in ${(msg.genMs / 1000).toFixed(2)}s · ${msg.frameCount} frames · rendered in ${((msg.totalMs - msg.genMs) / 1000).toFixed(2)}s`,
         "ok",
@@ -275,9 +285,15 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setExportEnabled(true);
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
       break;
+    case "chronicle":
+      narrateBtn.disabled = false;
+      renderChronicle(msg.work);
+      setStatus(`Chronicle set down by ${msg.work.in_world_author}.`, "ok");
+      break;
     case "error":
       hideOverlay();
       setBusy(false);
+      narrateBtn.disabled = !hasWorld;
       setStatus(`Error: ${msg.message}`, "error");
       break;
   }
@@ -293,12 +309,43 @@ const doGenerate = () => {
   writeState(s);
   setBusy(true);
   setExportEnabled(false);
+  hasWorld = false;
+  narrateBtn.disabled = true;
+  chronicleEl.classList.add("hidden");
   stopReplay();
   frames = [];
   scrubberEl.classList.add("hidden");
   setStatus(`Generating seed ${s.seed}…`, "busy");
   showOverlay("Generating");
   send({ type: "generate", ...s });
+};
+
+// ---- Narration (Phase 5, via the native sidecar) ----
+const renderChronicle = (work: Work) => {
+  chronicleEl.replaceChildren();
+  const title = document.createElement("h3");
+  title.textContent = work.title;
+  const byline = document.createElement("p");
+  byline.className = "byline";
+  byline.textContent = `${work.in_world_author} · year ${work.written_year}`;
+  const body = document.createElement("p");
+  body.className = "chronicle-body";
+  body.textContent = work.body; // textContent, never innerHTML — the body is model output
+  chronicleEl.append(title, byline, body);
+  if (work.lacunae.length > 0) {
+    const lac = document.createElement("p");
+    lac.className = "lacunae";
+    lac.textContent = `Lacunae: ${work.lacunae.join("; ")}`;
+    chronicleEl.append(lac);
+  }
+  chronicleEl.classList.remove("hidden");
+};
+
+const doNarrate = () => {
+  if (!hasWorld) return;
+  narrateBtn.disabled = true;
+  setStatus("Composing the chronicle…", "busy");
+  send({ type: "narrate", event: "auto-major-war", voice: voiceSelect.value, sidecar: SIDECAR });
 };
 
 const doRestyle = () => {
@@ -378,6 +425,7 @@ diceBtn.addEventListener("click", () => {
   seedInput.value = String(Math.floor(Math.random() * 1_000_000));
 });
 generateBtn.addEventListener("click", doGenerate);
+narrateBtn.addEventListener("click", doNarrate);
 styleSelect.addEventListener("change", doRestyle);
 dlSvgBtn.addEventListener("click", downloadSvg);
 dlPngBtn.addEventListener("click", () => void downloadPng());

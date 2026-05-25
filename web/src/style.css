@@ -387,3 +387,21 @@ section.map.grabbing { cursor: grabbing; }
   main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   aside.controls { max-height: 45vh; }
 }
+
+/* Phase-5 chronicle panel (narration via the sidecar). */
+.chronicle {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(90, 60, 30, 0.35);
+  border-radius: 4px;
+  background: rgba(255, 250, 235, 0.55);
+  font-family: "EB Garamond", Georgia, serif;
+  line-height: 1.45;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.chronicle.hidden { display: none; }
+.chronicle h3 { margin: 0 0 0.15rem; font-family: "Cinzel", serif; font-size: 1.05rem; }
+.chronicle .byline { margin: 0 0 0.5rem; font-style: italic; opacity: 0.7; font-size: 0.85rem; }
+.chronicle .chronicle-body { margin: 0; white-space: pre-wrap; }
+.chronicle .lacunae { margin: 0.5rem 0 0; font-size: 0.8rem; opacity: 0.6; }

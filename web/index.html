@@ -54,6 +54,19 @@
         </div>
 
         <p id="status" class="status" role="status" aria-live="polite">Loading engine…</p>
+
+        <div class="field">
+          <label for="voice">Chronicle voice</label>
+          <select id="voice">
+            <option value="saga">Saga</option>
+            <option value="monastic-chronicle">Monastic chronicle</option>
+            <option value="hymn">Hymn</option>
+            <option value="courtly-letter">Courtly letter</option>
+            <option value="peasant-rumor">Peasant rumour</option>
+          </select>
+        </div>
+        <button id="narrate" type="button" disabled>Narrate a major event</button>
+        <div id="chronicle" class="chronicle hidden" aria-live="polite"></div>
       </aside>
 
       <section id="map" class="map" aria-label="Generated map">

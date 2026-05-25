@@ -18,9 +18,20 @@ export interface StageInfo {
   sub_total: number;
 }
 
+/// A persisted, NER-validated chronicle — mirrors the Rust `Work`.
+export interface Work {
+  title: string;
+  body: string;
+  in_world_author: string;
+  references: number[];
+  lacunae: string[];
+  written_year: number;
+}
+
 export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string }
-  | { type: "render"; style: string };
+  | { type: "render"; style: string }
+  | { type: "narrate"; event: string; voice: string; sidecar: string };
 
 export type WorkerResponse =
   | { type: "ready" }
@@ -28,6 +39,7 @@ export type WorkerResponse =
   | { type: "frame"; svg: string; info: StageInfo }
   | { type: "generated"; svg: string; genMs: number; totalMs: number; frameCount: number }
   | { type: "rendered"; svg: string; ms: number }
+  | { type: "chronicle"; work: Work }
   | { type: "error"; message: string };
 
 const post = (msg: WorkerResponse) => (self as DedicatedWorkerGlobalScope).postMessage(msg);
@@ -91,6 +103,38 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       const t0 = performance.now();
       const svg = world.render(msg.style);
       post({ type: "rendered", svg, ms: performance.now() - t0 });
+    } else if (msg.type === "narrate") {
+      if (!world) {
+        post({ type: "error", message: "no world generated yet" });
+        return;
+      }
+      // Serialize the world here (it can't cross the worker boundary as a WASM
+      // object) and POST it to the native sidecar, which holds the API key.
+      // Concatenate the body string so the multi-MB world JSON isn't parsed and
+      // re-stringified.
+      const worldJson = world.worldJson();
+      const body = `{"world":${worldJson},"event":${JSON.stringify(msg.event)},"voice":${JSON.stringify(msg.voice)}}`;
+      let resp: Response;
+      try {
+        resp = await fetch(`${msg.sidecar}/narrate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+      } catch {
+        post({
+          type: "error",
+          message: `could not reach the narration sidecar at ${msg.sidecar} — start it with: cargo run -p mapgen-cli --features lore -- serve`,
+        });
+        return;
+      }
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => "");
+        post({ type: "error", message: `narration failed (${resp.status}): ${detail}` });
+        return;
+      }
+      const work = (await resp.json()) as Work;
+      post({ type: "chronicle", work });
     }
   } catch (err) {
     post({ type: "error", message: err instanceof Error ? err.message : String(err) });

@@ -53,6 +53,14 @@ impl WorldHandle {
         let style = Style::from_str(style).map_err(|e| JsError::new(&e))?;
         mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e))
     }
+
+    /// Serialize the world to JSON — the body the narration sidecar
+    /// (`mapgen serve`) deserializes for `POST /narrate`. Same shape as the CLI's
+    /// `.json.gz`, just uncompressed.
+    #[wasm_bindgen(js_name = worldJson)]
+    pub fn world_json(&self) -> Result<String, JsError> {
+        serde_json::to_string(&self.inner).map_err(|e| JsError::new(&e.to_string()))
+    }
 }
 
 /// Per-step progress descriptor handed back to JS. A plain serializable
