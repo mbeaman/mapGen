@@ -194,6 +194,13 @@ note.
 - **Origin.** User request, 2026-05-25: "zooming in should also change the
   fidelity level of the details — those trees should become more detailed
   forests."
+- **First cut DONE (2026-05-25).** `ornate_antique` derives `detail =
+  world_width / view_width` (1 at level 0, 2/4/8… per sector) and at `detail ≥ 2`
+  draws richer **forests** (trunk + layered conifer / lobed broadleaf crowns,
+  denser canopy) and **mountains** (a subordinate ridge peak). Level-0 render is
+  byte-identical (gated on zoom). **Still open:** coastline crenellation, urban-
+  scale settlement plans, and the *detail-decreasing* generalisation direction
+  (Töpfer/Visvalingam — see the navigation item's follow-ups).
 - **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
   tree glyphs, finer rivers/coastline), but every feature still renders with the
   same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
