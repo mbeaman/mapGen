@@ -57,6 +57,34 @@ export class PanZoom {
     this.zoomAt(vw / 2, vh / 2, factor);
   }
 
+  /// Map a screen (client) point to content-space coordinates — i.e. SVG user
+  /// units, which equal world coordinates offset by the SVG's viewBox origin.
+  clientToContent(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.viewport.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - this.tx) / this.scale,
+      y: (clientY - rect.top - this.ty) / this.scale,
+    };
+  }
+
+  /// Animate the view to frame a content-space rectangle. Used for the
+  /// coarse-first drill-in: zoom into the clicked region using the current
+  /// (parent) pixels while the refined sector is generated, then the swap is
+  /// seamless because both show the same area.
+  focusContentRect(x: number, y: number, w: number, h: number) {
+    const vw = this.viewport.clientWidth;
+    const vh = this.viewport.clientHeight;
+    const s = this.clampScale(Math.min(vw / w, vh / h) * 0.98);
+    this.scale = s;
+    this.tx = (vw - w * s) / 2 - x * s;
+    this.ty = (vh - h * s) / 2 - y * s;
+    this.content.style.transition = "transform 0.32s ease-out";
+    this.apply();
+    window.setTimeout(() => {
+      this.content.style.transition = "";
+    }, 360);
+  }
+
   zoomIn() {
     this.zoomBy(ZOOM_STEP);
   }

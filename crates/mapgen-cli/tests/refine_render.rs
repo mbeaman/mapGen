@@ -62,7 +62,7 @@ fn refined_sector_renders_its_own_viewport_and_is_not_blank() {
         }
         sum += (r + g + b) / 3.0;
         // Bluish pixels = sea/river.
-        if (b as f64) > r + 12.0 && (b as f64) > g + 6.0 {
+        if b > r + 12.0 && b > g + 6.0 {
             water += 1;
         }
     }

@@ -208,6 +208,10 @@ section.map {
     radial-gradient(140% 120% at 50% 50%, var(--sea) 0%, var(--sea-deep) 100%);
 }
 section.map.grabbing { cursor: grabbing; }
+/* When a world is loaded, the map invites a drill-in click. .grabbing (set
+   while dragging) is declared later so it wins during a pan. */
+section.map.navigable { cursor: zoom-in; }
+section.map.navigable.grabbing { cursor: grabbing; }
 
 .map-content {
   position: absolute;
@@ -257,6 +261,44 @@ section.map.grabbing { cursor: grabbing; }
   cursor: pointer;
 }
 .zoom button:hover { background: #fff; }
+
+/* Multi-scale breadcrumb (Phase 7) — top-left over the map. */
+.breadcrumb {
+  position: absolute;
+  top: 0.8rem;
+  left: 0.8rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: calc(100% - 6rem);
+  padding: 0.35rem 0.6rem;
+  background: rgba(244, 233, 207, 0.92);
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  font-family: "IM Fell English", Georgia, serif;
+  font-size: 0.92rem;
+  z-index: 5;
+}
+.breadcrumb:empty { display: none; }
+.crumb {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font: inherit;
+}
+.crumb:hover:not(:disabled) { background: rgba(110, 36, 25, 0.15); }
+.crumb.current { font-weight: 700; color: #6e2419; }
+.crumb:disabled { opacity: 1; cursor: default; }
+.crumb-sep { color: rgba(58, 42, 24, 0.5); }
+.crumb-hint {
+  color: rgba(58, 42, 24, 0.6);
+  font-style: italic;
+  margin-left: 0.2rem;
+}
 
 /* Generating overlay */
 .overlay {

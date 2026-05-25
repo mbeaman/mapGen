@@ -39,6 +39,20 @@ fn hash_world(world: &mapgen_core::WorldData) -> String {
     blake3::hash(&bytes).to_hex().to_string()
 }
 
+/// Phase 7: the `refineSector` binding produces a renderable sector under wasm,
+/// carrying its own sub-rectangle viewBox (level-2 (1,1) of a 2048×1280 world →
+/// `512 320 512 320`).
+#[wasm_bindgen_test]
+fn refine_sector_binding_renders_a_sector() {
+    let handle = mapgen_wasm::refine_sector(42, 14, 2, 1, 1, 2000).expect("refine ok");
+    let svg = handle.render("ornate").expect("render ok");
+    assert!(
+        svg.contains(r#"viewBox="512 320 512 320""#),
+        "sector SVG must carry its own viewBox"
+    );
+    assert!(svg.len() > 10_000, "sector SVG should have real content");
+}
+
 #[wasm_bindgen_test]
 fn full_pipeline_golden_hash_matches_native_under_wasm() {
     let world = generate_full(fixed_params(42));

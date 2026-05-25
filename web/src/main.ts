@@ -34,6 +34,7 @@ const replayBtn = $<HTMLButtonElement>("replay");
 const voiceSelect = $<HTMLSelectElement>("voice");
 const narrateBtn = $<HTMLButtonElement>("narrate");
 const chronicleEl = $<HTMLDivElement>("chronicle");
+const breadcrumbEl = $<HTMLDivElement>("breadcrumb");
 
 /// The native narration sidecar (`mapgen serve`). The browser POSTs the world
 /// here so the API key never enters page JS.
@@ -51,6 +52,25 @@ const panzoom = new PanZoom(mapEl, contentEl);
 let lastSvg = "";
 let lastDims = { w: 0, h: 0 };
 let exportReady = false;
+
+// ---- Multi-scale navigation (Phase 7) ----
+interface Nav {
+  level: number;
+  sx: number;
+  sy: number;
+}
+let nav: Nav = { level: 0, sx: 0, sy: 0 };
+// World extent in SVG/world units, captured from the root render (the default
+// GenerateParams dims). Sector rectangles are computed against it.
+let worldW = 2048;
+let worldH = 1280;
+
+const sectorRect = (n: Nav) => {
+  const span = 2 ** n.level;
+  const w = worldW / span;
+  const h = worldH / span;
+  return { x0: n.sx * w, y0: n.sy * h, w, h };
+};
 
 // Build-up frames cached for the scrubber/replay (JS-side only; no Rust
 // snapshots). Each entry is one rendered stage frame.
@@ -272,6 +292,12 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setExportEnabled(true);
       setupScrubber();
       hasWorld = true;
+      // The root render establishes the world extent for sector geometry.
+      nav = { level: 0, sx: 0, sy: 0 };
+      worldW = lastDims.w || worldW;
+      worldH = lastDims.h || worldH;
+      mapEl.classList.add("navigable");
+      updateBreadcrumb();
       narrateBtn.disabled = false;
       setStatus(
         `Generated in ${(msg.genMs / 1000).toFixed(2)}s · ${msg.frameCount} frames · rendered in ${((msg.totalMs - msg.genMs) / 1000).toFixed(2)}s`,
@@ -284,6 +310,19 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       showSvg(msg.svg);
       setExportEnabled(true);
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
+      break;
+    case "refined":
+      setBusy(false);
+      showSvg(msg.svg);
+      setExportEnabled(true);
+      narrateBtn.disabled = msg.level !== 0;
+      updateBreadcrumb();
+      setStatus(
+        msg.level === 0
+          ? "Whole world."
+          : `Sector L${msg.level} (${msg.sx},${msg.sy}) · refined in ${(msg.ms / 1000).toFixed(2)}s`,
+        "ok",
+      );
       break;
     case "chronicle":
       setBusy(false);
@@ -311,6 +350,8 @@ const doGenerate = () => {
   setBusy(true);
   setExportEnabled(false);
   hasWorld = false;
+  nav = { level: 0, sx: 0, sy: 0 };
+  updateBreadcrumb();
   narrateBtn.disabled = true;
   chronicleEl.classList.add("hidden");
   stopReplay();
@@ -363,6 +404,92 @@ const doRestyle = () => {
   showOverlay("Rendering");
   send({ type: "render", style: s.style });
 };
+
+// ---- Drill-in navigation (Phase 7) ----
+const MAX_LEVEL = 6; // 2^6 sectors/axis — a level-6 sector is ~1/64 of the world
+
+const updateBreadcrumb = () => {
+  breadcrumbEl.replaceChildren();
+  for (let k = 0; k <= nav.level; k++) {
+    if (k > 0) {
+      const sep = document.createElement("span");
+      sep.className = "crumb-sep";
+      sep.textContent = "›";
+      breadcrumbEl.append(sep);
+    }
+    const shift = nav.level - k;
+    const ax = nav.sx >> shift;
+    const ay = nav.sy >> shift;
+    const crumb = document.createElement("button");
+    crumb.className = "crumb";
+    crumb.textContent = k === 0 ? "World" : `L${k} (${ax},${ay})`;
+    if (k === nav.level) {
+      crumb.classList.add("current");
+      crumb.disabled = true;
+    } else {
+      crumb.addEventListener("click", () => navTo({ level: k, sx: ax, sy: ay }));
+    }
+    breadcrumbEl.append(crumb);
+  }
+  if (hasWorld && nav.level < MAX_LEVEL) {
+    const hint = document.createElement("span");
+    hint.className = "crumb-hint";
+    hint.textContent = "· click the map to zoom in";
+    breadcrumbEl.append(hint);
+  }
+};
+
+const requestRefine = () => {
+  setBusy(true);
+  narrateBtn.disabled = nav.level !== 0; // a sector has no chronicle of its own
+  setStatus(
+    nav.level === 0
+      ? "Returning to the whole world…"
+      : `Refining sector L${nav.level} (${nav.sx},${nav.sy})…`,
+    "busy",
+  );
+  updateBreadcrumb();
+  send({ type: "refine", level: nav.level, sx: nav.sx, sy: nav.sy, style: currentState().style });
+};
+
+// Navigate to an explicit sector (breadcrumb / up). Re-refines from the seed —
+// sectors are stateless, so this never needs the parent to be cached.
+const navTo = (target: Nav) => {
+  if (busy || !hasWorld) return;
+  const parent = sectorRect(nav);
+  nav = target;
+  const child = sectorRect(nav);
+  // Coarse-first: frame the target rectangle with the current (parent) pixels
+  // so the zoom feels instant, then the refined sector swaps in over it.
+  panzoom.focusContentRect(child.x0 - parent.x0, child.y0 - parent.y0, child.w, child.h);
+  requestRefine();
+};
+
+// Drill into the child sector beneath a world-space point.
+const drillAt = (wx: number, wy: number) => {
+  if (busy || !hasWorld || nav.level >= MAX_LEVEL) return;
+  const nextLevel = nav.level + 1;
+  const span = 2 ** nextLevel;
+  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+  const sx = clamp(Math.floor(wx / (worldW / span)), span - 1);
+  const sy = clamp(Math.floor(wy / (worldH / span)), span - 1);
+  navTo({ level: nextLevel, sx, sy });
+};
+
+// Treat a near-stationary pointer press as a click (drill in); a drag pans.
+let downPt: { x: number; y: number } | null = null;
+mapEl.addEventListener("pointerdown", (e) => {
+  downPt = { x: e.clientX, y: e.clientY };
+});
+mapEl.addEventListener("pointerup", (e) => {
+  if (!downPt) return;
+  const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
+  downPt = null;
+  if (moved > 6 || busy || !hasWorld) return;
+  const c = panzoom.clientToContent(e.clientX, e.clientY);
+  const cur = sectorRect(nav);
+  drillAt(cur.x0 + c.x, cur.y0 + c.y);
+});
 
 // ---- Export ----
 const triggerDownload = (blob: Blob, filename: string) => {

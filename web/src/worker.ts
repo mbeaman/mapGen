@@ -2,10 +2,20 @@
 /// the UI. The `WorldHandle`/`Generation` are opaque WASM objects that
 /// cannot cross the worker boundary, so they stay here: the main thread
 /// sends commands and gets back progress + SVG strings.
-import init, { Generation, type WorldHandle } from "../pkg/mapgen_wasm";
+import init, { Generation, refineSector, type WorldHandle } from "../pkg/mapgen_wasm";
 
 let ready: Promise<unknown> | null = null;
-let world: WorldHandle | null = null;
+// The whole-world (level-0) handle and the current refined sector (Phase 7).
+// `sector === null` means we're viewing the root world. The root is kept so
+// drilling back up never regenerates; sectors are cheap to re-refine on demand.
+let root: WorldHandle | null = null;
+let sector: WorldHandle | null = null;
+let seed = 0n;
+/// Cells per refined sector — finer than the parent yet quick (~100 ms).
+const SECTOR_CELLS = 4_000;
+/// Whole-world plate count (matches `generate`'s default GenerateParams).
+const WORLD_PLATES = 14;
+const view = (): WorldHandle | null => sector ?? root;
 
 /// Mirrors the Rust `StageInfo` struct (a plain serializable object).
 export interface StageInfo {
@@ -31,6 +41,7 @@ export interface Work {
 export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string }
   | { type: "render"; style: string }
+  | { type: "refine"; level: number; sx: number; sy: number; style: string }
   | { type: "narrate"; event: string; voice: string; sidecar: string };
 
 export type WorkerResponse =
@@ -39,6 +50,7 @@ export type WorkerResponse =
   | { type: "frame"; svg: string; info: StageInfo }
   | { type: "generated"; svg: string; genMs: number; totalMs: number; frameCount: number }
   | { type: "rendered"; svg: string; ms: number }
+  | { type: "refined"; svg: string; level: number; sx: number; sy: number; ms: number }
   | { type: "chronicle"; work: Work }
   | { type: "error"; message: string };
 
@@ -76,10 +88,13 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
 
     if (msg.type === "generate") {
       const t0 = performance.now();
-      world?.free();
-      world = null;
+      root?.free();
+      sector?.free();
+      root = null;
+      sector = null;
+      seed = BigInt(msg.seed);
 
-      const gen = new Generation(BigInt(msg.seed), msg.cells, msg.nations);
+      const gen = new Generation(seed, msg.cells, msg.nations);
       let frameCount = 0;
       for (;;) {
         const info = gen.step() as StageInfo | undefined;
@@ -91,19 +106,46 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       }
       const genMs = performance.now() - t0;
 
-      world = gen.finish();
-      const svg = world.render(msg.style);
+      root = gen.finish();
+      const svg = root.render(msg.style);
       const totalMs = performance.now() - t0;
       post({ type: "generated", svg, genMs, totalMs, frameCount });
-    } else if (msg.type === "render") {
-      if (!world) {
+    } else if (msg.type === "refine") {
+      if (!root) {
         post({ type: "error", message: "no world generated yet" });
         return;
       }
       const t0 = performance.now();
-      const svg = world.render(msg.style);
+      // Level 0 = back to the whole world; otherwise (re-)refine the sector.
+      // Sectors are stateless, so navigating up just re-refines the parent.
+      const prev = sector;
+      sector =
+        msg.level === 0
+          ? null
+          : refineSector(seed, WORLD_PLATES, msg.level, msg.sx, msg.sy, SECTOR_CELLS);
+      prev?.free();
+      const svg = view()!.render(msg.style);
+      post({
+        type: "refined",
+        svg,
+        level: msg.level,
+        sx: msg.sx,
+        sy: msg.sy,
+        ms: performance.now() - t0,
+      });
+    } else if (msg.type === "render") {
+      const v = view();
+      if (!v) {
+        post({ type: "error", message: "no world generated yet" });
+        return;
+      }
+      const t0 = performance.now();
+      const svg = v.render(msg.style);
       post({ type: "rendered", svg, ms: performance.now() - t0 });
     } else if (msg.type === "narrate") {
+      // Narration always targets the whole world (it owns the history/events);
+      // a refined sector has no chronicle of its own.
+      const world = root;
       if (!world) {
         post({ type: "error", message: "no world generated yet" });
         return;

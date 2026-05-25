@@ -15,7 +15,10 @@ use std::str::FromStr;
 
 use mapgen_core::WorldData;
 use mapgen_render::style::Style;
-use mapgen_world::{GenerateParams, Pipeline, PipelineStage};
+use mapgen_world::{
+    scale::{refine_sector as refine, RefineParams, Sector},
+    GenerateParams, Pipeline, PipelineStage,
+};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
@@ -40,6 +43,42 @@ pub fn generate(seed: u64, cells: usize, nations: usize) -> WorldHandle {
         ..Default::default()
     });
     WorldHandle { inner: world }
+}
+
+/// Refine a sub-sector of `seed`'s world at finer resolution (Phase 7
+/// multi-scale). `(level, sx, sy)` address the `2^level × 2^level` quadtree;
+/// `plates` must match the parent world. Returns a [`WorldHandle`] rendered
+/// exactly like a whole world — its SVG carries the sector's own viewBox, so the
+/// frontend just swaps it in. Pure function of the arguments (no parent handle
+/// needed): the shared base field is recomputed from the seed.
+#[wasm_bindgen(js_name = refineSector)]
+pub fn refine_sector(
+    seed: u64,
+    plates: usize,
+    level: u32,
+    sx: u32,
+    sy: u32,
+    cells: usize,
+) -> Result<WorldHandle, JsError> {
+    let sector = Sector { level, sx, sy };
+    if !sector.is_valid() {
+        return Err(JsError::new(&format!(
+            "sector ({sx},{sy}) out of range for level {level} (valid 0..{})",
+            sector.span()
+        )));
+    }
+    let params = GenerateParams {
+        seed,
+        plate_count: plates,
+        ..Default::default()
+    };
+    let refine_params = RefineParams {
+        target_cells: cells,
+        ..Default::default()
+    };
+    Ok(WorldHandle {
+        inner: refine(params, sector, refine_params),
+    })
 }
 
 #[wasm_bindgen]
