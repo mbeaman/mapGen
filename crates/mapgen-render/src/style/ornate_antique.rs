@@ -113,13 +113,13 @@ pub fn render(world: &WorldData) -> String {
 
     render_land_fill(world, &mut out);
     render_ocean_hatching(world, &mut out);
-    render_coastline_ripples(world, &mut out);
+    render_coastline_ripples(world, &mut out, detail);
     render_rivers(world, &mut out);
     render_mountains(world, &mut out, detail);
     render_forest_scatter(world, &mut out, detail);
     render_roads(world, &mut out);
     render_polity_borders(world, &mut out);
-    render_settlements(world, &mut out);
+    render_settlements(world, &mut out, detail);
     render_sacred_sites(world, &mut out);
     render_polity_labels(world, &mut out);
     render_settlement_labels(world, &mut out);
@@ -211,11 +211,18 @@ fn render_ocean_hatching(world: &WorldData, out: &mut String) {
 ///
 /// Per-ripple seeds give deterministic byte-identical output across
 /// runs. ARCHITECTURE.md §Phase 3e calls for 4 ripples; we ship 4.
-fn render_coastline_ripples(world: &WorldData, out: &mut String) {
+fn render_coastline_ripples(world: &WorldData, out: &mut String, detail: f32) {
     let polylines = extract_coastline_polylines(world);
     if polylines.is_empty() {
         return;
     }
+
+    // Ripple widths/roughness are world-unit; left unscaled they'd bloat into a
+    // thick haze when zoomed in (the viewBox magnifies them), drowning out the
+    // finer coastline the denser sector mesh produces. Scaling by 1/detail keeps
+    // them screen-consistent so the crisper coast shows through (Phase 7 LOD).
+    // `s == 1` at world scale → byte-identical level-0 render.
+    let s = (1.0 / detail).clamp(0.25, 1.0);
 
     // Per ripple: (color, stroke-width, roughness, bowing, seed).
     // Outer ripples thicker + jitterier + faded (suggesting shallow
@@ -230,6 +237,7 @@ fn render_coastline_ripples(world: &WorldData, out: &mut String) {
     let gen = Generator::default();
 
     for (color, width, roughness, bowing, seed) in ripples.iter().copied() {
+        let width = width * s;
         write!(
             out,
             r##"<g stroke="{color}" stroke-width="{width:.2}" stroke-linecap="round" fill="none" stroke-opacity="0.78">"##
@@ -237,7 +245,7 @@ fn render_coastline_ripples(world: &WorldData, out: &mut String) {
         .unwrap();
 
         let opts = OptionsBuilder::default()
-            .roughness(roughness)
+            .roughness(roughness * s)
             .bowing(bowing)
             .seed(seed)
             .disable_multi_stroke(true)
@@ -733,8 +741,12 @@ fn render_polity_borders(world: &WorldData, out: &mut String) {
 /// natural reading of "settlement × architecture") even if the cell
 /// the town sits on happens to belong to a neighbor's culture. Falls
 /// back to `(Castle, Classical)` if any link is missing.
-fn render_settlements(world: &WorldData, out: &mut String) {
+fn render_settlements(world: &WorldData, out: &mut String, detail: f32) {
     let mesh = &world.mesh;
+    // Zoomed to local scale (Phase 7 LOD): settlements bloom from a single glyph
+    // into a town footprint — a cluster of buildings (and a wall ring for
+    // capitals) around the landmark glyph.
+    let urban = detail >= 4.0;
 
     // Per polity, the founding culture's (icon, architecture) — looked
     // up once so a polity's settlements share their founder's
@@ -787,18 +799,32 @@ fn render_settlements(world: &WorldData, out: &mut String) {
         };
 
         if s.tier == SettlementTier::Village {
-            // Per advisor: villages collapse to a small icon-family-
-            // tinted square. At 4-pixel scale, distinguishing 8 icon
-            // silhouettes is wasted detail — the polity color carries
-            // the identity instead.
-            write!(
-                out,
-                r##"<rect x="{x:.1}" y="{y:.1}" width="3" height="3" fill="{fill}" stroke="#1a140e" stroke-width="0.5"/>"##,
-                x = site[0] - 1.5,
-                y = site[1] - 1.5,
-            )
-            .unwrap();
+            if urban {
+                // A hamlet: a few buildings instead of a single dot.
+                draw_urban_halo(out, site[0], site[1], 3.5, 3, false, &fill, s.cell);
+            } else {
+                // Per advisor: villages collapse to a small icon-family-
+                // tinted square. At 4-pixel scale, distinguishing 8 icon
+                // silhouettes is wasted detail — the polity color carries
+                // the identity instead.
+                write!(
+                    out,
+                    r##"<rect x="{x:.1}" y="{y:.1}" width="3" height="3" fill="{fill}" stroke="#1a140e" stroke-width="0.5"/>"##,
+                    x = site[0] - 1.5,
+                    y = site[1] - 1.5,
+                )
+                .unwrap();
+            }
         } else {
+            if urban {
+                // Town fabric under the landmark glyph. Capitals are larger and
+                // walled; towns are a looser cluster.
+                let (radius, n, walled) = match s.tier {
+                    SettlementTier::Capital => (6.0 + scale * 9.0, 13, true),
+                    _ => (5.0 + scale * 7.0, 6, false),
+                };
+                draw_urban_halo(out, site[0], site[1], radius, n, walled, &fill, s.cell);
+            }
             draw_glyph(icon, site[0], site[1], scale, &fill, &style, out);
             if s.tier == SettlementTier::Capital {
                 draw_capital_pennant(site[0], site[1], scale, &fill, out);
@@ -806,6 +832,44 @@ fn render_settlements(world: &WorldData, out: &mut String) {
         }
 
         out.push_str("</g>");
+    }
+}
+
+/// A ring of small buildings around a settlement glyph (Phase 7 LOD, drawn only
+/// at local zoom). `radius` is the spread in world units; `n` the building count;
+/// `walled` adds a dashed perimeter ring (capitals). Building positions are
+/// hash-driven off the settlement `seed` (its cell), so they're stable across
+/// renders. Rectangular jitter (no trig) keeps it off the fmath hot path.
+#[allow(clippy::too_many_arguments)]
+fn draw_urban_halo(
+    out: &mut String,
+    x: f32,
+    y: f32,
+    radius: f32,
+    n: u32,
+    walled: bool,
+    fill: &str,
+    seed: u32,
+) {
+    if walled {
+        write!(
+            out,
+            r##"<circle cx="{x:.1}" cy="{y:.1}" r="{:.1}" fill="none" stroke="#5a4326" stroke-width="0.7" stroke-opacity="0.55" stroke-dasharray="2.5 1.5"/>"##,
+            radius * 1.3,
+        )
+        .unwrap();
+    }
+    for k in 0..n {
+        let bx = x + hash_offset(seed, 40 + k) * radius;
+        let by = y + hash_offset(seed, 60 + k) * radius * 0.72;
+        let bw = 1.3 + hash_offset(seed, 80 + k).abs() * 1.4;
+        write!(
+            out,
+            r##"<rect x="{:.1}" y="{:.1}" width="{bw:.1}" height="{bw:.1}" fill="{fill}" stroke="#1a140e" stroke-width="0.3"/>"##,
+            bx - bw * 0.5,
+            by - bw * 0.5,
+        )
+        .unwrap();
     }
 }
 
