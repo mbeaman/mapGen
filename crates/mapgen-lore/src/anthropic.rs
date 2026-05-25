@@ -6,6 +6,8 @@
 //! `cache_control: ephemeral` blocks, so across the (≤20) calls for one world the
 //! large stable prefix is reused — only the per-event focal block is fresh.
 
+use std::time::Duration;
+
 use crate::client::LlmClient;
 use crate::prompt::Prompt;
 
@@ -14,11 +16,16 @@ const API_VERSION: &str = "2023-06-01";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 /// Architecture cap (`max_tokens_per_call`).
 const MAX_TOKENS: u32 = 4000;
+/// Overall per-call deadline. ureq's default read timeout is *none* (a stalled
+/// response would hang the single-threaded sidecar forever); this bounds it
+/// while comfortably covering a full 4000-token generation.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A Claude narration backend, keyed by `ANTHROPIC_API_KEY`.
 pub struct AnthropicClient {
     api_key: String,
     model: String,
+    agent: ureq::Agent,
 }
 
 impl AnthropicClient {
@@ -34,7 +41,12 @@ impl AnthropicClient {
             .ok()
             .filter(|m| !m.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_MODEL.to_string());
-        Some(AnthropicClient { api_key, model })
+        let agent = ureq::AgentBuilder::new().timeout(REQUEST_TIMEOUT).build();
+        Some(AnthropicClient {
+            api_key,
+            model,
+            agent,
+        })
     }
 
     /// The model this client will call (for logging).
@@ -59,7 +71,9 @@ impl LlmClient for AnthropicClient {
             ]
         });
 
-        let resp = match ureq::post(API_URL)
+        let resp = match self
+            .agent
+            .post(API_URL)
             .set("x-api-key", &self.api_key)
             .set("anthropic-version", API_VERSION)
             .set("content-type", "application/json")

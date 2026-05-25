@@ -114,19 +114,28 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       // re-stringified.
       const worldJson = world.worldJson();
       const body = `{"world":${worldJson},"event":${JSON.stringify(msg.event)},"voice":${JSON.stringify(msg.voice)}}`;
+      // Bound the wait so a stalled sidecar/model can't leave the UI spinning.
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 125_000);
       let resp: Response;
       try {
         resp = await fetch(`${msg.sidecar}/narrate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body,
+          signal: ctrl.signal,
         });
-      } catch {
+      } catch (err) {
+        const timedOut = err instanceof DOMException && err.name === "AbortError";
         post({
           type: "error",
-          message: `could not reach the narration sidecar at ${msg.sidecar} — start it with: cargo run -p mapgen-cli --features lore -- serve`,
+          message: timedOut
+            ? "narration timed out — the sidecar or model took too long"
+            : `could not reach the narration sidecar at ${msg.sidecar} — start it with: cargo run -p mapgen-cli --features lore -- serve`,
         });
         return;
+      } finally {
+        clearTimeout(timer);
       }
       if (!resp.ok) {
         const detail = await resp.text().catch(() => "");
