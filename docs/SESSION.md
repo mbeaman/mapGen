@@ -14,7 +14,7 @@ fast; the others are stable.
 | Branch | `claude/fantasy-map-generator-1du5B` |
 | Latest commit | **HEAD** = `feat(history): Phase 4j — events CLI + salience recalibration + docs/perf re-anchor (closes Phase 4)` (run `git log -1` for the hash) |
 | Tree | clean |
-| Tests | 198 across the workspace, 0 failures (+ web `tsc --noEmit` clean) |
+| Tests | 205 across the workspace (default), 0 failures (+ `--features lore` suite + web `tsc --noEmit` clean) |
 | Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** — re-anchored to this box at 4j (26/111/259 ms medians vs 39/166/388 budgets) |
 | Schema | v13 (Phase 4: v9 4b, v10 4c, v11 4i.3 `HistoryData`, v12 4k `Entity::Megabeast`, v13 4k `ArcKind::Conquest`) |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** to record the six-loop Phase-4 scope (trigger: the "time is not a factor" + "uplevel" directive) |
@@ -35,21 +35,21 @@ fast; the others are stable.
 | 3e backlog polish | **done this session** | 9 polish items shipped: town-size scaling, mountain depth shadow, edge-burn stains, ocean hatching, polity borders, trunk/branch roads, per-pantheon sacred sites, river/lake names + Imhof SA labels, and mountain-range clustering + labels (schema v8). Only `target_aesthetic.svg` stays deferred (hand-drawn taste reference; user-deferred). |
 | web frontend | **shipped (MVP)** | wasm split `8916303` + Vite/TS scaffold `98ba3de` + worker/pan-zoom/theme/export `103be12` + live stage build-up `bfcdb5b`. Setup: install Node 18+/npm, then `just web-setup` (handles wasm-pack + deps + first build), `just web-dev` to run. `scripts/bootstrap.sh` is Rust-core only. See `web/README.md`. |
 | 4 history sim | **done (+ reviewed & upleveled, 4k)** | Full six-loop scope + uplevel (amends locked MVP; trigger 2026-05-24). Option-B wiring (History is a `PipelineStage`). A deep multi-agent review after 4j (verdict: substrate sound; presentation needed work) drove the **4k** pass — see "Currently in flight". `4a` foundation `87333ac` → `4b` Turchin demographic `…` → `4c` agents → `4d` Turchin fiscal + Khaldun `52c709f` → `4e` Mearsheimer wars `28de2c0` → `4f` succession `4c2348e` → `4g` schism `858e9d4` → `4h` hero/megabeast `26df4a3` → pre-4i hardening `ae5c90e` → `4i.1`–`4i.4` `66b7f17`/`ab119b0`/`980f461`/`532444c` → `4j` closer → `4k` review uplevel + polish. See `docs/TASKS.md` `## Phase 4`. |
-| 5 lore engine | **done (5a–5f); opt-in** | The Claude narration engine, offline-first. `5a` lore types + template narrator `9c88606` → `5b` prompt assembly `060b3ed` → `5c` NER validator + `narrate()` + Work persistence `0453cfc` → `5d` `mapgen lore` CLI `2df3915` → `5e` real Anthropic client behind `--features lore` `6979e38` → polish (title + NER stoplist) `8d0ce02` → `5f` `mapgen serve` sidecar `3a8e003` + frontend narrate button `e1e1d69`. Opt-in: a stock build makes no paid call; `mapgen lore` runs the offline template narrator, Claude lights up only with `--features lore` + `ANTHROPIC_API_KEY`. **Live API call + browser click are unexercised in-sandbox** (no network/browser) — verify with a key; the sidecar was curl-verified and the frontend typechecks. |
+| 5 lore engine | **done (5a–5f) + reviewed & remediated; opt-in** | The Claude narration engine, offline-first. `5a` lore types + template narrator `9c88606` → `5b` prompt assembly `060b3ed` → `5c` NER validator + `narrate()` + Work persistence `0453cfc` → `5d` `mapgen lore` CLI `2df3915` → `5e` real Anthropic client behind `--features lore` `6979e38` → polish (title + NER stoplist) `8d0ce02` → `5f` `mapgen serve` sidecar `3a8e003` + frontend narrate button `e1e1d69`. Opt-in: a stock build makes no paid call; `mapgen lore` runs the offline template narrator, Claude lights up only with `--features lore` + `ANTHROPIC_API_KEY`. **Live API call + browser click are unexercised in-sandbox** (no network/browser) — verify with a key; the sidecar was curl-verified and the frontend typechecks. A 4-agent deep review then drove remediation (`d42bb07`…`32e90ff`): NER lexicon blocker (mountain ranges) + validator bypasses (title/hyphen/digit/curly) fixed; request timeouts added; engine-populated lacunae + `max_calls_per_world` cap; CORS scoped to localhost + body cap; serve/register/serde tests. |
 
 ---
 
 ## Recently shipped (most recent first)
 
 ```
-(HEAD) 5f — frontend "narrate" button → sidecar (completes Phase 5)
+(HEAD) P5 review — hardening + test coverage (CORS, body cap, stop_reason, tests)
+87711bd P5 review — engine-populated lacunae + per-world budget cap (§7)
+0c3742c P5 review — request timeouts (Anthropic client + frontend fetch)
+d42bb07 P5 review — NER soundness (lexicon blocker + validator bypasses)
+e1e1d69 5f — frontend "narrate" button → sidecar (completes Phase 5)
 3a8e003 5f — `mapgen serve` narration sidecar (POST /narrate), opt-in
 8d0ce02 polish(lore) — cleaner template title + broadened NER stoplist
 6979e38 5e — real Anthropic client behind the opt-in `lore` feature
-2df3915 5d — `mapgen lore` CLI subcommand (offline-demonstrable)
-0453cfc 5c — NER validator + narrate() orchestration + Work persistence
-060b3ed 5b — prompt assembly (bible / context / slice / voice / schema)
-9c88606 5a — lore types + offline template narrator (opt-in scaffold)
 ```
 
 Regenerate this list when stale:
