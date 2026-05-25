@@ -845,14 +845,14 @@ list; promote when its trigger fires.
   wiring, worker round-trips) is still only exercised by typecheck.
 - **Cost.** ~½ d remaining for the Playwright smoke + CI browser install.
 
-### Refine-path cross-platform golden
+### Refine-path cross-platform golden — DONE (2026-05-25)
 
-- **Gap.** The 6.2 native↔wasm byte-identity golden covers `generate_full` only.
-  The Phase-7 `refine_sector` path (sub-region mesh, projection, seam-pinning)
-  is assumed byte-identical across targets but not pinned. A wasm/x86 float
-  divergence in the refine path would surface only as a mismatched sector.
-- **Trigger.** Shipping the atlas to users; or any suspected refine determinism
-  bug. **Cost.** ~½ d: hash a fixed sector in `cross_platform.rs` vs a native golden.
+- **Shipped.** A fixed refined sector (L2 (1,1), seed 42) is hashed natively
+  (`scale_spec::refined_sector_golden_hash`) and under wasm32
+  (`cross_platform::refined_sector_golden_matches_native_under_wasm`), both
+  against a shared `golden/seed42_sector.blake3.txt`. Proves the whole refine
+  path (sub-region mesh, projection, seam-pinning) is byte-identical across
+  targets; passed first run (no fmath bypass in the new arithmetic). In CI.
 
 ### Per-component perf budgets
 
@@ -870,13 +870,17 @@ list; promote when its trigger fires.
   item; this is the integrated deliverable.) **Trigger.** Wanting to share/show a
   generated world. **Cost.** ~1 d.
 
-### Borders that move with history
+### Borders that move with history — ALREADY DONE (corrected 2026-05-25)
 
-- **Gap.** `society.control` (polity territory) is set once at generation and
-  **never mutated by the history sim** — wars/conquests appear in the event log
-  but don't redraw the map. The rendered borders are "founding" borders, not
-  "present" ones. **Trigger.** History realism push; or a time-slider (below).
-  **Cost.** ~1–2 d (the sim already tracks wars; apply territorial deltas).
+- **Not a gap — my 2026-05-25 review mis-reported this.** The Phase-4 war loop
+  (`mearsheimer::transfer_border_cells`) *does* mutate `society.control`: a won
+  war reassigns the loser's frontier cells to the winner, conserving the total,
+  and dissolves a realm reduced to 0 cells. The rendered map shows present-day
+  (post-conquest) borders. The mis-read came from grepping only `lib.rs` (which
+  reads control) and missing the loop that writes it.
+- **Now also pinned** by `tests/history_borders.rs` (end-to-end: 7–17% of
+  controlled cells change owner across seeds; total conserved) — previously only
+  the loop's panic-safety was unit-tested.
 
 ### Map as a point in time (history time-slider)
 
