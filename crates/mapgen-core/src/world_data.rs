@@ -149,11 +149,26 @@ pub struct MeshData {
     /// Per cell: true if cell touches the sea (coast). Filled in Phase 2.
     #[serde(default)]
     pub coast: Vec<bool>,
+    /// World-space rectangle `[x0, y0, x1, y1]` the cells actually occupy
+    /// (Phase 7 multi-scale). `None` on a whole-world (level-0) mesh, where the
+    /// cells fill `[0,0]..[width,height]`; `Some` on a refined sub-sector, whose
+    /// `width`/`height` stay the *full* world extent (so plate scatter and
+    /// climate latitude remain global) while its cells occupy only this
+    /// sub-rectangle. Render uses it as the viewport. Elided when `None`, so
+    /// level-0 worlds serialize byte-identically (no golden change).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<[f32; 4]>,
 }
 
 impl MeshData {
     pub fn cell_count(&self) -> usize {
         self.sites.len()
+    }
+
+    /// The world-space rectangle `[x0, y0, x1, y1]` the cells occupy — the
+    /// explicit `region` for a refined sector, else the full `[0,0,width,height]`.
+    pub fn view_rect(&self) -> [f32; 4] {
+        self.region.unwrap_or([0.0, 0.0, self.width, self.height])
     }
 }
 

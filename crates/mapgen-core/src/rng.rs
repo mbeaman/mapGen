@@ -53,6 +53,34 @@ impl StageRng {
     }
 }
 
+impl StageRng {
+    /// Master seed for a refined sub-sector at quadtree coordinates
+    /// `(level, sx, sy)` measured from the world root — see [`sector_seed`].
+    /// The returned `StageRng` mints per-stage sub-streams exactly as the root
+    /// world's does, so a sector's stages are as independent as the root's.
+    pub fn sector(&self, level: u32, sx: u32, sy: u32) -> Self {
+        Self::new(sector_seed(self.master, level, sx, sy))
+    }
+}
+
+/// Derive the master seed for a refined sub-sector at quadtree coordinates
+/// `(level, sx, sy)`, measured from the world root (level 0 = the whole world,
+/// one sector). The result is a pure function of those coordinates and the root
+/// master seed: a sector is byte-identical regardless of the navigation *path*
+/// taken to reach it (there is no accumulated state — a grandchild is addressed
+/// by its absolute coordinates, not via its parent's seed). This is exactly the
+/// property the multi-scale atlas needs to regenerate any sector on demand and
+/// have independently-generated neighbours agree. Built from the same
+/// [`splitmix64`] primitive as every other sub-stream so the whole project
+/// derives seeds one way.
+pub fn sector_seed(root_master: u64, level: u32, sx: u32, sy: u32) -> u64 {
+    // Salt the level (high bits) so it can't alias an `sx`/`sy` coordinate,
+    // then fold in each axis. Distinct (level, sx, sy) → distinct seed w.h.p.
+    let a = splitmix64(root_master, 0x5EC7_0000_0000_0000 ^ level as u64);
+    let b = splitmix64(a, sx as u64);
+    splitmix64(b, (sy as u64) ^ 0xD1B5_4A32_D192_ED03)
+}
+
 /// SplitMix64 finalizer over a `(seed, key)` pair. Pure, portable, and the
 /// single mixing primitive the whole project derives sub-streams with: the
 /// per-stage RNG above uses it as `splitmix64(master, stage)`, and the history
@@ -146,6 +174,58 @@ mod tests {
                 "Stage::History stream collides with Stage::{other:?} at seed 42"
             );
         }
+    }
+
+    #[test]
+    fn sector_seed_is_coordinate_determined_and_distinct() {
+        // Purity: same coordinates → same seed, regardless of how reached.
+        assert_eq!(sector_seed(42, 2, 1, 3), sector_seed(42, 2, 1, 3));
+
+        // Distinctness across every axis (level, sx, sy) and the root seed.
+        let base = sector_seed(42, 2, 1, 3);
+        assert_ne!(base, sector_seed(42, 3, 1, 3), "level must matter");
+        assert_ne!(base, sector_seed(42, 2, 2, 3), "sx must matter");
+        assert_ne!(base, sector_seed(42, 2, 1, 4), "sy must matter");
+        assert_ne!(base, sector_seed(43, 2, 1, 3), "root seed must matter");
+
+        // No aliasing between swapped coordinates (a common hashing bug).
+        assert_ne!(sector_seed(42, 1, 2, 3), sector_seed(42, 1, 3, 2));
+
+        // Bulk collision check over a 5-level quadtree: every (level, sx, sy)
+        // up to level 4 yields a distinct seed.
+        let mut seen = std::collections::HashSet::new();
+        for level in 0..=4u32 {
+            let span = 1u32 << level;
+            for sy in 0..span {
+                for sx in 0..span {
+                    assert!(
+                        seen.insert(sector_seed(42, level, sx, sy)),
+                        "seed collision at (level {level}, {sx}, {sy})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sector_stage_streams_stay_independent() {
+        // A refined sector must still get per-stage independence (re-rolling one
+        // stage of a sector can't perturb another) — i.e. `sector()` produces a
+        // normal `StageRng`, just reseeded.
+        let root = StageRng::new(42);
+        let sec = root.sector(2, 1, 3);
+        assert_ne!(sec.master(), root.master(), "sector must reseed");
+        assert_ne!(
+            sec.stream(Stage::Erosion).next_u64(),
+            sec.stream(Stage::Climate).next_u64(),
+            "sector stages must be independent"
+        );
+        // Two different sectors draw different mesh streams.
+        let other = root.sector(2, 2, 3);
+        assert_ne!(
+            sec.stream(Stage::Mesh).next_u64(),
+            other.stream(Stage::Mesh).next_u64()
+        );
     }
 
     #[test]

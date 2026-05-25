@@ -68,13 +68,16 @@ static FONT_FACE_BLOCK: LazyLock<String> = LazyLock::new(|| {
 
 pub fn render(world: &WorldData) -> String {
     let mesh = &world.mesh;
-    let w = mesh.width;
-    let h = mesh.height;
+    // Viewport is the cells' actual world-space rectangle: the whole world for a
+    // level-0 mesh, or the sub-rectangle for a refined sector (Phase 7).
+    let [vx, vy, vx1, vy1] = mesh.view_rect();
+    let w = vx1 - vx;
+    let h = vy1 - vy;
 
     let mut out = String::with_capacity(mesh.cell_count() * 128);
     write!(
         out,
-        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w:.0} {h:.0}" width="{w:.0}" height="{h:.0}">"##
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vx:.0} {vy:.0} {w:.0} {h:.0}" width="{w:.0}" height="{h:.0}">"##
     )
     .unwrap();
 
@@ -97,7 +100,11 @@ pub fn render(world: &WorldData) -> String {
 </radialGradient>
 </defs>"##,
     );
-    out.push_str(r##"<rect width="100%" height="100%" fill="url(#parchment)"/>"##);
+    write!(
+        out,
+        r##"<rect x="{vx:.0}" y="{vy:.0}" width="{w:.0}" height="{h:.0}" fill="url(#parchment)"/>"##
+    )
+    .unwrap();
 
     render_land_fill(world, &mut out);
     render_ocean_hatching(world, &mut out);
@@ -118,9 +125,14 @@ pub fn render(world: &WorldData) -> String {
     // Decorative top-of-stack overlays. The edge-burn overlay darkens
     // the periphery (intentionally fading edge labels into "aged"
     // shadow); compass + cartouche sit on top, untouched.
-    render_edge_burn(w, h, &mut out);
-    render_compass(w, h, &mut out);
-    render_cartouche(w, h, &mut out);
+    render_edge_burn(vx, vy, w, h, &mut out);
+    // The compass and title cartouche are whole-world chrome anchored to the
+    // canvas corners; a refined sector (Phase 7) is a detail view, so it gets a
+    // clean framed map without them. Level-0 worlds are unaffected.
+    if mesh.region.is_none() {
+        render_compass(w, h, &mut out);
+        render_cartouche(w, h, &mut out);
+    }
 
     out.push_str("</svg>");
     out
@@ -1562,10 +1574,12 @@ fn xml_escape(s: &str) -> String {
 /// than the parchment gradient underneath (which tints the background);
 /// this one darkens labels and glyphs that sit near the canvas edge,
 /// matching the look of a real burnt-edge antique map.
-fn render_edge_burn(w: f32, h: f32, out: &mut String) {
-    out.push_str(
-        r##"<g class="edge-burn"><rect width="100%" height="100%" fill="url(#edge-burn)" pointer-events="none"/>"##,
-    );
+fn render_edge_burn(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
+    write!(
+        out,
+        r##"<g class="edge-burn"><rect x="{vx:.0}" y="{vy:.0}" width="{w:.0}" height="{h:.0}" fill="url(#edge-burn)" pointer-events="none"/>"##
+    )
+    .unwrap();
     // Irregular burn stains: a handful of soft dark blobs scattered
     // around the perimeter so the aging reads as real scorching — some
     // corners darker than others, occasional splotch mid-edge — rather
@@ -1575,8 +1589,8 @@ fn render_edge_burn(w: f32, h: f32, out: &mut String) {
     for k in 0..STAINS {
         let t = (k as f32 + 0.5) / STAINS as f32; // spread around perimeter
         let (px, py) = perimeter_point(t, w, h);
-        let cx = px + hash_offset(900 + k, 1) * w * 0.05;
-        let cy = py + hash_offset(900 + k, 2) * h * 0.05;
+        let cx = vx + px + hash_offset(900 + k, 1) * w * 0.05;
+        let cy = vy + py + hash_offset(900 + k, 2) * h * 0.05;
         let r = w.min(h) * 0.05 * (0.6 + hash_offset(900 + k, 3).abs() * 0.9);
         let op = 0.16 + hash_offset(900 + k, 4).abs() * 0.22;
         write!(
