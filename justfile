@@ -84,6 +84,9 @@ web-test:
 # Frontend e2e smoke (Playwright) — load → generate → toggle a lens → narrate.
 # Needs the wasm pkg built (just web-build) and a Chromium (npx playwright
 # install chromium). Builds the bundle first, since `vite preview` serves dist/.
+# On a Linux distro Playwright doesn't yet ship a browser build for (e.g. Ubuntu
+# 26.04), install + run with: PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64
+# (the 24.04 build is binary-compatible).
 web-e2e:
     cd web && npm run build && npm run e2e
 

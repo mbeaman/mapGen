@@ -15,7 +15,15 @@ export default defineConfig({
     baseURL: "http://localhost:4173",
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // A tall viewport so the full control sidebar (with the layer panel expanded)
+  // fits without scrolling — otherwise scroll geometry can put a layer row over
+  // the preset buttons' hit-point in headless.
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 1600 } },
+    },
+  ],
   webServer: {
     command: "npm run preview -- --port 4173 --strictPort",
     url: "http://localhost:4173",

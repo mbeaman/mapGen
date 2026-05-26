@@ -50,7 +50,11 @@ jobs:
           fi
 
   build-web:
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): Playwright ships browser builds per Ubuntu
+    # version and lags new releases, so the e2e step needs a runner image
+    # Playwright supports. 24.04 is LTS through 2029; bump when Playwright adds
+    # the next image. (Locally on an unsupported distro, see `just web-e2e`.)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - run: rustup target add wasm32-unknown-unknown

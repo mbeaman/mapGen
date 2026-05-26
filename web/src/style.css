@@ -222,7 +222,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .layer-row input { accent-color: var(--accent); cursor: pointer; }
 /* Data overlays read distinctly from feature toggles. */
-.layer-row.overlay { font-style: italic; color: var(--accent); }
+/* `is-overlay`, not `overlay` — the bare `.overlay` class is the fullscreen
+   progress panel (position:absolute; inset:0), which would swallow the row. */
+.layer-row.is-overlay { font-style: italic; color: var(--accent); }
 
 .export { display: flex; gap: 0.5rem; }
 .export button {

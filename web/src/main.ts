@@ -631,7 +631,7 @@ const buildLayerPanel = () => {
   // Per-layer checkboxes (fine-grained control on top of the presets).
   for (const l of LAYERS) {
     const row = document.createElement("label");
-    row.className = l.overlay ? "layer-row overlay" : "layer-row";
+    row.className = l.overlay ? "layer-row is-overlay" : "layer-row";
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = layerState.has(l.name);
