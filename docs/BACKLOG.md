@@ -21,6 +21,49 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
+## Up next — resume here (2026-05-25)
+
+Picking this branch up on a fresh clone? Start here.
+
+**Where we left off.** Branch `claude/fantasy-map-generator-1du5B`. The overlay
+system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export) and the
+zoom-out planet view — increment 1: `mapgen planet`, `Style::Planet`, `mapgen
+refine --planet` — are shipped and green. Quality bar: `just check`, `just
+web-test`, and `just perf` all pass; the Playwright e2e smoke runs in CI.
+
+**Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first
+wasm build; see `web/README.md`). Then `mapgen planet --seed 42` for the
+planisphere, or `just web-dev` for the browser frontend. Gotcha: Playwright
+ships browser builds per-Ubuntu-version and lags new releases — on a too-new
+distro (e.g. 26.04) install/run the e2e with
+`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (noted in `just web-e2e`).
+
+**Immediate next — planet zoom-out, increment 2** (continues "World / planet
+scale (zoom out)" below), in priority order:
+
+1. **Frontend zoom-out (do first).** Make the planet usable in the browser, not
+   just the CLI:
+   - expose `Style::Planet` through `mapgen-wasm` + `web/src/worker.ts` (render a
+     planet-params world at level 0);
+   - treat the planet as the top breadcrumb level *above* the continental view in
+     `web/src/{sector,main,panzoom}.ts` — click a continent to `refineSector`
+     into it (the refine machinery already works; this is nav state + wiring);
+   - surface "Planet" in the UI (a scale/style affordance).
+2. **Grounded continent / ocean names.** Replace the positional Latin labels in
+   `style/planet.rs` (`latin_quarter`) with names from the lore naming system
+   (`mapgen_core::naming`).
+3. **Planet-render perf budget.** Add a `Style::Planet` row to
+   `crates/mapgen-world/examples/perf_baseline.rs` (it budgets ornate render +
+   `refine_sector` today) and to `docs/perf_baseline.md`.
+4. **Harder / later:** edge projection + distortion for a true globe feel;
+   inter-continental society & history (trade, migration) — society is generated
+   per-world today.
+
+See **World / planet scale (zoom out)** and **Toggleable map layers + data
+overlays** below for full context.
+
+---
+
 ## Optimization & meta
 
 ### Refinery optimization loop (SA-style auto-tuning)
