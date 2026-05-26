@@ -116,6 +116,51 @@ fn ornate_render_rasterizes_to_a_sane_image() {
     );
 }
 
+/// The planet / planisphere overview must rasterize sane: opaque, non-uniform,
+/// multi-coloured (continents + sea), on the parchment band. Guards the zoom-out
+/// render against a blank/uniform/off-canvas regression the SVG invariants miss.
+#[test]
+fn planet_render_rasterizes_to_a_sane_image() {
+    let world = generate_full(GenerateParams::planet(42));
+    let pixmap = rasterize(&render(&world, Style::Planet).expect("planet render"));
+    let total = (pixmap.width() * pixmap.height()) as f64;
+    let (mut opaque, mut sum, mut sumsq, mut water) = (0u64, 0.0f64, 0.0f64, 0u64);
+    let mut colours = std::collections::HashSet::new();
+    for px in pixmap.data().chunks_exact(4) {
+        if px[3] > 200 {
+            opaque += 1;
+        }
+        let (r, g, b) = (px[0] as f64, px[1] as f64, px[2] as f64);
+        let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        sum += lum;
+        sumsq += lum * lum;
+        if b > r + 8.0 {
+            water += 1; // the sea reads blue-grey
+        }
+        if colours.len() < 1_000 {
+            colours.insert([px[0], px[1], px[2]]);
+        }
+    }
+    let mean = sum / total;
+    let variance = (sumsq / total - mean * mean).max(0.0);
+    assert!(opaque as f64 / total > 0.8, "planet not opaque");
+    assert!(variance > 150.0, "planet ~uniform (variance {variance:.0})");
+    assert!(
+        (40.0..=225.0).contains(&mean),
+        "planet mean luminance {mean:.0} off-band"
+    );
+    assert!(
+        colours.len() > 20,
+        "planet only {} distinct colours",
+        colours.len()
+    );
+    assert!(
+        water as f64 / total > 0.05,
+        "planet has no sea ({} blue px)",
+        water
+    );
+}
+
 /// Every atlas preset must rasterize to a *sane* image — opaque, non-uniform,
 /// multi-coloured, on the parchment midtone band. The palette-specific checks
 /// above can't be reused (a thermal lens is blue→red, not warm parchment), so

@@ -48,6 +48,24 @@ impl Default for GenerateParams {
     }
 }
 
+impl GenerateParams {
+    /// Planet-scale generation: a wider 2:1 aspect and a higher plate count, so
+    /// the world reads as several continents in an encircling sea rather than a
+    /// single dominant landmass. Render it with `Style::Planet`; drill into any
+    /// region with `scale::refine_sector` for the continental ornate view (the
+    /// planet is the root, continents are its sectors).
+    pub fn planet(seed: u64) -> Self {
+        Self {
+            seed,
+            width: 2048.0,
+            height: 1024.0,
+            cell_count: 18_000,
+            plate_count: 32,
+            nation_count: 12,
+        }
+    }
+}
+
 /// Convenience: run every scientific stage in canonical order and return
 /// a world ready for rendering. CLI consumers should call this; tests
 /// that exercise individual stages should call `generate()` + the stages

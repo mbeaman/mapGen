@@ -175,6 +175,33 @@ fn refined_sector_is_finer_and_self_describing() {
     assert_eq!(child.climate.biome.len(), child.mesh.cell_count());
 }
 
+/// The planet preset is the root of the zoom-out hierarchy: refining one of its
+/// sectors yields a consistent continental window of the *same* world (same
+/// extent, a true sub-rectangle, physical pipeline run), via the same machinery
+/// as any other refinement — so planet → continent → region is one mechanism.
+#[test]
+fn planet_root_refines_into_a_continental_sector() {
+    let planet = generate_full(GenerateParams::planet(42));
+    let sec = Sector {
+        level: 2,
+        sx: 1,
+        sy: 1,
+    };
+    let region = refine_sector(&planet, sec, RefineParams::default());
+
+    // Same global extent; the sector is a true sub-rectangle within it.
+    assert_eq!(region.mesh.width, planet.mesh.width);
+    assert_eq!(region.mesh.height, planet.mesh.height);
+    let rect = region.mesh.region.expect("sector carries a region");
+    let [vx, vy, vx1, vy1] = region.mesh.view_rect();
+    assert!(vx >= 0.0 && vy >= 0.0);
+    assert!(vx1 <= planet.mesh.width + 1.0 && vy1 <= planet.mesh.height + 1.0);
+    assert!((rect[2] - rect[0] - planet.mesh.width / 4.0).abs() < 1.0); // level-2 → 1/4 wide
+                                                                        // The physical pipeline ran over the sector.
+    assert_eq!(region.climate.biome.len(), region.mesh.cell_count());
+    assert!(region.mesh.cell_count() > 1000);
+}
+
 /// Refinement is a pure function of `(params, sector)` — byte-identical across
 /// runs. (Cross-platform byte-identity is covered by the wasm golden.)
 #[test]

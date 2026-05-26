@@ -42,5 +42,6 @@ pub fn render(world: &WorldData, style: Style) -> Result<String, String> {
         Style::Biomes => Ok(style::biomes::render(world)),
         Style::Cultures => Ok(style::cultures::render(world)),
         Style::OrnateAntique => Ok(style::ornate_antique::render(world)),
+        Style::Planet => Ok(style::planet::render(world)),
     }
 }

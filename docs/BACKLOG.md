@@ -114,24 +114,38 @@ note.
   *depths*, not distinct pipelines — one mechanism, not five.
 - **Origin.** 2026-05-24 multi-scale request; built in Phase 7.
 
-### World / planet scale (zoom out)
+### World / planet scale (zoom out) — increment 1 DONE (2026-05-25)
 
-- **Why deferred.** Needs the refinement framework above *and* multi-
-  continent generation (see Geography & geology → "Multi-continent worlds").
-  No narrative today spans more than one continent.
-- **Design note.** The planet as the root level: multiple continents, ocean
-  basins, planetary tectonic plates, and the global climate belts /
-  ocean-current gyres the climate stage already models but currently only
-  over one continent. The present continental map becomes one child sector of
-  this root. Projection / distortion at the planetary edge is the new render
-  problem the Multi-continent item already flags.
-- **Trigger for revival.** User wants to seed / see the whole planet rather
-  than one continent; or narratives need inter-continental trade, migration,
-  or colonization; or several regional maps must share one consistent globe.
-- **Cost.** ~1 week on top of the framework + multi-continent generation.
-- **Origin.** This session; extends Geography & geology → "Multi-continent
-  worlds" (that entry is the *generation* of >1 continent; this is the
-  zoom-out *view* of it).
+- **Resolved design question.** Plate positions are sampled in `[0, width)`, so
+  *enlarging* the canvas to wrap the current world in a coarser planet re-rolls
+  the whole layout — there is no cheap "level −1". The architecture-fitting form
+  is therefore: **the planet IS the root (level 0)**, generated multi-continent,
+  and continental maps are its refined sectors (zoom-in is the consistent
+  direction the framework already gives). No multi-continent bias was needed —
+  more plates over a 2:1 aspect already yields several continents in an
+  encircling sea.
+- **Shipped (increment 1).**
+  - `GenerateParams::planet(seed)` — 2:1 aspect, 32 plates, 18k cells → a
+    multi-continent world (the root).
+  - `Style::Planet` (`style/planet.rs`) — an antique *planisphere*: biome-tinted
+    continents over a depth-shaded sea, a lat/long graticule, major rivers
+    (Strahler ≥ 4) + the largest ranges, flood-filled continent labels (antique
+    Latin `TERRA SEPTENTRIONALIS…` by position) + a `MARE OCEANVM` ocean label,
+    reusing the ornate parchment/typography/compass/cartouche (now `pub(crate)`).
+    Drops per-cell forest/settlement clutter; vignette without the ink-stains.
+  - `mapgen planet --seed` (generate + render the overview) and `mapgen refine
+    --planet` (drill a sector of the same globe — same `refine_sector`, so
+    planet → continent → region is one mechanism). Proven by
+    `scale_spec::planet_root_refines_into_a_continental_sector` +
+    `visual_regression::planet_render_rasterizes_to_a_sane_image`.
+- **Open follow-ups (increment 2+):** frontend zoom-out (planet as the top
+  breadcrumb level, `Style::Planet` in the worker/UI, click-to-drill from the
+  planet); projection / distortion at the planetary edge for a true globe feel;
+  inter-continental society/history (trade, migration) — currently society is
+  generated per-world; named continents/oceans grounded in the lore naming
+  system (today's labels are positional); planet-scale render perf budget.
+- **Origin.** This session, 2026-05-25, "let's do zoom out" → chose the
+  level-above-0 hierarchy.
 
 ### Local rural / hinterland maps (zoom in, countryside)
 

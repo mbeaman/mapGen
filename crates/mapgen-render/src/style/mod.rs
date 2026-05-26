@@ -20,6 +20,7 @@ pub mod biomes;
 pub mod cultures;
 pub mod greyscale;
 pub mod ornate_antique;
+pub mod planet;
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Style {
@@ -35,6 +36,10 @@ pub enum Style {
     /// scope; see [`crate::style::ornate_antique`] for what's included
     /// and what's deferred.
     OrnateAntique,
+    /// Zoomed-*out* planetary overview — the whole world as an antique
+    /// planisphere (continents, sea basins, graticule, major rivers/ranges,
+    /// engraved labels). See [`crate::style::planet`].
+    Planet,
 }
 
 impl std::str::FromStr for Style {
@@ -45,6 +50,7 @@ impl std::str::FromStr for Style {
             "biomes" | "biome" => Ok(Self::Biomes),
             "cultures" | "culture" => Ok(Self::Cultures),
             "ornate" | "ornate_antique" | "antique" => Ok(Self::OrnateAntique),
+            "planet" | "planisphere" | "world" => Ok(Self::Planet),
             other => Err(format!("unknown style: {other}")),
         }
     }

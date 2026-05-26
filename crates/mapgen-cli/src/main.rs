@@ -74,9 +74,15 @@ enum Cmd {
         /// Row in the 2^level grid.
         #[arg(long, default_value_t = 0)]
         sy: u32,
-        /// Plate count — must match the world this sector belongs to.
+        /// Plate count — must match the world this sector belongs to (ignored
+        /// with --planet, which uses the planet preset's own plate count).
         #[arg(long, default_value_t = 14)]
         plates: usize,
+        /// Drill into the planet-scale root (`GenerateParams::planet`) rather
+        /// than a default continental world — so `planet` + `refine --planet`
+        /// share one consistent globe.
+        #[arg(long)]
+        planet: bool,
         /// Target cell count inside the sector (finer than the parent world).
         #[arg(long, default_value_t = 4_000)]
         cells: usize,
@@ -110,6 +116,21 @@ enum Cmd {
         #[arg(long, default_value_t = 8)]
         nations: usize,
         #[arg(long, default_value = "atlas.html")]
+        out: PathBuf,
+    },
+    /// Generate a planet-scale, multi-continent world and render the zoomed-out
+    /// planisphere overview (`Style::Planet`). The planet is the root level;
+    /// drill into any continent with `refine` for the ornate continental view.
+    Planet {
+        #[arg(long)]
+        seed: u64,
+        /// Target cells across the whole planet (default planet preset: 18k).
+        #[arg(long, default_value_t = 18_000)]
+        cells: usize,
+        /// Tectonic plates — more plates means more, smaller continents.
+        #[arg(long, default_value_t = 32)]
+        plates: usize,
+        #[arg(long, default_value = "maps/planet.svg")]
         out: PathBuf,
     },
     /// Sweep one parameter knob across a range and render every step
@@ -230,6 +251,7 @@ fn main() -> Result<()> {
             sx,
             sy,
             plates,
+            planet,
             cells,
             style,
             out,
@@ -243,11 +265,18 @@ fn main() -> Result<()> {
             }
             // Build the parent world, then project its society onto the sector.
             // (The physical base field only needs seed/dims/plates, but towns &
-            // borders are carried from the parent — so we generate it.)
-            let params = GenerateParams {
-                seed,
-                plate_count: plates,
-                ..Default::default()
+            // borders are carried from the parent — so we generate it.) The
+            // parent params must match exactly how the parent was generated, so
+            // a sector is the same window of the same world — hence --planet
+            // mirrors the `planet` command's preset.
+            let params = if planet {
+                GenerateParams::planet(seed)
+            } else {
+                GenerateParams {
+                    seed,
+                    plate_count: plates,
+                    ..Default::default()
+                }
             };
             let parent = mapgen_world::generate_full(params);
             let refine = RefineParams {
@@ -306,6 +335,28 @@ fn main() -> Result<()> {
                 out.display(),
                 mapgen_render::layers::PRESETS.len(),
                 html.len() as f64 / 1.0e6,
+            );
+        }
+        Cmd::Planet {
+            seed,
+            cells,
+            plates,
+            out,
+        } => {
+            let mut params = GenerateParams::planet(seed);
+            params.cell_count = cells;
+            params.plate_count = plates;
+            let world = mapgen_world::generate_full(params);
+            let svg = mapgen_render::render(&world, Style::Planet).map_err(anyhow::Error::msg)?;
+            if let Some(parent) = out.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            fs::write(&out, svg).with_context(|| format!("writing {}", out.display()))?;
+            eprintln!(
+                "wrote planet: {} ({} cells, {} plates)",
+                out.display(),
+                world.mesh.cell_count(),
+                plates,
             );
         }
         Cmd::Sweep {

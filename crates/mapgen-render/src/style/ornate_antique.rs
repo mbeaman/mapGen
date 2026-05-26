@@ -49,7 +49,7 @@ use crate::FONTS_TTF;
 /// each vendored font. Computed once per process — encoding ~200 KB
 /// of TTF bytes is ~milliseconds, but we pay it lazily so the cost
 /// only lands on processes that actually render ornate maps.
-static FONT_FACE_BLOCK: LazyLock<String> = LazyLock::new(|| {
+pub(crate) static FONT_FACE_BLOCK: LazyLock<String> = LazyLock::new(|| {
     let mut s = String::from("<style>");
     for (name, bytes) in FONTS_TTF {
         let b64 = STANDARD.encode(bytes);
@@ -192,7 +192,7 @@ pub fn render(world: &WorldData) -> String {
     // clean framed map without them. Level-0 worlds are unaffected.
     if mesh.region.is_none() {
         render_compass(w, h, &mut out);
-        render_cartouche(w, h, &mut out);
+        render_cartouche(w, h, "A MAP OF THE KNOWN WORLD", &mut out);
     }
 
     out.push_str("</svg>");
@@ -2372,7 +2372,7 @@ fn xml_escape(s: &str) -> String {
 /// than the parchment gradient underneath (which tints the background);
 /// this one darkens labels and glyphs that sit near the canvas edge,
 /// matching the look of a real burnt-edge antique map.
-fn render_edge_burn(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
+pub(crate) fn render_edge_burn(vx: f32, vy: f32, w: f32, h: f32, out: &mut String) {
     write!(
         out,
         r##"<g class="edge-burn"><rect x="{vx:.0}" y="{vy:.0}" width="{w:.0}" height="{h:.0}" fill="url(#edge-burn)" pointer-events="none"/>"##
@@ -2421,7 +2421,7 @@ fn perimeter_point(t: f32, w: f32, h: f32) -> (f32, f32) {
 /// cardinal spikes and 4 shorter inter-cardinal spikes, centered
 /// medallion, and "N" letter above. Sized for legibility across
 /// 1024–2048 px canvas widths.
-fn render_compass(w: f32, h: f32, out: &mut String) {
+pub(crate) fn render_compass(w: f32, h: f32, out: &mut String) {
     // Place a comfortable inset from the NW corner. Scale modestly
     // with canvas size so the rose stays readable on wider exports.
     let scale = (w.min(h) / 1280.0).clamp(0.7, 1.4);
@@ -2484,7 +2484,7 @@ fn render_compass(w: f32, h: f32, out: &mut String) {
 /// like frame. Today carries a generic "A Map of the Known World"
 /// title; future work may parameterize the title text on world
 /// metadata (oldest polity name, hemisphere, etc.).
-fn render_cartouche(w: f32, h: f32, out: &mut String) {
+pub(crate) fn render_cartouche(w: f32, h: f32, title: &str, out: &mut String) {
     let scale = (w.min(h) / 1280.0).clamp(0.7, 1.6);
     let box_w = 360.0 * scale;
     let box_h = 78.0 * scale;
@@ -2522,7 +2522,7 @@ fn render_cartouche(w: f32, h: f32, out: &mut String) {
     // Title text — Cinzel small-caps for the antique typeset feel.
     write!(
         out,
-        r##"<text x="{cx:.1}" y="{cy:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#2a2418">A MAP OF THE KNOWN WORLD</text>"##,
+        r##"<text x="{cx:.1}" y="{cy:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#2a2418">{title}</text>"##,
         fs = 18.0 * scale,
     )
     .unwrap();
@@ -2668,7 +2668,7 @@ fn draw_sacred_glyph(p: PantheonPattern, cx: f32, cy: f32, out: &mut String) {
 
 /// Muted ornate palette — biomes tinted toward parchment so the
 /// underlying map reads "old hand-drawn" not "Phase-2 data debug."
-fn ornate_biome_color(biome: u8, elev: f32) -> &'static str {
+pub(crate) fn ornate_biome_color(biome: u8, elev: f32) -> &'static str {
     if elev <= 0.0 {
         return if elev < -0.3 { "#6a85a0" } else { "#9bb5c8" };
     }
