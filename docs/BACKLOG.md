@@ -96,33 +96,23 @@ them as *zoom depths within the framework*, not separate generation passes,
 until a concrete need forces otherwise. See the framework entry's design
 note.
 
-### Nested multi-scale refinement framework
+### Nested multi-scale refinement framework — DONE (Phase 7, 2026-05-25)
 
-- **Why deferred.** It's the keystone every other scale entry depends on,
-  and it's pure infrastructure with no visible output on its own. The MVP
-  (Phase 4 history, Phase 5 Claude) isn't done; building scale machinery
-  before the single-scale world is fully lored fails the "ships value vs.
-  intellectually satisfies" test. This is post-MVP work.
-- **Design note (the hard part).** Add a `level` axis alongside `Stage` in
-  the RNG model: `child_seed = blake3(parent_seed, level, sector_id)`. Per
-  stage, define a boundary-condition contract — a child sector inherits its
-  parent cells' elevation envelope, river entry/exit points on its edges,
-  coastline crossings, biome, and settlement positions as *fixed
-  constraints*, then fills sub-cell detail so that down-sampling the child
-  reproduces the parent within tolerance. On-demand and stateless: never
-  persist the planet at local resolution; regenerate any sector from seeds.
-  Intermediate layers (provincial, district/hinterland) are expressed as
-  refinement *depths*, not distinct pipelines — one mechanism, not five.
-  Must be purely additive: existing single-scale golden hashes must not
-  change.
-- **Trigger for revival.** The first concrete consumer of a second zoom band
-  — the user wants a map at a scale other than the current continental one
-  (a planet view, a city interior, or a countryside tile). Not before the
-  Phase 4–5 MVP closes.
-- **Cost.** 1–2 weeks for the framework alone. The boundary-condition
-  contract and its property tests are the real work, not the seed plumbing.
-- **Origin.** This session, 2026-05-24, multi-scale (world / regional /
-  local) request.
+- **Shipped.** `mapgen_world::scale::refine_sector(parent, Sector{level,sx,sy},
+  RefineParams)` recomputes the shared base field from the *root* seed, adds
+  coordinate-addressed sector detail (`StageRng::sector` → splitmix64-nested
+  `sector_seed(level,sx,sy)`), runs the physical pipeline over a haloed
+  sub-mesh, then projects the parent society + hydrology. On-demand and
+  stateless — a sector is a pure function of `(seed, plates, level, sx, sy)`;
+  the planet is never persisted at local resolution. Purely additive: level-0
+  output stays byte-identical (the `MeshData.region` field elides to `None`),
+  and the refine path carries its own native↔wasm golden.
+- **Boundary contract.** `scale::pin_edges_to_shared` blends terrain back toward
+  the shared base field at sector edges (smoothstep); rivers + society are
+  projected from the parent, so they're globally consistent and therefore
+  seam-consistent. Intermediate layers (provincial, district) are refinement
+  *depths*, not distinct pipelines — one mechanism, not five.
+- **Origin.** 2026-05-24 multi-scale request; built in Phase 7.
 
 ### World / planet scale (zoom out)
 
@@ -189,7 +179,7 @@ note.
   culture/era variants multiply it.
 - **Origin.** This session, 2026-05-24, multi-scale request.
 
-### Scale-dependent render fidelity (per-feature level-of-detail)
+### Scale-dependent render fidelity (per-feature level-of-detail) — DONE (2026-05-25)
 
 - **Origin.** User request, 2026-05-25: "zooming in should also change the
   fidelity level of the details — those trees should become more detailed
@@ -236,7 +226,7 @@ note.
 - **Trigger.** Now that drill-in works (Phase 7), this is the most visible next
   uplevel for the atlas. Largely a `mapgen-render` change; no schema impact.
 
-### Seamless inter-scale navigation (research brief)
+### Seamless inter-scale navigation — research + MVP DONE (2026-05-25); generalisation/prefetch deferred
 
 - **Research pass DONE (6.3, 2026-05-24)** → **`docs/adr/0001-multiscale-navigation.md`**.
 - **Framework + MVP navigation DONE (Phase 7 / 8.4, 2026-05-25).** Shipped:
