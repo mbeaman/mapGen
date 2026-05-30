@@ -11,6 +11,12 @@
 > Unlocking requires explicit user approval and a triggering signal —
 > e.g., the first ornate render reveals realism gaps that targeted
 > property tests can't catch.
+>
+> **§1 amended 2026-05-30** (trigger: user directive — live 3D explorer
+> over the existing world data). Adds `mapgen-viewer` to the workspace as
+> a real-time wgpu renderer (native + web targets). The SVG path
+> (`mapgen-render`) is **not** deprecated and remains the artifact-of-record.
+> Reasoning, scope, and non-goals: `docs/adr/0002-live-3d-explorer.md`.
 
 ## Context
 
@@ -43,12 +49,13 @@ mapgen/
     ├── mapgen-world/     # Geography pipeline (plates → biomes → society)
     ├── mapgen-history/   # Sim loops + append-only event log
     ├── mapgen-render/    # SVG renderer + roughr primitives + style modules
+    ├── mapgen-viewer/    # Real-time wgpu 3D explorer (native + web; ADR 0002)
     ├── mapgen-lore/      # Claude integration (native-only, cfg-gated)
     ├── mapgen-cli/       # Native dev binary (clap)
     └── mapgen-wasm/      # wasm-bindgen façade (no lore dep)
 ```
 
-**Dependency edges (DAG):** `core ← geom ← world ← history ← render`; `lore` depends on `core + history`; `cli` depends on everything; `wasm` depends on everything **except `lore`**.
+**Dependency edges (DAG):** `core ← geom ← world ← history ← render`; `viewer` depends on `world` (transitively `core + geom + history`), independently of `render`; `lore` depends on `core + history`; `cli` depends on everything; `wasm` depends on everything **except `lore` and `viewer`** (the viewer ships its own wasm artifact via wasm-bindgen — see ADR 0002 §3).
 
 **Targets:** all crates compile for `wasm32-unknown-unknown` except `mapgen-lore` (native-only, gated by `#[cfg(not(target_arch = "wasm32"))]` at the crate root and enforced in CI) and `mapgen-cli` (native).
 

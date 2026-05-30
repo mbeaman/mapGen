@@ -11,13 +11,13 @@ fast; the others are stable.
 
 | Field | Value |
 |---|---|
-| Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | Phase 7 complete — refinement framework + drill-in nav + scale-dependent render fidelity (forests→cities) + seam-pinning + projected rivers + hardening. Run `git log -1` for the head. |
-| Tree | clean |
-| Tests | full workspace suite green (adds `scale_spec`, `soils_spec`, `rivers_spec`, `refine_render`, sector-seed + `refineSector` wasm tests) + `--features lore` suite + web `tsc --noEmit`/vite build clean. **`wasm-pack test --node` (native↔wasm golden + refineSector) green** — in CI + `just test-wasm`. |
-| Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** (26/111/259 ms medians vs 39/166/388 budgets). |
-| Schema | v15 (Phase 6: v14 6.1.4 `ClimateData::soil` + `biomes::WETLAND`, v15 6.1.5 `HydrologyData::strahler` + `River::{strahler,regime}`). `MeshData::region` (Phase 7) is elided when `None` → no schema bump, level-0 byte-identical. |
-| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** to record the six-loop Phase-4 scope (trigger: the "time is not a factor" + "uplevel" directive) |
+| Branch | `claude/wgpu-3d-explorer-1du5B` (forked from `claude/fantasy-map-generator-1du5B` at `7be51f5`) |
+| Latest commit | ADR 0002 — live 3D explorer architecture amendment (mapgen-viewer crate; no code yet). Run `git log -1` for the head. |
+| Tree | doc-only changes pending; no code yet on this branch. |
+| Tests | inherited from parent branch — full workspace suite + wasm golden + web e2e all green at fork point. |
+| Gate | `just check` green at fork point; `mapgen-viewer` not yet in workspace, so no new build checks until Stage 0a. |
+| Schema | v15 (unchanged on this branch — ADR 0002 explicitly takes no schema bump). |
+| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** (six-loop Phase-4 scope). **§1 amended 2026-05-30** (this branch): admits `mapgen-viewer` crate per ADR 0002 (trigger: user directive for a real-time 3D explorer). |
 
 ---
 
@@ -64,15 +64,40 @@ git log -8 --oneline
 
 ## Currently in flight
 
-**Nothing mid-flight.** Phases 5 (lore), 6 (realism + cross-cutting), and 7
-(multi-scale atlas — refinement, drill-in nav, projected society + rivers,
-seam-pinning, scale-dependent render fidelity, hardening) are all complete and
-pushed. Remaining follow-ups, documented in `docs/adr/0001-multiscale-navigation.md`
-("Implementation status") and the BACKLOG: **planet / multi-continent view above
-level 0** (zoom-out — also the prerequisite that makes cartographic
-generalisation meaningful: Töpfer/Visvalingam + scale-rank label declutter);
-rank-driven background prefetch; per-sector local history; the deferred Phase-8
-scale-consumer bands (urban interiors, planet). None is mid-flight.
+**Live 3D explorer (new branch `claude/wgpu-3d-explorer-1du5B`).** A second
+render path: real-time, fly-over, 3D-tilt wgpu renderer over the existing
+`WorldData`. New crate `mapgen-viewer`. `mapgen-render`'s SVG output is **not**
+deprecated; the live view is a parallel path, not a replacement. The user
+explicitly picked this over three cheaper alternatives (CSS-3D tilt the SVG,
+hybrid WebGL terrain + SVG label overlay, defer for planet-zoom-2) after a
+written steelman.
+
+Architecture amendment landed: ADR 0002 (`docs/adr/0002-live-3d-explorer.md`)
+captures the new crate, the wgpu-vs-JS-3D substrate decision, the DAG edge,
+the relationship to scale.rs / seam-pinning, the orbit camera model,
+the staged ornate-in-shaders plan, the labels-in-3D plan, and the explicit
+non-goals (no SVG deprecation, no schema bump, no determinism contract
+changes, no FFI to JS for rendering logic, no Anthropic integration). The
+ARCHITECTURE.md §1 amendment block points to the ADR.
+
+**Stage 0 plan** (next; see ADR 0002 "Implementation status"):
+
+- **0a — substrate hello-world (native only):** add `crates/mapgen-viewer`
+  to the workspace; winit window + wgpu init + clear-to-colour; exits cleanly
+  on Esc. Verifies the wgpu+winit toolchain on this box. ~150 LOC.
+- **0b — web target:** wasm-bindgen entry export + cdylib gate; `wasm-pack
+  build` of the viewer crate succeeds; `web/viewer.html` shell shows the same
+  cleared canvas via WebGPU (with WebGL2 fallback).
+- **0c — render the world (flat):** orbit camera + biome-colour-per-cell
+  vertex buffer; no elevation extrusion yet; pan / zoom / tilt all work.
+
+**Parent branch (`claude/fantasy-map-generator-1du5B`) status unchanged.**
+Phases 5 (lore), 6 (realism + cross-cutting), and 7 (multi-scale atlas —
+refinement, drill-in nav, projected society + rivers, seam-pinning,
+scale-dependent render fidelity, hardening) all complete and pushed. The
+queued "planet zoom-out increment 2" work in BACKLOG "Up next" is **deferred
+on this branch** but remains the active track on the parent if picked up
+there in parallel.
 
 The full narration round-trip, built offline-first in `mapgen-lore`:
 voice/register types, a tolerant `ChronicleDraft` parser, prompt assembly (WORLD
