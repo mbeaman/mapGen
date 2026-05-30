@@ -1,0 +1,21 @@
+[package]
+name = "mapgen-viewer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Real-time wgpu 3D explorer over generated worlds (see ADR 0002)."
+
+[lib]
+
+[[bin]]
+name = "viewer-native"
+path = "src/bin/native.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+log = "0.4"
+wgpu = "29"
+winit = "0.30"
+pollster = "0.4"
+env_logger = "0.11"

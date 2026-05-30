@@ -6,6 +6,7 @@ members = [
     "crates/mapgen-world",
     "crates/mapgen-history",
     "crates/mapgen-render",
+    "crates/mapgen-viewer",
     "crates/mapgen-lore",
     "crates/mapgen-cli",
     "crates/mapgen-wasm",
