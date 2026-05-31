@@ -1,19 +1,41 @@
 //! World → GPU mesh conversion + the world render pipeline.
 //!
-//! Each Voronoi cell is fan-triangulated from its centre site, with the
-//! cell's biome colour written to every emitted vertex (so cells read as
+//! Each Voronoi cell is fan-triangulated from its centre site. The biome
+//! colour is written to every emitted vertex (so cells read as
 //! flat-coloured polygons — no per-vertex blend). World 2D `(x, y)` is
-//! laid out on the XZ ground plane as 3D `(x, 0, y)` — Y is reserved for
-//! elevation (still 0 in 0c.2; Stage 1 will lift land cells along +Y).
+//! laid out on the XZ ground plane, then lifted along +Y by the cell's
+//! elevation (Stage 1): land cells rise above the plane; sea cells stay
+//! at `y = 0`. Each *shared* mesh vertex uses the **average** of touching
+//! cells' (clamped-to-zero) elevations, so adjacent cells meet smoothly
+//! instead of forming vertical walls at every cell boundary. Cell
+//! centres keep the cell's own elevation, so each cell still reads as a
+//! slight dome with its own colour.
+//!
+//! Lighting is done in the fragment shader via screen-space derivatives
+//! of world position — that gives a true per-triangle face normal
+//! without paying for per-vertex normals on the CPU side, and naturally
+//! produces a faceted "topographic relief" look that suits the
+//! biome-coloured aesthetic.
 //!
 //! The camera uniform is updated each frame from
 //! [`crate::camera::OrbitCamera`] via [`WorldScene::update_view_proj`];
 //! the scene itself has no opinion about the matrix it holds.
 
 use bytemuck::{Pod, Zeroable};
-use mapgen_core::world_data::WorldData;
+use mapgen_core::world_data::{MeshData, WorldData};
 use mapgen_world::biomes;
 use wgpu::util::DeviceExt;
+
+/// World units of vertical lift per unit of elevation. Seed-42 land
+/// runs roughly `[0, 1]` (p99 ≈ 0.8); at 150 the highest peaks rise
+/// ~150 world units — about 7% of world width, ~12% of world depth.
+/// Visible from the default ~60° tilt without dominating the frame.
+const HEIGHT_SCALE: f32 = 150.0;
+
+/// Depth buffer format used by [`WorldScene`]. The screenshot path and
+/// the interactive renderer must agree, so it lives here as a single
+/// source of truth.
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -138,7 +160,13 @@ impl WorldScene {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
@@ -179,6 +207,7 @@ fn build_vertices(world: &WorldData) -> Vec<Vertex> {
     let mesh = &world.mesh;
     let elev = &world.terrain.elevation;
     let biome = &world.climate.biome;
+    let vertex_height = per_vertex_height(mesh, elev);
 
     // Pre-size: most Voronoi cells have ~6 vertices → ~6 triangles → ~18 verts.
     let mut out = Vec::with_capacity(mesh.sites.len() * 18);
@@ -188,15 +217,19 @@ fn build_vertices(world: &WorldData) -> Vec<Vertex> {
         if poly.len() < 3 {
             continue;
         }
-        let center = lift(mesh.sites[cell_id]);
         let cell_elev = elev.get(cell_id).copied().unwrap_or(0.0);
+        // Sea floor stays at y = 0 so the ocean reads as a flat plane.
+        let center_height = cell_elev.max(0.0) * HEIGHT_SCALE;
+        let center = lift(mesh.sites[cell_id], center_height);
         let cell_biome = biome.get(cell_id).copied().unwrap_or(biomes::UNASSIGNED);
         let color = biome_color_rgb(cell_biome, cell_elev);
 
         // Fan from the cell centre. Winding doesn't matter — culling is off.
         for i in 0..poly.len() {
-            let a = lift(mesh.vertices[poly[i] as usize]);
-            let b = lift(mesh.vertices[poly[(i + 1) % poly.len()] as usize]);
+            let idx_a = poly[i] as usize;
+            let idx_b = poly[(i + 1) % poly.len()] as usize;
+            let a = lift(mesh.vertices[idx_a], vertex_height[idx_a]);
+            let b = lift(mesh.vertices[idx_b], vertex_height[idx_b]);
             out.push(Vertex {
                 position: center,
                 color,
@@ -208,10 +241,33 @@ fn build_vertices(world: &WorldData) -> Vec<Vertex> {
     out
 }
 
-/// World 2D `(x, y)` → 3D ground-plane `(x, 0, y)`. Stage 1 will pass
-/// per-vertex elevation here instead of 0.
-fn lift(p: [f32; 2]) -> [f32; 3] {
-    [p[0], 0.0, p[1]]
+/// World 2D `(x, y)` → 3D `(x, height, y)`. Sea-level vertices use
+/// `height = 0`; land vertices use their averaged lift.
+fn lift(p: [f32; 2], height: f32) -> [f32; 3] {
+    [p[0], height, p[1]]
+}
+
+/// For each *shared* mesh vertex, the mean of its touching cells'
+/// land-elevations (negatives clamped to 0). A coastal vertex shared
+/// between sea (elev<0) and land (elev>0) cells lands just above sea
+/// level — so land slopes down to meet the ocean instead of dropping
+/// off a cliff at every coastline.
+fn per_vertex_height(mesh: &MeshData, elev: &[f32]) -> Vec<f32> {
+    let n = mesh.vertices.len();
+    let mut sums = vec![0.0f32; n];
+    let mut counts = vec![0u32; n];
+    for cell_id in 0..mesh.sites.len() {
+        let h = elev.get(cell_id).copied().unwrap_or(0.0).max(0.0);
+        for &v_idx in &mesh.cell_vertices[cell_id] {
+            let i = v_idx as usize;
+            sums[i] += h;
+            counts[i] += 1;
+        }
+    }
+    sums.iter()
+        .zip(counts.iter())
+        .map(|(&s, &c)| if c > 0 { s / c as f32 } else { 0.0 } * HEIGHT_SCALE)
+        .collect()
 }
 
 /// Mirror of `mapgen_render::style::ornate_antique::ornate_biome_color`

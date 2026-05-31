@@ -29,7 +29,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use camera::OrbitCamera;
 use mapgen_core::world_data::WorldData;
-use scene::WorldScene;
+use scene::{WorldScene, DEPTH_FORMAT};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
@@ -39,6 +39,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    depth_view: wgpu::TextureView,
     scene: Option<WorldScene>,
     camera: Option<OrbitCamera>,
 }
@@ -93,6 +94,7 @@ impl Renderer {
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
+        let depth_view = create_depth_view(&device, size);
 
         Ok(Self {
             surface,
@@ -100,6 +102,7 @@ impl Renderer {
             queue,
             config,
             size,
+            depth_view,
             scene: None,
             camera: None,
         })
@@ -126,6 +129,7 @@ impl Renderer {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+        self.depth_view = create_depth_view(&self.device, new_size);
         let aspect = aspect_of(new_size);
         if let Some(cam) = self.camera.as_mut() {
             cam.set_aspect(aspect);
@@ -210,7 +214,14 @@ impl Renderer {
                     },
                     depth_slice: None,
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
@@ -228,4 +239,22 @@ impl Renderer {
 
 fn aspect_of(size: PhysicalSize<u32>) -> f32 {
     size.width as f32 / size.height.max(1) as f32
+}
+
+fn create_depth_view(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::TextureView {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("depth"),
+        size: wgpu::Extent3d {
+            width: size.width.max(1),
+            height: size.height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    tex.create_view(&wgpu::TextureViewDescriptor::default())
 }

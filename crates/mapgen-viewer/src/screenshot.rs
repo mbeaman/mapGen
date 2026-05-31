@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 use mapgen_core::world_data::WorldData;
 
 use crate::camera::OrbitCamera;
-use crate::scene::WorldScene;
+use crate::scene::{WorldScene, DEPTH_FORMAT};
 
 /// Camera pose override for [`screenshot_with`]. Defaults match the
 /// interactive viewer's startup framing: yaw 0 (looking along -Z),
@@ -118,6 +118,22 @@ pub async fn screenshot_with(
     });
     let view = target.create_view(&wgpu::TextureViewDescriptor::default());
 
+    let depth_tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("screenshot depth"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
     // wgpu requires copy rows aligned to COPY_BYTES_PER_ROW_ALIGNMENT (256).
     let unpadded_bpr = width * 4;
     let padded_bpr = align_to(unpadded_bpr, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
@@ -149,7 +165,14 @@ pub async fn screenshot_with(
                 },
                 depth_slice: None,
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
