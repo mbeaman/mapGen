@@ -1,10 +1,14 @@
-//! World → GPU mesh conversion + the Stage 0c.1 render pipeline.
+//! World → GPU mesh conversion + the world render pipeline.
 //!
 //! Each Voronoi cell is fan-triangulated from its centre site, with the
 //! cell's biome colour written to every emitted vertex (so cells read as
-//! flat-coloured polygons — no per-vertex blend). Coordinates stay in
-//! world space (`[0, width] × [0, height]`); a column-major orthographic
-//! matrix maps that to NDC with Y flipped (world +Y is down; NDC +Y is up).
+//! flat-coloured polygons — no per-vertex blend). World 2D `(x, y)` is
+//! laid out on the XZ ground plane as 3D `(x, 0, y)` — Y is reserved for
+//! elevation (still 0 in 0c.2; Stage 1 will lift land cells along +Y).
+//!
+//! The camera uniform is updated each frame from
+//! [`crate::camera::OrbitCamera`] via [`WorldScene::update_view_proj`];
+//! the scene itself has no opinion about the matrix it holds.
 
 use bytemuck::{Pod, Zeroable};
 use mapgen_core::world_data::WorldData;
@@ -14,24 +18,22 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Vertex {
-    position: [f32; 2],
+    /// World-space `(x, elevation, y)`. Elevation is stubbed to 0 in
+    /// Stage 0c.2; Stage 1 fills it in from `terrain.elevation`.
+    position: [f32; 3],
     color: [f32; 3],
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct CameraUniform {
-    proj: [[f32; 4]; 4],
+    view_proj: [[f32; 4]; 4],
 }
 
 pub(crate) struct WorldScene {
     pipeline: wgpu::RenderPipeline,
     vertex_buf: wgpu::Buffer,
     vertex_count: u32,
-    /// Held alive so Stage 0c.2 can update the camera via
-    /// [`wgpu::Queue::write_buffer`] when input moves the orbit camera.
-    /// Not read directly in 0c.1 — the bind group references it.
-    #[allow(dead_code)]
     camera_buf: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
 }
@@ -56,11 +58,14 @@ impl WorldScene {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
-        let proj = ortho_world_to_ndc(world.mesh.width, world.mesh.height);
-        let camera_uniform = CameraUniform { proj };
+        // Initialise with identity so a missed update_view_proj doesn't
+        // crash — caller is expected to push a real matrix each frame.
+        let initial = CameraUniform {
+            view_proj: IDENTITY_4X4,
+        };
         let camera_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera uniform"),
-            contents: bytemuck::bytes_of(&camera_uniform),
+            contents: bytemuck::bytes_of(&initial),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -108,7 +113,7 @@ impl WorldScene {
                     array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &wgpu::vertex_attr_array![
-                        0 => Float32x2,
+                        0 => Float32x3,
                         1 => Float32x3,
                     ],
                 }],
@@ -148,6 +153,13 @@ impl WorldScene {
         }
     }
 
+    pub(crate) fn update_view_proj(&self, queue: &wgpu::Queue, view_proj: &[[f32; 4]; 4]) {
+        let uniform = CameraUniform {
+            view_proj: *view_proj,
+        };
+        queue.write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&uniform));
+    }
+
     pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
@@ -156,20 +168,12 @@ impl WorldScene {
     }
 }
 
-/// Column-major orthographic projection from world-space rect
-/// `[0, width] × [0, height]` (origin top-left, +Y down) to NDC
-/// `[-1, 1]²` (origin centre, +Y up). Z is collapsed to 0.
-fn ortho_world_to_ndc(width: f32, height: f32) -> [[f32; 4]; 4] {
-    let w = width.max(1.0);
-    let h = height.max(1.0);
-    // column-major layout: each [..; 4] is a column.
-    [
-        [2.0 / w, 0.0, 0.0, 0.0],
-        [0.0, -2.0 / h, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [-1.0, 1.0, 0.0, 1.0],
-    ]
-}
+const IDENTITY_4X4: [[f32; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
 
 fn build_vertices(world: &WorldData) -> Vec<Vertex> {
     let mesh = &world.mesh;
@@ -184,15 +188,15 @@ fn build_vertices(world: &WorldData) -> Vec<Vertex> {
         if poly.len() < 3 {
             continue;
         }
-        let center = mesh.sites[cell_id];
+        let center = lift(mesh.sites[cell_id]);
         let cell_elev = elev.get(cell_id).copied().unwrap_or(0.0);
         let cell_biome = biome.get(cell_id).copied().unwrap_or(biomes::UNASSIGNED);
         let color = biome_color_rgb(cell_biome, cell_elev);
 
         // Fan from the cell centre. Winding doesn't matter — culling is off.
         for i in 0..poly.len() {
-            let a = mesh.vertices[poly[i] as usize];
-            let b = mesh.vertices[poly[(i + 1) % poly.len()] as usize];
+            let a = lift(mesh.vertices[poly[i] as usize]);
+            let b = lift(mesh.vertices[poly[(i + 1) % poly.len()] as usize]);
             out.push(Vertex {
                 position: center,
                 color,
@@ -202,6 +206,12 @@ fn build_vertices(world: &WorldData) -> Vec<Vertex> {
         }
     }
     out
+}
+
+/// World 2D `(x, y)` → 3D ground-plane `(x, 0, y)`. Stage 1 will pass
+/// per-vertex elevation here instead of 0.
+fn lift(p: [f32; 2]) -> [f32; 3] {
+    [p[0], 0.0, p[1]]
 }
 
 /// Mirror of `mapgen_render::style::ornate_antique::ornate_biome_color`

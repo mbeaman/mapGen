@@ -1,11 +1,17 @@
-//! Native entry point for the live 3D explorer (Stage 0c.1).
+//! Native entry point for the live 3D explorer.
 //!
 //! Parses `--seed/--cells`, generates a world via the existing pipeline,
 //! opens a winit window, hands the world + window to [`Renderer`], and
 //! pumps the event loop. Stage 0b will introduce the web entry point
 //! (lib.rs, behind `cfg(target_arch = "wasm32")`) over the same
-//! [`Renderer`] type. Stage 0c.2 wires mouse/keyboard input through to
-//! an orbit camera.
+//! [`Renderer`] type.
+//!
+//! Input mapping (Stage 0c.2):
+//! - Left-drag: pan the camera target across the ground plane.
+//! - Right-drag: orbit the camera (yaw + pitch).
+//! - Scroll wheel: zoom in / out.
+//! - `R`: reset the camera to its startup framing.
+//! - `Esc`: exit.
 
 use std::sync::Arc;
 
@@ -14,14 +20,19 @@ use clap::Parser;
 use mapgen_viewer::Renderer;
 use mapgen_world::{generate_full, GenerateParams};
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{KeyEvent, WindowEvent};
+use winit::dpi::{LogicalSize, PhysicalPosition};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+/// Pixel-to-line conversion for trackpad-style pixel scroll deltas.
+/// Most desktops report ~50px per "line"; matching that keeps a single
+/// scroll-notch on a wheel mouse feel comparable to a trackpad swipe.
+const PIXELS_PER_LINE: f32 = 50.0;
+
 #[derive(Parser, Debug, Clone)]
-#[command(about = "Live 3D explorer for generated worlds (Stage 0c.1)")]
+#[command(about = "Live 3D explorer for generated worlds")]
 struct Args {
     /// World seed (any u64).
     #[arg(long, default_value_t = 42)]
@@ -31,10 +42,18 @@ struct Args {
     cells: usize,
 }
 
+#[derive(Default)]
+struct Input {
+    last_cursor: Option<PhysicalPosition<f64>>,
+    left_held: bool,
+    right_held: bool,
+}
+
 struct App {
     args: Args,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
+    input: Input,
 }
 
 impl App {
@@ -43,6 +62,7 @@ impl App {
             args,
             window: None,
             renderer: None,
+            input: Input::default(),
         }
     }
 }
@@ -53,7 +73,7 @@ impl ApplicationHandler for App {
             return;
         }
         let title = format!(
-            "mapgen-viewer (Stage 0c.1) — seed {} · {} cells",
+            "mapgen-viewer — seed {} · {} cells",
             self.args.seed, self.args.cells
         );
         let window = Arc::new(
@@ -99,18 +119,56 @@ impl ApplicationHandler for App {
             return;
         };
         match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
+            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        physical_key: PhysicalKey::Code(code),
+                        state: ElementState::Pressed,
                         ..
                     },
                 ..
-            } => event_loop.exit(),
+            } => match code {
+                KeyCode::Escape => event_loop.exit(),
+                KeyCode::KeyR => renderer.reset_camera(),
+                _ => {}
+            },
             WindowEvent::Resized(size) => {
                 renderer.resize(size);
                 window.request_redraw();
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let pressed = state == ElementState::Pressed;
+                match button {
+                    MouseButton::Left => self.input.left_held = pressed,
+                    MouseButton::Right => self.input.right_held = pressed,
+                    _ => {}
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                if let Some(last) = self.input.last_cursor {
+                    let dx = (position.x - last.x) as f32;
+                    let dy = (position.y - last.y) as f32;
+                    if self.input.left_held {
+                        renderer.pan(dx, dy);
+                    }
+                    if self.input.right_held {
+                        renderer.orbit(dx, dy);
+                    }
+                }
+                self.input.last_cursor = Some(position);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                // Drop the anchor so re-entry doesn't synthesise a huge
+                // delta from the off-window position.
+                self.input.last_cursor = None;
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let lines = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y,
+                    MouseScrollDelta::PixelDelta(p) => (p.y as f32) / PIXELS_PER_LINE,
+                };
+                renderer.zoom(lines);
             }
             WindowEvent::RedrawRequested => {
                 if let Err(e) = renderer.render() {

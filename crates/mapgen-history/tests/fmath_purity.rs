@@ -19,6 +19,19 @@
 use std::fs;
 use std::path::Path;
 
+/// Crates whose `src/` is *not* part of the WorldData-generation determinism
+/// contract, so raw transcendentals there don't threaten the native↔wasm32
+/// byte-identical guarantee. Keep this list tight — every entry is a
+/// promise that nothing in that crate's `src/` feeds back into the
+/// generation pipeline.
+///
+/// `mapgen-viewer` is purely render-side: camera projection, vertex layout,
+/// shader uniforms. It consumes a `WorldData` produced elsewhere and never
+/// writes back to it. Forcing its trig (FOV → distance, yaw/pitch →
+/// camera basis) through `fmath` would bloat a determinism-critical
+/// module with helpers only the viewer needs.
+const EXCLUDED_CRATES: &[&str] = &["mapgen-viewer"];
+
 /// Method-call (`x.exp()`) and associated (`f32::exp`) forms of the genuinely
 /// target-divergent transcendentals `fmath` owns. See module docs for why
 /// `sqrt` and `powi` are absent.
@@ -91,7 +104,12 @@ fn workspace_uses_no_raw_transcendentals() {
     let mut violations = Vec::new();
     let mut scanned = 0usize;
     for entry in fs::read_dir(crates_root).expect("read crates dir") {
-        let src = entry.expect("dir entry").path().join("src");
+        let crate_dir = entry.expect("dir entry").path();
+        let crate_name = crate_dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if EXCLUDED_CRATES.contains(&crate_name) {
+            continue;
+        }
+        let src = crate_dir.join("src");
         if src.is_dir() {
             scanned += 1;
             scan(&src, &mut violations);

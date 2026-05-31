@@ -3,32 +3,33 @@
 //! See `docs/adr/0002-live-3d-explorer.md` for architectural decisions,
 //! and `docs/SESSION.md` "Currently in flight" for the active stage.
 //!
-//! Stage 0c.1: native-only substrate plus flat-coloured world rendering.
-//! The [`Renderer`] owns a `wgpu::Surface` plus its device/queue/config; a
-//! [`WorldScene`](crate::scene::WorldScene) is loaded via
-//! [`Renderer::load_world`] and drawn inside the same render pass that
-//! clears the framebuffer to a parchment tone. Stage 0c.2 adds an orbit
-//! camera with mouse/keyboard input.
+//! Stage 0c.2: native-only substrate, flat-coloured world rendering, and
+//! an orbit camera driven by mouse/keyboard input. The [`Renderer`] owns
+//! the wgpu surface + device, an optional [`scene::WorldScene`] (built
+//! when a world is loaded via [`Renderer::load_world`]), and an optional
+//! [`camera::OrbitCamera`] (constructed alongside the scene to frame the
+//! loaded world). Each frame the renderer pushes the camera's
+//! view-projection matrix to the GPU and draws the scene inside the same
+//! render pass that clears to a parchment tone.
+//!
+//! Input is plumbed in via thin methods on [`Renderer`]
+//! ([`pan`](Renderer::pan), [`orbit`](Renderer::orbit),
+//! [`zoom`](Renderer::zoom), [`reset_camera`](Renderer::reset_camera));
+//! the binary turns winit events into these calls so this crate stays
+//! winit-agnostic at the camera/scene layer.
 
+mod camera;
 mod scene;
 
 use std::sync::Arc;
 
 use anyhow::Result;
+use camera::OrbitCamera;
 use mapgen_core::world_data::WorldData;
 use scene::WorldScene;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
-/// Stage 0a wgpu Renderer — owns the surface + device, clears to a
-/// parchment tone each frame.
-///
-/// The surface is `'static` because the wrapping `Arc<Window>` keeps the
-/// window alive for the renderer's lifetime; the entry-point binary owns
-/// the `Arc` symmetrically. Surface-acquisition errors (Lost / Outdated /
-/// Timeout / Occluded) are handled inside [`Renderer::render`] — Lost and
-/// Outdated reconfigure the surface and skip the frame; Timeout and Occluded
-/// just skip.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
@@ -36,6 +37,7 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
     scene: Option<WorldScene>,
+    camera: Option<OrbitCamera>,
 }
 
 impl Renderer {
@@ -96,11 +98,17 @@ impl Renderer {
             config,
             size,
             scene: None,
+            camera: None,
         })
     }
 
     pub fn load_world(&mut self, world: &WorldData) {
         self.scene = Some(WorldScene::build(&self.device, &self.config, world));
+        self.camera = Some(OrbitCamera::fit_world(
+            world.mesh.width,
+            world.mesh.height,
+            self.aspect(),
+        ));
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
@@ -115,6 +123,38 @@ impl Renderer {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+        let aspect = aspect_of(new_size);
+        if let Some(cam) = self.camera.as_mut() {
+            cam.set_aspect(aspect);
+        }
+    }
+
+    pub fn pan(&mut self, dx_px: f32, dy_px: f32) {
+        if let Some(cam) = self.camera.as_mut() {
+            cam.pan(dx_px, dy_px, self.size.height as f32);
+        }
+    }
+
+    pub fn orbit(&mut self, dx_px: f32, dy_px: f32) {
+        if let Some(cam) = self.camera.as_mut() {
+            cam.orbit(dx_px, dy_px);
+        }
+    }
+
+    pub fn zoom(&mut self, lines: f32) {
+        if let Some(cam) = self.camera.as_mut() {
+            cam.zoom(lines);
+        }
+    }
+
+    pub fn reset_camera(&mut self) {
+        if let Some(cam) = self.camera.as_mut() {
+            cam.reset();
+        }
+    }
+
+    fn aspect(&self) -> f32 {
+        aspect_of(self.size)
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -137,6 +177,13 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        // Push the current camera state to the GPU before recording the
+        // pass — wgpu serialises buffer writes against the same queue
+        // submission, so the draw below sees this matrix.
+        if let (Some(scene), Some(cam)) = (self.scene.as_ref(), self.camera.as_ref()) {
+            scene.update_view_proj(&self.queue, &cam.view_proj().to_cols_array_2d());
+        }
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -144,9 +191,6 @@ impl Renderer {
             });
 
         {
-            // Parchment tone — a nod to ornate_antique's base background
-            // so even an empty frame hints at where this is going. Stage 5
-            // will replace this with a real paper texture.
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("clear + world pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -177,4 +221,8 @@ impl Renderer {
         frame.present();
         Ok(())
     }
+}
+
+fn aspect_of(size: PhysicalSize<u32>) -> f32 {
+    size.width as f32 / size.height.max(1) as f32
 }
