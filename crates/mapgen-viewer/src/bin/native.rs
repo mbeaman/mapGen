@@ -1,14 +1,18 @@
-//! Native entry point for the live 3D explorer (Stage 0a).
+//! Native entry point for the live 3D explorer (Stage 0c.1).
 //!
-//! Opens a winit window, hands it to [`Renderer`], and pumps the event loop
-//! with clear-on-redraw + resize handling + Esc-to-quit. The web entry
-//! (Stage 0b) will live in `lib.rs` behind a `cfg(target_arch = "wasm32")`
-//! gate and exercise the same [`Renderer`] type.
+//! Parses `--seed/--cells`, generates a world via the existing pipeline,
+//! opens a winit window, hands the world + window to [`Renderer`], and
+//! pumps the event loop. Stage 0b will introduce the web entry point
+//! (lib.rs, behind `cfg(target_arch = "wasm32")`) over the same
+//! [`Renderer`] type. Stage 0c.2 wires mouse/keyboard input through to
+//! an orbit camera.
 
 use std::sync::Arc;
 
 use anyhow::Result;
+use clap::Parser;
 use mapgen_viewer::Renderer;
+use mapgen_world::{generate_full, GenerateParams};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{KeyEvent, WindowEvent};
@@ -16,10 +20,31 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-#[derive(Default)]
+#[derive(Parser, Debug, Clone)]
+#[command(about = "Live 3D explorer for generated worlds (Stage 0c.1)")]
+struct Args {
+    /// World seed (any u64).
+    #[arg(long, default_value_t = 42)]
+    seed: u64,
+    /// Cell count. Smaller = faster generation; 4000 is the dev-loop default.
+    #[arg(long, default_value_t = 4000)]
+    cells: usize,
+}
+
 struct App {
+    args: Args,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
+}
+
+impl App {
+    fn new(args: Args) -> Self {
+        Self {
+            args,
+            window: None,
+            renderer: None,
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -27,16 +52,41 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+        let title = format!(
+            "mapgen-viewer (Stage 0c.1) — seed {} · {} cells",
+            self.args.seed, self.args.cells
+        );
         let window = Arc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
-                        .with_title("mapgen-viewer (Stage 0a)")
+                        .with_title(title)
                         .with_inner_size(LogicalSize::new(1280, 800)),
                 )
                 .expect("window create"),
         );
-        let renderer = pollster::block_on(Renderer::new(window.clone())).expect("renderer init");
+
+        log::info!(
+            "generating world (seed = {}, cells = {})...",
+            self.args.seed,
+            self.args.cells
+        );
+        let world = generate_full(GenerateParams {
+            seed: self.args.seed,
+            cell_count: self.args.cells,
+            ..GenerateParams::default()
+        });
+        log::info!(
+            "world ready: {} × {} world units, {} cells",
+            world.mesh.width,
+            world.mesh.height,
+            world.mesh.sites.len()
+        );
+
+        let mut renderer =
+            pollster::block_on(Renderer::new(window.clone())).expect("renderer init");
+        renderer.load_world(&world);
+
         self.window = Some(window);
         self.renderer = Some(renderer);
     }
@@ -78,8 +128,9 @@ fn main() -> Result<()> {
         env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn"),
     )
     .init();
+    let args = Args::parse();
     let event_loop = EventLoop::new()?;
-    let mut app = App::default();
+    let mut app = App::new(args);
     event_loop.run_app(&mut app)?;
     Ok(())
 }

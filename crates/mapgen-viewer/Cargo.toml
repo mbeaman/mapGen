@@ -14,8 +14,12 @@ path = "src/bin/native.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+clap = { workspace = true }
 log = "0.4"
 wgpu = "29"
 winit = "0.30"
 pollster = "0.4"
 env_logger = "0.11"
+bytemuck = { version = "1", features = ["derive"] }
+mapgen-core = { path = "../mapgen-core" }
+mapgen-world = { path = "../mapgen-world" }

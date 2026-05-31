@@ -3,14 +3,20 @@
 //! See `docs/adr/0002-live-3d-explorer.md` for architectural decisions,
 //! and `docs/SESSION.md` "Currently in flight" for the active stage.
 //!
-//! Stage 0a: native-only substrate. The [`Renderer`] owns a `wgpu::Surface`
-//! plus its device/queue/config, and renders a single clear pass to a
-//! parchment-coloured background. Stages 0b/0c add the web target and
-//! actual world geometry.
+//! Stage 0c.1: native-only substrate plus flat-coloured world rendering.
+//! The [`Renderer`] owns a `wgpu::Surface` plus its device/queue/config; a
+//! [`WorldScene`](crate::scene::WorldScene) is loaded via
+//! [`Renderer::load_world`] and drawn inside the same render pass that
+//! clears the framebuffer to a parchment tone. Stage 0c.2 adds an orbit
+//! camera with mouse/keyboard input.
+
+mod scene;
 
 use std::sync::Arc;
 
 use anyhow::Result;
+use mapgen_core::world_data::WorldData;
+use scene::WorldScene;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
@@ -29,6 +35,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize<u32>,
+    scene: Option<WorldScene>,
 }
 
 impl Renderer {
@@ -88,7 +95,12 @@ impl Renderer {
             queue,
             config,
             size,
+            scene: None,
         })
+    }
+
+    pub fn load_world(&mut self, world: &WorldData) {
+        self.scene = Some(WorldScene::build(&self.device, &self.config, world));
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
@@ -133,10 +145,10 @@ impl Renderer {
 
         {
             // Parchment tone — a nod to ornate_antique's base background
-            // so even the empty Stage 0a frame hints at where this is
-            // going. Stage 5 replaces this with a real paper texture.
-            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear pass"),
+            // so even an empty frame hints at where this is going. Stage 5
+            // will replace this with a real paper texture.
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("clear + world pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
@@ -156,6 +168,9 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            if let Some(scene) = self.scene.as_ref() {
+                scene.draw(&mut rpass);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

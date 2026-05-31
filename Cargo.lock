@@ -1596,8 +1596,12 @@ name = "mapgen-viewer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
+ "clap",
  "env_logger",
  "log",
+ "mapgen-core",
+ "mapgen-world",
  "pollster",
  "wgpu",
  "winit",
