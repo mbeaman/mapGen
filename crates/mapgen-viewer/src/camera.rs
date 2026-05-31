@@ -85,6 +85,25 @@ impl OrbitCamera {
         self.aspect = aspect.max(0.01);
     }
 
+    /// Override the auto-framed pose. `distance_scale` multiplies the
+    /// fit-world distance (1.0 = unchanged, < 1.0 = closer, > 1.0 =
+    /// farther). Updates `home` so subsequent [`reset`](Self::reset)
+    /// returns to the overridden pose. Used by
+    /// [`crate::screenshot`] to produce arbitrary stills without
+    /// driving input.
+    pub(crate) fn with_pose(mut self, yaw: f32, pitch: f32, distance_scale: f32) -> Self {
+        self.yaw = yaw;
+        self.pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
+        self.distance *= distance_scale.max(0.01);
+        self.home = HomePose {
+            target: self.target,
+            distance: self.distance,
+            yaw: self.yaw,
+            pitch: self.pitch,
+        };
+        self
+    }
+
     pub(crate) fn reset(&mut self) {
         self.target = self.home.target;
         self.distance = self.home.distance;

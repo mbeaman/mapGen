@@ -1250,6 +1250,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "image"
+version = "0.25.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85ab80394333c02fe689eaf900ab500fbd0c2213da414687ebf995a65d5a6104"
+dependencies = [
+ "bytemuck",
+ "byteorder-lite",
+ "moxcms",
+ "num-traits",
+ "png",
+]
+
+[[package]]
 name = "image-webp"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1606,6 +1619,7 @@ dependencies = [
  "clap",
  "env_logger",
  "glam",
+ "image",
  "log",
  "mapgen-core",
  "mapgen-world",
@@ -1685,6 +1699,16 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "moxcms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
 ]
 
 [[package]]
@@ -2382,6 +2406,12 @@ dependencies = [
  "tempfile",
  "unarray",
 ]
+
+[[package]]
+name = "pxfm"
+version = "0.1.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0c5ccf5294c6ccd63a74f1565028353830a9c2f5eb0c682c355c471726a6e3f"
 
 [[package]]
 name = "quick-error"

@@ -24,3 +24,6 @@ bytemuck = { version = "1", features = ["derive"] }
 glam = "0.30"
 mapgen-core = { path = "../mapgen-core" }
 mapgen-world = { path = "../mapgen-world" }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }

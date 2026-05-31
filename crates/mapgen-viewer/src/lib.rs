@@ -20,6 +20,9 @@
 
 mod camera;
 mod scene;
+mod screenshot;
+
+pub use screenshot::{screenshot, screenshot_with, Pose};
 
 use std::sync::Arc;
 
