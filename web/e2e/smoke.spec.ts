@@ -66,7 +66,10 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   await expect(svg).toBeVisible({ timeout: 30_000 });
   await expect(generate).toBeEnabled({ timeout: 30_000 });
 
-  // Coarse + planet scale → a fast planisphere. Selecting the scale regenerates.
+  // Seed 4 at 2000 cells: its largest continent "Rio" is ~1/10 of the planet, so
+  // the drill must depth-size it to level 2 (see continents_spec — a level past
+  // L1 from one root click is reachable ONLY via the continent re-center branch).
+  await page.locator("#seed").fill("4");
   await page.locator("#cells").fill("2000");
   await page.locator("#scale").selectOption("planet");
 
@@ -84,15 +87,19 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   // The planisphere doesn't animate borders, so the time-slider stays hidden.
   await expect(page.locator("#timeslider")).toHaveClass(/hidden/);
 
-  // Click the map to drill in. At the root the click snaps to the clicked
-  // continent (an async continentAt round-trip → re-centered, depth sized by the
-  // landmass), or grid-drills if it lands on sea — either way it refines to some
-  // level below the planet. "refined in …s" is set only by the refine-success
-  // path, so it proves the worker returned a real continental sector — not that
-  // the breadcrumb optimistically rendered a level.
-  await page.locator("#map").click();
+  // Click the engraved "RIO" continent label (its position is the landmass
+  // centroid). The root click snaps to that continent via an async continentAt
+  // round-trip, re-centers the drill on its mass and sizes the depth → level 2.
+  // Crucially, a grid-drill (the ocean fallback, or the old synchronous drill)
+  // always yields L1, so asserting a level PAST L1 proves continent_at resolved
+  // the landmass and the re-center/depth-sizing actually fired. (mouse.click on
+  // the label's box avoids SVG hit-test interception.)
+  const rio = page.locator("#map-content").getByText("RIO", { exact: true });
+  await expect(rio).toBeVisible({ timeout: 30_000 });
+  const box = (await rio.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(status).toContainText("refined in", { timeout: 30_000 });
-  await expect(breadcrumb).toContainText(/L[1-6]/);
+  await expect(breadcrumb).toContainText(/L[2-6]/);
   await expect(breadcrumb.getByRole("button", { name: "Planet" })).toBeVisible();
 });
 

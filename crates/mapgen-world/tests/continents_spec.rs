@@ -353,3 +353,50 @@ fn elf_landmass() -> WorldData {
 fn two_culture_landmass(culture_id: [u16; 6]) -> WorldData {
     landmass6(vec![Race::Dwarf, Race::Elf], culture_id)
 }
+
+/// A 100-cell line with TWO significant landmasses separated by sea: body A =
+/// cells 0..40 (40 cells), sea 40..55, body B = cells 55..100 (45 cells). Both
+/// clear the 2.5% threshold, so the right-body selection is exercised.
+fn two_landmass_world() -> WorldData {
+    let mut world = WorldData {
+        meta: WorldMeta::new(0),
+        mesh: MeshData::default(),
+        terrain: TerrainData::default(),
+        ..Default::default()
+    };
+    let n = 100;
+    world.mesh.sites = (0..n).map(|i| [i as f32, 0.0]).collect();
+    world.mesh.neighbors = (0..n)
+        .map(|i| {
+            let mut ns = Vec::new();
+            if i > 0 {
+                ns.push((i - 1) as u32);
+            }
+            if i + 1 < n {
+                ns.push((i + 1) as u32);
+            }
+            ns
+        })
+        .collect();
+    world.mesh.width = n as f32;
+    world.mesh.height = 1.0;
+    let mut elev = vec![-1.0f32; n];
+    (0..40).for_each(|i| elev[i] = 1.0); // body A (40 cells)
+    (55..100).for_each(|i| elev[i] = 1.0); // body B (45 cells)
+    world.terrain.elevation = elev;
+    world
+}
+
+#[test]
+fn continent_at_picks_the_body_containing_the_click_not_the_largest() {
+    let world = two_landmass_world();
+    let a = continent_at(&world, 20.0, 0.0).expect("click over body A");
+    let b = continent_at(&world, 80.0, 0.0).expect("click over body B");
+    // Distinct landmasses resolve to distinct centroid + size. A body-selection
+    // bug that returned the largest/first body would collapse both clicks onto
+    // body B's centroid (the larger one sorts first).
+    assert_eq!(a.cell_count, 40);
+    assert!((a.cx - 19.5).abs() < 1e-3, "body A centroid was {}", a.cx);
+    assert_eq!(b.cell_count, 45);
+    assert!((b.cx - 77.0).abs() < 1e-3, "body B centroid was {}", b.cx);
+}
