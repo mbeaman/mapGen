@@ -39,10 +39,19 @@ export interface Work {
 
 export type Scale = "continent" | "planet";
 
+/// Mirrors the Rust `ContinentInfo` — the landmass under a clicked point.
+export interface ContinentInfo {
+  cx: number;
+  cy: number;
+  cell_count: number;
+  total_cells: number;
+}
+
 export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string; scale: Scale }
   | { type: "render"; style: string }
   | { type: "refine"; level: number; sx: number; sy: number; style: string }
+  | { type: "continentAt"; x: number; y: number }
   | { type: "renderYear"; style: string; year: number }
   | { type: "narrate"; event: string; voice: string; sidecar: string };
 
@@ -60,6 +69,7 @@ export type WorkerResponse =
     }
   | { type: "rendered"; svg: string; ms: number }
   | { type: "refined"; svg: string; level: number; sx: number; sy: number; ms: number }
+  | { type: "continentInfo"; info: ContinentInfo | null; x: number; y: number }
   | { type: "yearFrame"; svg: string; year: number }
   | { type: "chronicle"; work: Work }
   | { type: "error"; message: string };
@@ -130,6 +140,11 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         sy: msg.sy,
         ms: performance.now() - t0,
       });
+    } else if (msg.type === "continentAt") {
+      // Point→landmass for the continent-aware drill. Always against the root
+      // world (drill snapping only fires at the root). Cheap; no busy state.
+      const info = root ? (root.continentAt(msg.x, msg.y) as ContinentInfo | null) : null;
+      post({ type: "continentInfo", info, x: msg.x, y: msg.y });
     } else if (msg.type === "render") {
       const v = view();
       if (!v) {

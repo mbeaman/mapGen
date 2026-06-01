@@ -79,6 +79,28 @@ impl WorldHandle {
         })
     }
 
+    /// The major landmass under world-space point `(x, y)` — backs the
+    /// continent-aware drill. Returns `{cx, cy, cell_count, total_cells}` (the
+    /// landmass centroid + size + world size, so the UI can re-center the drill
+    /// on the continent's mass and size its depth), or `null` when the point is
+    /// over sea or a sub-threshold speck (the caller then grid-drills the click).
+    /// Recomputed per call — cheap (`O(cells)`), no persisted state.
+    #[wasm_bindgen(js_name = continentAt)]
+    pub fn continent_at(&self, x: f32, y: f32) -> Result<JsValue, JsError> {
+        match mapgen_world::naming::continent_at(&self.inner, x, y) {
+            Some(hit) => {
+                let info = ContinentInfo {
+                    cx: hit.cx,
+                    cy: hit.cy,
+                    cell_count: hit.cell_count,
+                    total_cells: self.inner.mesh.cell_count() as u32,
+                };
+                serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
+            }
+            None => Ok(JsValue::NULL),
+        }
+    }
+
     /// Render the world to an SVG string. `style` is one of
     /// `"greyscale"`, `"biomes"`, `"cultures"`, or `"ornate"`
     /// (aliases accepted — see `Style::from_str`). Cheap (~1 s);
@@ -121,6 +143,19 @@ impl WorldHandle {
             None => Vec::new(),
         }
     }
+}
+
+/// The continent under a clicked point, handed to JS for the drill. A plain
+/// serializable struct (survives the worker→main structured clone).
+#[derive(Serialize)]
+struct ContinentInfo {
+    /// World-space centroid of the landmass (the drill re-centers here).
+    cx: f32,
+    cy: f32,
+    /// Cells in the landmass / in the whole world — the UI sizes drill depth
+    /// from the ratio.
+    cell_count: u32,
+    total_cells: u32,
 }
 
 /// Per-step progress descriptor handed back to JS. A plain serializable

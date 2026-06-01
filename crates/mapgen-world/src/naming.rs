@@ -259,6 +259,61 @@ fn centroid(mesh: &MeshData, cells: &[usize]) -> [f32; 2] {
     [sx / k, sy / k]
 }
 
+/// The major landmass under a world-space point, for the continent-aware drill.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContinentHit {
+    /// World-space centroid of the landmass (the drill re-centers here).
+    pub cx: f32,
+    pub cy: f32,
+    /// Cells in the landmass — the UI sizes the drill depth from this.
+    pub cell_count: u32,
+}
+
+/// The major landmass under world-space point `(x, y)`, or `None` when the point
+/// is over sea or a sub-threshold speck. Re-runs the same land flood-fill + size
+/// threshold the naming stage uses (`connected_bodies` + `MIN_CONTINENT_DIVISOR`),
+/// so "a continent" means exactly what the planisphere labels — a click on a
+/// labelled continent always resolves to it. Recomputed per click (the drill is
+/// the only consumer), so nothing is persisted. `O(n)` over the mesh.
+pub fn continent_at(world: &WorldData, x: f32, y: f32) -> Option<ContinentHit> {
+    let mesh = &world.mesh;
+    let n = mesh.cell_count();
+    if n == 0 {
+        return None;
+    }
+    let elev = &world.terrain.elevation;
+    let is_land = |i: usize| elev.get(i).copied().unwrap_or(0.0) > 0.0;
+
+    // Nearest cell-site to the point (the Voronoi cell it falls in).
+    let dist2 = |c: usize| {
+        let p = mesh.sites[c];
+        let (dx, dy) = (p[0] - x, p[1] - y);
+        dx * dx + dy * dy
+    };
+    let cell = (0..n).min_by(|&a, &b| {
+        dist2(a)
+            .partial_cmp(&dist2(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    if !is_land(cell) {
+        return None; // clicked the sea
+    }
+
+    // The land body containing the cell, then the same significance threshold.
+    let body = connected_bodies(mesh, is_land)
+        .into_iter()
+        .find(|b| b.contains(&cell))?;
+    if body.len() * MIN_CONTINENT_DIVISOR < n {
+        return None; // a speck island, not a continent — let the caller grid-drill
+    }
+    let c = centroid(mesh, &body);
+    Some(ContinentHit {
+        cx: c[0],
+        cy: c[1],
+        cell_count: body.len() as u32,
+    })
+}
+
 /// Land cells adjacent to a sea body — the body's coast — in first-seen order
 /// (deterministic). Used to ground an ocean's name in the cultures on its shore.
 fn coastal_land(

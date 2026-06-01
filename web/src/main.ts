@@ -1,7 +1,17 @@
 import "./style.css";
 import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, toggleLayer } from "./layers";
 import { PanZoom } from "./panzoom";
-import { ancestors, childSectorAt, crumbLabel, navStyle, ROOT, sectorRect, type Sector } from "./sector";
+import {
+  ancestors,
+  childSectorAt,
+  continentDrillLevel,
+  crumbLabel,
+  navStyle,
+  ROOT,
+  sectorAt,
+  sectorRect,
+  type Sector,
+} from "./sector";
 import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -350,6 +360,20 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         "ok",
       );
       break;
+    case "continentInfo": {
+      // The async answer to a root click. Re-center the drill on the clicked
+      // continent's mass and size its depth; ignore if the nav moved or a refine
+      // started meanwhile. Over sea / a speck (info null), grid-drill the click.
+      if (busy || !hasWorld || nav.level !== 0) break;
+      if (msg.info) {
+        const level = continentDrillLevel(msg.info.cell_count, msg.info.total_cells, MAX_LEVEL);
+        navTo(sectorAt(msg.info.cx, msg.info.cy, level, worldW, worldH));
+      } else {
+        const child = childSectorAt(msg.x, msg.y, nav.level, worldW, worldH, MAX_LEVEL);
+        if (child) navTo(child);
+      }
+      break;
+    }
     case "yearFrame":
       // A time-slider frame: swap the SVG only (no refit/status churn while
       // scrubbing), then send the latest pending year if the user moved on.
@@ -506,12 +530,18 @@ const navTo = (target: Sector) => {
   requestRefine();
 };
 
-// Drill into the child sector beneath a world-space point.
+// Drill beneath a world-space point. At the root, snap to the clicked
+// *continent* — the worker answers `continentAt` async, and `continentInfo`
+// re-centers + sizes the drill on its mass (so clicking a continent's edge no
+// longer lands you in a half-ocean quadrant). Deeper in, grid-drill the child.
 const drillAt = (wx: number, wy: number) => {
   if (busy || !hasWorld) return;
+  if (nav.level === 0) {
+    send({ type: "continentAt", x: wx, y: wy });
+    return;
+  }
   const child = childSectorAt(wx, wy, nav.level, worldW, worldH, MAX_LEVEL);
-  if (!child) return;
-  navTo(child);
+  if (child) navTo(child);
 };
 
 // Treat a near-stationary pointer press as a click (drill in); a drag pans.

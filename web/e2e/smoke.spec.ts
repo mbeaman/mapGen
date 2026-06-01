@@ -84,12 +84,15 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   // The planisphere doesn't animate borders, so the time-slider stays hidden.
   await expect(page.locator("#timeslider")).toHaveClass(/hidden/);
 
-  // Click the map to drill one level in. "refined in …s" is set only by the
-  // refine-success path, so it proves the worker returned a real continental
-  // sector — not that the breadcrumb optimistically rendered "L1".
+  // Click the map to drill in. At the root the click snaps to the clicked
+  // continent (an async continentAt round-trip → re-centered, depth sized by the
+  // landmass), or grid-drills if it lands on sea — either way it refines to some
+  // level below the planet. "refined in …s" is set only by the refine-success
+  // path, so it proves the worker returned a real continental sector — not that
+  // the breadcrumb optimistically rendered a level.
   await page.locator("#map").click();
   await expect(status).toContainText("refined in", { timeout: 30_000 });
-  await expect(breadcrumb).toContainText("L1");
+  await expect(breadcrumb).toContainText(/L[1-6]/);
   await expect(breadcrumb.getByRole("button", { name: "Planet" })).toBeVisible();
 });
 

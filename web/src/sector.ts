@@ -25,9 +25,24 @@ export function sectorRect(s: Sector, worldW: number, worldH: number): Rect {
   return { x0: s.sx * w, y0: s.sy * h, w, h };
 }
 
+/// The sector at an absolute `level` that contains world-space point `(wx, wy)`.
+/// Coordinates are clamped into range, so an out-of-bounds point is harmless.
+export function sectorAt(
+  wx: number,
+  wy: number,
+  level: number,
+  worldW: number,
+  worldH: number,
+): Sector {
+  const span = 2 ** level;
+  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
+  const sx = clamp(Math.floor(wx / (worldW / span)), span - 1);
+  const sy = clamp(Math.floor(wy / (worldH / span)), span - 1);
+  return { level, sx, sy };
+}
+
 /// The child sector one level finer (capped at `maxLevel`) that contains the
 /// world-space point `(wx, wy)`. Returns `null` if already at `maxLevel`.
-/// Coordinates are clamped into range, so an out-of-bounds click is harmless.
 export function childSectorAt(
   wx: number,
   wy: number,
@@ -37,12 +52,21 @@ export function childSectorAt(
   maxLevel: number,
 ): Sector | null {
   if (fromLevel >= maxLevel) return null;
-  const level = fromLevel + 1;
-  const span = 2 ** level;
-  const clamp = (v: number, hi: number) => Math.max(0, Math.min(hi, v));
-  const sx = clamp(Math.floor(wx / (worldW / span)), span - 1);
-  const sy = clamp(Math.floor(wy / (worldH / span)), span - 1);
-  return { level, sx, sy };
+  return sectorAt(wx, wy, fromLevel + 1, worldW, worldH);
+}
+
+/// Quadtree level to drill to for a continent occupying `cellCount` of
+/// `totalCells`. A sector at level L is `1/4^L` of the world, so matching the
+/// continent's share gives `L ≈ ½·log2(total/count)`. Clamped to `[1, maxLevel]`
+/// — always at least one level in (a click should zoom), never past the cap.
+export function continentDrillLevel(
+  cellCount: number,
+  totalCells: number,
+  maxLevel: number,
+): number {
+  const ratio = totalCells / Math.max(1, cellCount);
+  const level = Math.round(0.5 * Math.log2(ratio));
+  return Math.max(1, Math.min(maxLevel, level));
 }
 
 /// Breadcrumb chain from the world root down to and including `s` (one entry per

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   ancestors,
   childSectorAt,
+  continentDrillLevel,
   crumbLabel,
   navStyle,
   ROOT,
+  sectorAt,
   sectorRect,
   styleForStage,
 } from "./sector";
@@ -117,6 +119,38 @@ describe("crumbLabel", () => {
     expect(crumbLabel(s, false)).toBe("L2 (3,1)");
     expect(crumbLabel(s, true)).toBe("L2 (3,1)");
     expect(crumbLabel({ level: 1, sx: 1, sy: 0 }, true)).toBe("L1 (1,0)");
+  });
+});
+
+describe("sectorAt", () => {
+  it("is the absolute level-L sector containing a point", () => {
+    // Level 1, span 2: (1500,100) → column 1, row 0.
+    expect(sectorAt(1500, 100, 1, W, H)).toEqual({ level: 1, sx: 1, sy: 0 });
+    // Level 3, span 8, cw=256 ch=160: (100,100) → (0,0).
+    expect(sectorAt(100, 100, 3, W, H)).toEqual({ level: 3, sx: 0, sy: 0 });
+  });
+
+  it("agrees with childSectorAt for a one-level step", () => {
+    // childSectorAt is the +1 special case of sectorAt.
+    expect(sectorAt(1500, 100, 1, W, H)).toEqual(childSectorAt(1500, 100, 0, W, H, 6));
+  });
+
+  it("clamps an out-of-bounds point into range", () => {
+    expect(sectorAt(99999, -10, 2, W, H)).toEqual({ level: 2, sx: 3, sy: 0 });
+  });
+});
+
+describe("continentDrillLevel", () => {
+  it("sizes the drill from the continent's share of the world", () => {
+    // A continent that's 1/16 of the cells fits a level-2 sector (4^2 = 16).
+    expect(continentDrillLevel(1000, 16_000, 6)).toBe(2);
+    expect(continentDrillLevel(1000, 4_000, 6)).toBe(1); // 1/4 → level 1
+    expect(continentDrillLevel(1000, 64_000, 6)).toBe(3); // 1/64 → level 3
+  });
+
+  it("never drills shallower than 1 (always zoom in) or past maxLevel", () => {
+    expect(continentDrillLevel(9000, 10_000, 6)).toBe(1); // near-whole-world → still zoom in one
+    expect(continentDrillLevel(1, 1_000_000, 6)).toBe(6); // a speck-sized ratio clamps to maxLevel
   });
 });
 

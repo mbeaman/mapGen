@@ -26,7 +26,7 @@ use mapgen_core::entities::{
 use mapgen_core::{MeshData, Stage, StageRng, TerrainData, WorldData, WorldMeta};
 use mapgen_world::{
     generate_full,
-    naming::{self, connected_bodies, dominant_culture, NamingParams},
+    naming::{self, connected_bodies, continent_at, dominant_culture, NamingParams},
     GenerateParams,
 };
 
@@ -114,6 +114,70 @@ fn dominant_culture_picks_the_strict_majority_and_handles_unowned() {
     // No owned cell in the set → None (caller falls back to language 0).
     assert_eq!(dominant_culture(&[3], &culture_id), None);
     assert_eq!(dominant_culture(&[], &culture_id), None);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// continent_at — the continent-aware drill's point→landmass query.
+// ──────────────────────────────────────────────────────────────────────
+
+/// A 100-cell line: cells 0..50 are one big landmass, 50..99 sea, cell 99 a
+/// lone speck island. Sites at `[i, 0]`; linear neighbour chain.
+fn linear_land_sea_world() -> WorldData {
+    let mut world = WorldData {
+        meta: WorldMeta::new(0),
+        mesh: MeshData::default(),
+        terrain: TerrainData::default(),
+        ..Default::default()
+    };
+    let n = 100;
+    world.mesh.sites = (0..n).map(|i| [i as f32, 0.0]).collect();
+    world.mesh.neighbors = (0..n)
+        .map(|i| {
+            let mut ns = Vec::new();
+            if i > 0 {
+                ns.push((i - 1) as u32);
+            }
+            if i + 1 < n {
+                ns.push((i + 1) as u32);
+            }
+            ns
+        })
+        .collect();
+    world.mesh.width = n as f32;
+    world.mesh.height = 1.0;
+    let mut elev = vec![-1.0f32; n]; // sea by default
+    (0..50).for_each(|i| elev[i] = 1.0); // big landmass
+    elev[99] = 1.0; // a 1-cell speck
+    world.terrain.elevation = elev;
+    world
+}
+
+#[test]
+fn continent_at_returns_the_clicked_landmass_centroid_and_size() {
+    let world = linear_land_sea_world();
+    // A point over the big landmass (cells 0..50) resolves to it.
+    let hit = continent_at(&world, 25.0, 0.0).expect("point over land hits a continent");
+    assert_eq!(hit.cell_count, 50);
+    // Centroid is the mean of x = 0..49 = 24.5 (re-center target).
+    assert!((hit.cx - 24.5).abs() < 1e-3, "centroid x was {}", hit.cx);
+    assert!((hit.cy - 0.0).abs() < 1e-3);
+}
+
+#[test]
+fn continent_at_is_none_over_sea_and_over_a_speck() {
+    let world = linear_land_sea_world();
+    // Over open sea (cells 50..99) → None: the caller grid-drills instead.
+    assert_eq!(
+        continent_at(&world, 75.0, 0.0),
+        None,
+        "sea is not a continent"
+    );
+    // Over the 1-cell speck at x=99 (1 of 100 cells, < 2.5%) → None.
+    assert_eq!(
+        continent_at(&world, 99.0, 0.0),
+        None,
+        "a speck is not a continent"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────
