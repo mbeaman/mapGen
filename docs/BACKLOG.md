@@ -59,9 +59,11 @@ scale (zoom out)" below), in priority order:
    clicked landmass (`continent_at` → `continentAt` wasm query → re-center +
    depth-size), instead of the quadtree quadrant. Re-center, not tight bbox
    framing (entry below explains why framing was deliberately skipped).
-4. **Planet-render perf budget (do first).** Add a `Style::Planet` row to
-   `crates/mapgen-world/examples/perf_baseline.rs` (it budgets ornate render +
-   `refine_sector` today) and to `docs/perf_baseline.md`.
+4. ~~**Planet-render perf budget.**~~ DONE 2026-06-01 — `PLANET_RENDER_BASELINE`
+   row in `perf_baseline.rs` + `docs/perf_baseline.md` (18k-cell planisphere
+   renders in ~13 ms, budget 20 ms; cheapest render path despite most cells).
+   **Increment 2's tractable items are now all shipped** — what remains is the
+   "harder / later" set below.
 5. **Harder / later:** edge projection + distortion for a true globe feel;
    inter-continental society & history (trade, migration) — society is generated
    per-world today; planet-scale history viz (the time-slider is hidden at planet
