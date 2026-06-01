@@ -56,6 +56,24 @@ export function ancestors(s: Sector): Sector[] {
   return out;
 }
 
+/// Breadcrumb label for a sector, given the generation scale. Only the *root*
+/// changes with scale — a continent world's root is "World", a planet's root is
+/// "Planet" (the planisphere). Deeper crumbs stay generic `L<level> (sx,sy)` in
+/// both scales: a quadtree quadrant isn't a continent (32 plates routinely
+/// bisect a landmass), so naming the landmasses is a separate task.
+export function crumbLabel(s: Sector, planet: boolean): string {
+  if (s.level === 0) return planet ? "Planet" : "World";
+  return `L${s.level} (${s.sx},${s.sy})`;
+}
+
+/// The style to render at a given nav level for the active scale. At the planet
+/// root we always draw the planisphere overview (`"planet"`), whatever style the
+/// user picked for the continental view; everywhere else the user's style wins.
+/// Continent scale never substitutes a style.
+export function navStyle(level: number, planet: boolean, userStyle: string): string {
+  return planet && level === 0 ? "planet" : userStyle;
+}
+
 export type StageStyle = "greyscale" | "biomes" | "cultures";
 
 /// Richest style whose inputs exist by a given build stage (used to render the

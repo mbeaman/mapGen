@@ -1,8 +1,8 @@
 import "./style.css";
 import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, toggleLayer } from "./layers";
 import { PanZoom } from "./panzoom";
-import { ancestors, childSectorAt, ROOT, sectorRect, type Sector } from "./sector";
-import type { WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
+import { ancestors, childSectorAt, crumbLabel, navStyle, ROOT, sectorRect, type Sector } from "./sector";
+import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -17,6 +17,7 @@ const cellsLabel = $<HTMLSpanElement>("cells-label");
 const nationsInput = $<HTMLInputElement>("nations");
 const nationsLabel = $<HTMLSpanElement>("nations-label");
 const styleSelect = $<HTMLSelectElement>("style");
+const scaleSelect = $<HTMLSelectElement>("scale");
 const generateBtn = $<HTMLButtonElement>("generate");
 const dlSvgBtn = $<HTMLButtonElement>("dl-svg");
 const dlPngBtn = $<HTMLButtonElement>("dl-png");
@@ -67,6 +68,14 @@ let nav: Sector = { ...ROOT };
 // GenerateParams dims). Sector rectangles are computed against it.
 let worldW = 2048;
 let worldH = 1280;
+// Scale of the *currently generated* world. In planet scale the root (level 0)
+// is the planisphere overview; drilling refines a continental sector. Set at
+// generate time, so it always matches the world the worker holds.
+let planetScale = false;
+
+// The style to send for the current nav level: the planisphere at the planet
+// root, the user's chosen style everywhere else (see ./sector navStyle).
+const effectiveStyle = (): string => navStyle(nav.level, planetScale, currentState().style);
 
 // ---- History time-slider (Phase 7+) ----
 // `[start, end]` years the map changed across, or empty if borders never moved.
@@ -93,7 +102,10 @@ interface MapState {
   cells: number;
   nations: number;
   style: string;
+  scale: Scale;
 }
+
+const asScale = (v: string | null): Scale => (v === "planet" ? "planet" : "continent");
 
 const readState = (): MapState => {
   const p = new URLSearchParams(location.search);
@@ -102,6 +114,7 @@ const readState = (): MapState => {
     cells: Number(p.get("cells") ?? cellsInput.value),
     nations: Number(p.get("nations") ?? nationsInput.value),
     style: p.get("style") ?? styleSelect.value,
+    scale: asScale(p.get("scale") ?? scaleSelect.value),
   };
 };
 
@@ -111,6 +124,7 @@ const writeState = (s: MapState) => {
     cells: String(s.cells),
     nations: String(s.nations),
     style: s.style,
+    scale: s.scale,
   });
   history.replaceState(null, "", `?${p}`);
 };
@@ -120,6 +134,7 @@ const currentState = (): MapState => ({
   cells: Number(cellsInput.value),
   nations: Number(nationsInput.value),
   style: styleSelect.value,
+  scale: asScale(scaleSelect.value),
 });
 
 const applyStateToControls = (s: MapState) => {
@@ -128,6 +143,7 @@ const applyStateToControls = (s: MapState) => {
   if (Number.isFinite(s.nations)) nationsInput.value = String(s.nations);
   const known = ["ornate", "biomes", "cultures", "greyscale"];
   if (known.includes(s.style)) styleSelect.value = s.style;
+  scaleSelect.value = s.scale;
   syncLabels();
 };
 
@@ -327,7 +343,9 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       updateBreadcrumb();
       setStatus(
         msg.level === 0
-          ? "Whole world."
+          ? planetScale
+            ? "Planet."
+            : "Whole world."
           : `Sector L${msg.level} (${msg.sx},${msg.sy}) · refined in ${(msg.ms / 1000).toFixed(2)}s`,
         "ok",
       );
@@ -370,6 +388,7 @@ const doGenerate = () => {
   setExportEnabled(false);
   hasWorld = false;
   nav = { ...ROOT };
+  planetScale = s.scale === "planet";
   historyYears = [];
   updateBreadcrumb();
   narrateBtn.disabled = true;
@@ -377,9 +396,11 @@ const doGenerate = () => {
   stopReplay();
   frames = [];
   scrubberEl.classList.add("hidden");
-  setStatus(`Generating seed ${s.seed}…`, "busy");
+  setStatus(`Generating ${planetScale ? "planet" : "world"} seed ${s.seed}…`, "busy");
   showOverlay("Generating");
-  send({ type: "generate", ...s });
+  // Final render at the root uses the effective style ("planet" at a planet
+  // root); the per-stage build-up frames pick their own style in the worker.
+  send({ type: "generate", ...s, style: effectiveStyle() });
 };
 
 // ---- Narration (Phase 5, via the native sidecar) ----
@@ -422,7 +443,7 @@ const doRestyle = () => {
   setBusy(true);
   setStatus(`Re-styling as ${s.style}…`, "busy");
   showOverlay("Rendering");
-  send({ type: "render", style: s.style });
+  send({ type: "render", style: effectiveStyle() });
 };
 
 // ---- Drill-in navigation (Phase 7) ----
@@ -439,7 +460,7 @@ const updateBreadcrumb = () => {
     }
     const crumb = document.createElement("button");
     crumb.className = "crumb";
-    crumb.textContent = a.level === 0 ? "World" : `L${a.level} (${a.sx},${a.sy})`;
+    crumb.textContent = crumbLabel(a, planetScale);
     if (a.level === nav.level) {
       crumb.classList.add("current");
       crumb.disabled = true;
@@ -462,12 +483,14 @@ const requestRefine = () => {
   narrateBtn.disabled = nav.level !== 0; // a sector has no chronicle of its own
   setStatus(
     nav.level === 0
-      ? "Returning to the whole world…"
+      ? planetScale
+        ? "Returning to the planet…"
+        : "Returning to the whole world…"
       : `Refining sector L${nav.level} (${nav.sx},${nav.sy})…`,
     "busy",
   );
   updateBreadcrumb();
-  send({ type: "refine", level: nav.level, sx: nav.sx, sy: nav.sy, style: currentState().style });
+  send({ type: "refine", level: nav.level, sx: nav.sx, sy: nav.sy, style: effectiveStyle() });
 };
 
 // Navigate to an explicit sector (breadcrumb / up). Re-refines from the seed —
@@ -510,7 +533,9 @@ mapEl.addEventListener("pointerup", (e) => {
 // Shown only at the world scale (history is world-wide) and only when borders
 // actually moved. Drilling into a sector hides it (sectors have no timeline).
 const refreshTimeslider = () => {
-  const show = hasWorld && nav.level === 0 && historyYears.length === 2;
+  // Planet scale draws the planisphere, which doesn't animate political borders,
+  // so the time-slider is world-scale only (see BACKLOG: planet-scale history).
+  const show = hasWorld && !planetScale && nav.level === 0 && historyYears.length === 2;
   timesliderEl.classList.toggle("hidden", !show);
   if (!show) return;
   const [start, end] = historyYears;
@@ -532,7 +557,7 @@ const requestYear = (y: number) => {
     return;
   }
   yearBusy = true;
-  send({ type: "renderYear", style: currentState().style, year: y });
+  send({ type: "renderYear", style: effectiveStyle(), year: y });
 };
 
 timescrubInput.addEventListener("input", () => {
@@ -652,6 +677,19 @@ diceBtn.addEventListener("click", () => {
 generateBtn.addEventListener("click", doGenerate);
 narrateBtn.addEventListener("click", doNarrate);
 styleSelect.addEventListener("change", doRestyle);
+// Scale changes the generation params (continent vs planet), so it regenerates.
+// If a generation is already in flight, doGenerate would silently no-op (its
+// `busy` guard) while the native <select> has already moved — leaving the
+// control disagreeing with the rendered world and poisoning the permalink
+// (currentState reads the select). Revert the select to the in-flight scale so
+// it never diverges.
+scaleSelect.addEventListener("change", () => {
+  if (busy) {
+    scaleSelect.value = planetScale ? "planet" : "continent";
+    return;
+  }
+  doGenerate();
+});
 dlSvgBtn.addEventListener("click", downloadSvg);
 dlPngBtn.addEventListener("click", () => void downloadPng());
 shareBtn.addEventListener("click", () => void copyLink());

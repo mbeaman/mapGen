@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ancestors, childSectorAt, ROOT, sectorRect, styleForStage } from "./sector";
+import {
+  ancestors,
+  childSectorAt,
+  crumbLabel,
+  navStyle,
+  ROOT,
+  sectorRect,
+  styleForStage,
+} from "./sector";
 
 const W = 2048;
 const H = 1280;
@@ -92,5 +100,35 @@ describe("styleForStage", () => {
     expect(styleForStage("biomes")).toBe("biomes");
     expect(styleForStage("cultures")).toBe("cultures");
     expect(styleForStage("history")).toBe("cultures");
+  });
+});
+
+describe("crumbLabel", () => {
+  it("names the root by scale — 'World' for a continent, 'Planet' for a planet", () => {
+    expect(crumbLabel(ROOT, false)).toBe("World");
+    expect(crumbLabel(ROOT, true)).toBe("Planet");
+  });
+
+  // A quadtree quadrant is NOT a continent (32 plates routinely bisect a
+  // landmass), so deeper crumbs stay generic in both scales — naming the
+  // landmasses is a separate task (grounded continent names).
+  it("labels deeper sectors generically, independent of scale", () => {
+    const s = { level: 2, sx: 3, sy: 1 };
+    expect(crumbLabel(s, false)).toBe("L2 (3,1)");
+    expect(crumbLabel(s, true)).toBe("L2 (3,1)");
+    expect(crumbLabel({ level: 1, sx: 1, sy: 0 }, true)).toBe("L1 (1,0)");
+  });
+});
+
+describe("navStyle", () => {
+  it("renders the planisphere only at the planet root, the chosen style elsewhere", () => {
+    // Planet root → the planisphere overview regardless of the picked style.
+    expect(navStyle(0, true, "ornate")).toBe("planet");
+    // Drill into the planet → the chosen continental style takes over.
+    expect(navStyle(1, true, "ornate")).toBe("ornate");
+    expect(navStyle(2, true, "biomes")).toBe("biomes");
+    // Continent scale never substitutes a style, not even at the root.
+    expect(navStyle(0, false, "ornate")).toBe("ornate");
+    expect(navStyle(0, false, "greyscale")).toBe("greyscale");
   });
 });

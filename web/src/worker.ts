@@ -37,8 +37,10 @@ export interface Work {
   written_year: number;
 }
 
+export type Scale = "continent" | "planet";
+
 export type WorkerRequest =
-  | { type: "generate"; seed: string; cells: number; nations: number; style: string }
+  | { type: "generate"; seed: string; cells: number; nations: number; style: string; scale: Scale }
   | { type: "render"; style: string }
   | { type: "refine"; level: number; sx: number; sy: number; style: string }
   | { type: "renderYear"; style: string; year: number }
@@ -83,7 +85,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       root = null;
       sector = null;
 
-      const gen = new Generation(BigInt(msg.seed), msg.cells, msg.nations);
+      // Planet scale runs the identical pipeline on the planet preset (wide 2:1
+      // globe, many plates → many continents); the worker stays style-agnostic,
+      // so the planisphere-vs-continental choice rides in on `msg.style` (the
+      // main thread resolves it via `navStyle`).
+      const gen =
+        msg.scale === "planet"
+          ? Generation.planet(BigInt(msg.seed), msg.cells, msg.nations)
+          : new Generation(BigInt(msg.seed), msg.cells, msg.nations);
       let frameCount = 0;
       for (;;) {
         const info = gen.step() as StageInfo | undefined;

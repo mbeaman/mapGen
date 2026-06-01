@@ -168,6 +168,21 @@ impl Generation {
         }
     }
 
+    /// Planet-scale generation: the same pipeline run with the planet preset
+    /// (`GenerateParams::planet` — a wider 2:1 aspect, 32 plates → many
+    /// continents), so `render("planet")` draws the zoomed-out planisphere and
+    /// `refineSector` drills into any continent. `cells`/`nations` come from the
+    /// UI sliders; the preset's dims and plate count define the globe.
+    #[wasm_bindgen(js_name = planet)]
+    pub fn planet(seed: u64, cells: usize, nations: usize) -> Generation {
+        let mut params = GenerateParams::planet(seed);
+        params.cell_count = cells;
+        params.nation_count = nations;
+        Generation {
+            inner: Pipeline::new(params),
+        }
+    }
+
     /// Advance one fine step (erosion reports per-iteration so it
     /// animates). Returns a `StageInfo` object, or `undefined` when done.
     pub fn step(&mut self) -> Result<JsValue, JsError> {
