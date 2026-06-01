@@ -563,9 +563,10 @@ mapEl.addEventListener("pointerup", (e) => {
 // Shown only at the world scale (history is world-wide) and only when borders
 // actually moved. Drilling into a sector hides it (sectors have no timeline).
 const refreshTimeslider = () => {
-  // Planet scale draws the planisphere, which doesn't animate political borders,
-  // so the time-slider is world-scale only (see BACKLOG: planet-scale history).
-  const show = hasWorld && !planetScale && nav.level === 0 && historyYears.length === 2;
+  // Shown at the root of either scale (the planisphere now washes in political
+  // control, so scrubbing animates empires there too); hidden inside a sector,
+  // which has no timeline of its own.
+  const show = hasWorld && nav.level === 0 && historyYears.length === 2;
   timesliderEl.classList.toggle("hidden", !show);
   if (!show) return;
   const [start, end] = historyYears;

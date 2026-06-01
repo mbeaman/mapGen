@@ -84,9 +84,6 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   expect(await viewBoxAspect(svg)).toBeGreaterThan(1.8);
   // Its root crumb reads "Planet" (not "World").
   await expect(breadcrumb.getByRole("button", { name: "Planet" })).toBeVisible();
-  // The planisphere doesn't animate borders, so the time-slider stays hidden.
-  await expect(page.locator("#timeslider")).toHaveClass(/hidden/);
-
   // Click the engraved "RIO" continent label (its position is the landmass
   // centroid). The root click snaps to that continent via an async continentAt
   // round-trip, re-centers the drill on its mass and sizes the depth → level 2.
@@ -121,4 +118,38 @@ test("?scale=planet permalink reloads as a planet", async ({ page }) => {
   await expect(status).toContainText("Generated in", { timeout: 30_000 });
   await expect(svg).toBeVisible();
   expect(await viewBoxAspect(svg)).toBeGreaterThan(1.8);
+});
+
+// The time-slider now lives at planet scale too: the planisphere washes in
+// political control, so scrubbing animates empires rise + fall.
+test("planet time-slider animates political control", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  const status = page.locator("#status");
+  const generate = page.locator("#generate");
+  const content = page.locator("#map-content");
+
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+  await expect(generate).toBeEnabled({ timeout: 30_000 });
+  await page.locator("#seed").fill("4");
+  await page.locator("#cells").fill("2000");
+  await page.locator("#scale").selectOption("planet");
+  await expect(status).toContainText("Generating planet");
+  await expect(status).toContainText("Generated in", { timeout: 30_000 });
+
+  // Seed 4 has border history, so the slider is shown at planet scale (it was
+  // hidden here before this feature).
+  await expect(page.locator("#timeslider")).not.toHaveClass(/hidden/);
+
+  // Scrub to the founding era and assert the map ACTUALLY changed — borders
+  // moved, so the political wash differs. A slider that animated nothing (e.g.
+  // a planisphere that ignored control) would leave the SVG byte-identical.
+  const present = await content.innerHTML();
+  await page.locator("#timescrub").evaluate((el: HTMLInputElement) => {
+    el.value = el.min; // founding year
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect
+    .poll(async () => content.innerHTML(), { timeout: 15_000 })
+    .not.toBe(present);
 });

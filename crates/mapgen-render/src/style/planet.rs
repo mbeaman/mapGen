@@ -53,6 +53,10 @@ pub fn render(world: &WorldData) -> String {
     .unwrap();
 
     render_fill(world, &mut out);
+    // Political wash over the inhabited third, under the linework. Empty until a
+    // world has society; with the time-slider it animates empires rise + fall
+    // (renderAtYear swaps control before re-rendering, so this gets it for free).
+    render_political(world, &mut out);
     render_coast(world, &mut out);
     render_graticule(vx, vy, w, h, &mut out);
     render_major_rivers(world, &mut out);
@@ -68,6 +72,7 @@ pub fn render(world: &WorldData) -> String {
     .unwrap();
     render_compass(w, h, &mut out);
     render_cartouche(w, h, "ORBIS TERRARUM", &mut out);
+    render_nation_legend(world, w, h, &mut out);
     out.push_str("</svg>");
     out
 }
@@ -253,6 +258,102 @@ fn render_labels(world: &WorldData, out: &mut String) {
             )
             .unwrap();
         }
+    }
+    out.push_str("</g>");
+}
+
+/// Political wash: each controlled land cell filled by its realm's colour at low
+/// opacity, so the biome continents still read through. Empty (early-returns)
+/// until a world has society. Mirrors `ornate_antique::render_political`; with
+/// the time-slider (`renderAtYear` swaps `control` before re-rendering) it
+/// animates empires rise and fall across the planisphere.
+fn render_political(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let control = &world.society.control;
+    if control.is_empty() {
+        return;
+    }
+    let elev = &world.terrain.elevation;
+    out.push_str(r##"<g class="planet-political">"##);
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            continue; // land only
+        }
+        let Some(pid) = control.get(i).copied().flatten() else {
+            continue;
+        };
+        let Some(nation) = world.society.nations.get(pid as usize) else {
+            continue;
+        };
+        let [r, g, b] = nation.color;
+        write_polygon(mesh, verts, &format!("#{r:02x}{g:02x}{b:02x}"), 0.40, out);
+    }
+    out.push_str("</g>");
+}
+
+/// A key in the SW corner: each realm that holds land, by colour + name — so the
+/// political wash reads as "the realm of X" rather than anonymous blobs. Reflects
+/// the *rendered* control, so with the time-slider it tracks who exists each
+/// year. Empty (early-returns) until a world has society.
+fn render_nation_legend(world: &WorldData, _w: f32, h: f32, out: &mut String) {
+    let control = &world.society.control;
+    let elev = &world.terrain.elevation;
+    // Realms holding ≥1 land cell in the rendered control, by ascending id.
+    let mut seen = std::collections::BTreeSet::new();
+    for (i, c) in control.iter().enumerate() {
+        if elev.get(i).copied().unwrap_or(0.0) > 0.0 {
+            if let Some(pid) = *c {
+                seen.insert(pid);
+            }
+        }
+    }
+    let realms: Vec<u32> = seen.into_iter().collect();
+    if realms.is_empty() {
+        return;
+    }
+
+    let scale = (h / 1024.0).clamp(0.7, 1.4);
+    let row_h = 22.0 * scale;
+    let pad = 12.0 * scale;
+    let sw = 15.0 * scale; // swatch edge
+    let fs = 13.0 * scale;
+    let box_w = 200.0 * scale;
+    let box_h = pad * 2.0 + row_h * (realms.len() as f32 + 1.0); // +1 title row
+    let x0 = 50.0 * scale;
+    let y0 = h - box_h - 50.0 * scale;
+    let tx = x0 + pad;
+
+    write!(out, r##"<g class="nation-legend">"##).unwrap();
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="6" fill="#f0e3bf" fill-opacity="0.82" stroke="#5a3a25" stroke-width="1.2"/>"##
+    )
+    .unwrap();
+    let mut ty = y0 + pad + row_h * 0.7;
+    write!(
+        out,
+        r##"<text x="{tx:.1}" y="{ty:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" letter-spacing="2" fill="#2a2418">REALMS</text>"##
+    )
+    .unwrap();
+    for pid in realms {
+        ty += row_h;
+        let Some(nation) = world.society.nations.get(pid as usize) else {
+            continue;
+        };
+        let [r, g, b] = nation.color;
+        let sy = ty - sw * 0.85;
+        write!(
+            out,
+            r##"<rect x="{tx:.1}" y="{sy:.1}" width="{sw:.1}" height="{sw:.1}" fill="#{r:02x}{g:02x}{b:02x}" stroke="#2a2418" stroke-width="0.8"/>"##
+        )
+        .unwrap();
+        let name = escape(&nation.name);
+        let nx = tx + sw + 8.0 * scale;
+        write!(
+            out,
+            r##"<text x="{nx:.1}" y="{ty:.1}" font-family='"EB Garamond", Georgia, serif' font-size="{fs:.1}" fill="#2a2418">{name}</text>"##
+        )
+        .unwrap();
     }
     out.push_str("</g>");
 }

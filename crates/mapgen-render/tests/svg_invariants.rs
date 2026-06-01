@@ -1082,3 +1082,45 @@ fn ornate_antique_labels_mountain_ranges() {
     );
     assert!(svg.contains("Karagath"), "range name not rendered");
 }
+
+/// Planet-scale history viz: the planisphere washes in political control (with a
+/// realms legend), and rendering an earlier year differs from the present —
+/// proving the time-slider actually animates empires, not just that a wash
+/// exists. Mirrors how `WorldHandle::render_at_year` drives the frontend slider.
+#[test]
+fn planet_style_washes_in_political_control_and_animates_with_history() {
+    let mut p = GenerateParams::planet(7);
+    p.cell_count = 4_000; // smaller than the 18k preset to keep the test quick
+    let mut world = generate_full(p);
+
+    let present = render(&world, Style::Planet).expect("planet render");
+    assert!(
+        present.contains("planet-political"),
+        "the planisphere washes in political control"
+    );
+    assert!(
+        present.contains("nation-legend"),
+        "the planisphere shows a realms key"
+    );
+    // The wash is non-empty: a realm's colour appears as a fill.
+    let [r, g, b] = world.society.nations[0].color;
+    assert!(
+        present.contains(&format!("#{r:02x}{g:02x}{b:02x}")),
+        "a realm's colour washes the map"
+    );
+
+    // Scrubbing to the founding era changes the map (borders moved → different
+    // control → different fills). If render ignored control, these would match.
+    let (first, last) = world
+        .border_change_year_span()
+        .expect("a planet has border history");
+    assert!(first < last, "history spans more than an instant");
+    let saved = world.society.control.clone();
+    world.society.control = world.control_at_year(0); // founding-era borders
+    let founding = render(&world, Style::Planet).expect("planet render at year 0");
+    world.society.control = saved;
+    assert_ne!(
+        present, founding,
+        "scrubbing to the founding era must change the planisphere"
+    );
+}
