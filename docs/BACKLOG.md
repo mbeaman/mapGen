@@ -64,10 +64,11 @@ scale (zoom out)" below), in priority order:
    renders in ~13 ms, budget 20 ms; cheapest render path despite most cells).
    **Increment 2's tractable items are now all shipped** — what remains is the
    "harder / later" set below.
-5. **Harder / later:** edge projection + distortion for a true globe feel;
+5. **Harder / later:** ~~planet-scale history viz~~ DONE 2026-06-01 (the
+   planisphere washes in political control + the time-slider is un-hidden — see
+   entry below); edge projection + distortion for a true globe feel;
    inter-continental society & history (trade, migration) — society is generated
-   per-world today; planet-scale history viz (the time-slider is hidden at planet
-   scale — see entry below); tight continent framing (entry below).
+   per-world today; tight continent framing (entry below).
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
@@ -219,22 +220,26 @@ note.
 - **Origin.** This session, 2026-05-25, "let's do zoom out" → chose the
   level-above-0 hierarchy.
 
-#### Planet-scale history visualization
+#### Planet-scale history visualization — DONE 2026-06-01
 
-- **Why deferred.** The web time-slider scrubs political borders over the
-  conquest years, but `Style::Planet` is a planisphere — it draws continents and
-  coastlines, not polity fills — so it has nothing to animate. The frontend
-  therefore hides the time-slider whenever the active scale is planet (it stays
-  live at continental scale). Not a silent drop: the capability simply has no
-  surface to render onto yet.
-- **Trigger for revival.** Someone wants to *watch* history at the globe scale —
-  e.g. an empire's spread tinting continents across centuries, or a per-epoch
-  planisphere. Needs a control-aware planet render (polity tint on the
-  planisphere) before the slider earns its place there.
-- **Cost.** ~half a day (a control overlay on `style/planet.rs` + un-gate the
-  slider for planet scale).
-- **Origin.** Increment-2 item 1, 2026-05-31 (advisor review of the zoom-out
-  wiring flagged the gated slider as a deferral, not a drop).
+- **Shipped.** `Style::Planet` now washes in political control (per-cell tint by
+  realm colour at 0.40 opacity over the biome fill) with a SW-corner REALMS
+  legend; `refreshTimeslider` no longer gates on `!planetScale`. Because
+  `render_at_year` swaps `control` before re-rendering, scrubbing animates
+  empires rise/fall on the planisphere for free. Pinned by a render test
+  (founding era ≠ present) + an e2e that scrubs and asserts the SVG changed.
+
+#### Toggleable political wash on the planisphere (pure-physical view)
+
+- **Why deferred.** The planet political wash is always-on, so there's no way to
+  get the clean biome-only planisphere back. The ornate style makes its political
+  overlay a toggleable layer; the planet's isn't yet wired into the layers system.
+- **Trigger for revival.** Someone wants the pure-physical planet view (no
+  empires) — or the wash reads as clutter often enough to want it off by default.
+- **Cost.** ~2h (wrap `render_political`/`render_nation_legend` in an
+  `on-<name>` layer class + add it to the web layers manifest, defaulting on).
+- **Origin.** Planet-scale history viz, 2026-06-01 (advisor: ship always-on,
+  backlog the toggle).
 
 #### Continent-aware drill — DONE 2026-06-01 (re-center)
 
