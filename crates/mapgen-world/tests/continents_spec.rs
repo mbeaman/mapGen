@@ -151,32 +151,46 @@ fn generated_world_has_named_continents_and_an_ocean() {
 }
 
 #[test]
-fn continent_name_is_grounded_in_the_dominant_cultures_language() {
+fn continent_name_is_grounded_in_the_owning_cultures_language() {
     // A single landmass entirely owned by one Elf culture: its name must be
     // generable from that culture's (Elf) language alphabet — i.e. grounded in
     // the owner, not a positional placeholder or a foreign tongue.
-    let mut world = elf_landmass();
-    let mut rng = StageRng::new(7).stream(Stage::Names);
-    naming::name_world(&mut world, NamingParams::default(), &mut rng);
-
+    let world = run_naming(elf_landmass());
     assert!(!world.continents.is_empty(), "the landmass should be named");
-    let lang = &world.languages[0]; // name_world rebuilds languages from race
-    let allowed: HashSet<char> = lang
-        .vowels
-        .iter()
-        .chain(lang.consonants.iter())
-        .copied()
-        .chain(
-            lang.syllable_patterns
-                .iter()
-                .flat_map(|p| p.chars())
-                .filter(|c| *c != 'C' && *c != 'V'),
-        )
-        .collect();
     let name = &world.continents[0].name;
+    // name_world rebuilds languages from race; languages[0] is the Elf language.
     assert!(
-        name.to_lowercase().chars().all(|c| allowed.contains(&c)),
-        "continent name {name:?} is not in the dominant culture's alphabet {allowed:?}"
+        name_in_alphabet(name, &world.languages[0]),
+        "continent name {name:?} is not in the owning culture's alphabet"
+    );
+}
+
+#[test]
+fn the_dominant_culture_among_competitors_determines_the_continent_name() {
+    // Same two cultures (Dwarf = id 0, Elf = id 1) on the same 6-cell landmass;
+    // only which one owns the MAJORITY differs. If naming ignored ownership (e.g.
+    // always used language 0, or picked the wrong culture), the two names would
+    // be identical — so the inequality pins that the *dominant* culture, not a
+    // fixed index, drives the name. The single-culture test above can't catch
+    // this: with one language, every selection collapses to index 0.
+    let dwarf_major = run_naming(two_culture_landmass([0, 0, 0, 0, 1, 1]));
+    let elf_major = run_naming(two_culture_landmass([1, 1, 1, 1, 0, 0]));
+
+    let a = &dwarf_major.continents[0].name;
+    let b = &elf_major.continents[0].name;
+    assert_ne!(
+        a, b,
+        "swapping which culture dominates must change the grounded name"
+    );
+    // …and each is in its dominant culture's alphabet (Dwarf = languages[0],
+    // Elf = languages[1]; the roster is the same in both worlds).
+    assert!(
+        name_in_alphabet(a, &dwarf_major.languages[0]),
+        "Dwarf-dominant continent {a:?} not in the Dwarf alphabet"
+    );
+    assert!(
+        name_in_alphabet(b, &elf_major.languages[1]),
+        "Elf-dominant continent {b:?} not in the Elf alphabet"
     );
 }
 
@@ -193,10 +207,54 @@ fn continent_naming_is_deterministic_for_a_fixed_seed() {
     }
 }
 
-/// A 6-cell connected landmass (all elevation > 0) entirely owned by one Elf
-/// culture. Minimal state so `name_world` runs end to end (its earlier passes
-/// iterate empty settlement/polity/religion vecs harmlessly).
-fn elf_landmass() -> WorldData {
+/// Run the naming stage on a synthetic world with a fixed `Stage::Names` seed.
+fn run_naming(mut world: WorldData) -> WorldData {
+    let mut rng = StageRng::new(7).stream(Stage::Names);
+    naming::name_world(&mut world, NamingParams::default(), &mut rng);
+    world
+}
+
+/// True if every character of `name` is producible from `lang` (its vowels,
+/// consonants, and any literal chars in its syllable patterns). `generate_name`
+/// draws only from those, so a name grounded in `lang` always passes — a
+/// positional placeholder or a foreign tongue (with chars outside the set) does
+/// not.
+fn name_in_alphabet(name: &str, lang: &mapgen_core::entities::Language) -> bool {
+    let allowed: HashSet<char> = lang
+        .vowels
+        .iter()
+        .chain(lang.consonants.iter())
+        .copied()
+        .chain(
+            lang.syllable_patterns
+                .iter()
+                .flat_map(|p| p.chars())
+                .filter(|c| *c != 'C' && *c != 'V'),
+        )
+        .collect();
+    name.to_lowercase().chars().all(|c| allowed.contains(&c))
+}
+
+fn culture(race: Race) -> Culture {
+    Culture {
+        name: "TestFolk".into(),
+        race,
+        archetype_id: 0,
+        language_id: 0,
+        religion_id: None,
+        alignment: Alignment::default(),
+        tech: TechProfile::default(),
+        magic: MagicStyle::None,
+        settlement: SettlementIcon::Hall,
+        architecture: Architecture::Classical,
+        diplomatic: DiplomaticPattern::Mercantile,
+    }
+}
+
+/// A 6-cell connected landmass (all elevation > 0), owned per `culture_id` by
+/// the given `races` roster. Minimal state so `name_world` runs end to end (its
+/// earlier passes iterate empty settlement/polity/religion vecs harmlessly).
+fn landmass6(races: Vec<Race>, culture_id: [u16; 6]) -> WorldData {
     let mut world = WorldData {
         meta: WorldMeta::new(0),
         mesh: MeshData::default(),
@@ -215,19 +273,19 @@ fn elf_landmass() -> WorldData {
     world.mesh.width = 6.0;
     world.mesh.height = 1.0;
     world.terrain.elevation = vec![0.5; 6];
-    world.cultures.cultures = vec![Culture {
-        name: "Woodkin".into(),
-        race: Race::Elf,
-        archetype_id: 0,
-        language_id: 0,
-        religion_id: None,
-        alignment: Alignment::default(),
-        tech: TechProfile::default(),
-        magic: MagicStyle::None,
-        settlement: SettlementIcon::Hall,
-        architecture: Architecture::Classical,
-        diplomatic: DiplomaticPattern::Mercantile,
-    }];
-    world.cultures.culture_id = vec![Some(0); 6];
+    world.cultures.cultures = races.into_iter().map(culture).collect();
+    world.cultures.culture_id = culture_id.iter().map(|&c| Some(c)).collect();
     world
+}
+
+/// One landmass, one Elf culture (id 0) owning every cell.
+fn elf_landmass() -> WorldData {
+    landmass6(vec![Race::Elf], [0; 6])
+}
+
+/// One landmass shared by a Dwarf culture (id 0) and an Elf culture (id 1),
+/// owned per `culture_id`. Their alphabets differ (Dwarf has k/g/b/d/t/u; Elf
+/// has e/o/l/s/v/f/h), so a name reveals which culture was chosen as dominant.
+fn two_culture_landmass(culture_id: [u16; 6]) -> WorldData {
+    landmass6(vec![Race::Dwarf, Race::Elf], culture_id)
 }

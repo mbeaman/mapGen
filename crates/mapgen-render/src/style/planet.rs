@@ -232,7 +232,8 @@ fn render_labels(world: &WorldData, out: &mut String) {
         }
         let [cx, cy] = cont.centroid;
         let size = (12.0 + (cont.cell_count as f32 / n as f32) * 60.0).min(34.0);
-        let label = cont.name.to_uppercase();
+        // Escape after uppercasing — to_uppercase would turn "&amp;" into "&AMP;".
+        let label = escape(&cont.name.to_uppercase());
         write!(
             out,
             r##"<text x="{cx:.1}" y="{cy:.1}" font-size="{size:.0}" letter-spacing="2" fill-opacity="0.5">{label}</text>"##,
@@ -245,7 +246,7 @@ fn render_labels(world: &WorldData, out: &mut String) {
     if let Some(ocean) = world.oceans.first() {
         if !ocean.name.is_empty() {
             let [cx, cy] = ocean.centroid;
-            let label = ocean.name.to_uppercase();
+            let label = escape(&ocean.name.to_uppercase());
             write!(
                 out,
                 r##"<text x="{cx:.1}" y="{cy:.1}" font-size="22" font-style="italic" letter-spacing="3" fill="#3a4e57" fill-opacity="0.5">MARE {label}</text>"##,

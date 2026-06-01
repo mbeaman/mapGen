@@ -217,7 +217,7 @@ fn name_geographic_bodies(
     let lang_of = |owner: Option<u16>| owner.map(|c| (c as usize).min(last)).unwrap_or(0);
 
     let mut continents = Vec::new();
-    for body in connected_bodies(mesh, &is_land) {
+    for body in connected_bodies(mesh, is_land) {
         if body.len() * MIN_CONTINENT_DIVISOR < n {
             continue; // a speck, not a continent
         }
