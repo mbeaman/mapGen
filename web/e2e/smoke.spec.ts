@@ -127,7 +127,6 @@ test("planet time-slider animates political control", async ({ page }) => {
   const svg = page.locator("#map-content svg");
   const status = page.locator("#status");
   const generate = page.locator("#generate");
-  const content = page.locator("#map-content");
 
   await expect(svg).toBeVisible({ timeout: 30_000 });
   await expect(generate).toBeEnabled({ timeout: 30_000 });
@@ -141,15 +140,16 @@ test("planet time-slider animates political control", async ({ page }) => {
   // hidden here before this feature).
   await expect(page.locator("#timeslider")).not.toHaveClass(/hidden/);
 
-  // Scrub to the founding era and assert the map ACTUALLY changed — borders
-  // moved, so the political wash differs. A slider that animated nothing (e.g.
-  // a planisphere that ignored control) would leave the SVG byte-identical.
-  const present = await content.innerHTML();
+  // Scrub to the founding era and assert the political WASH actually changed —
+  // borders moved, so the polygons in the .planet-political group differ. Scoping
+  // to that group (not the whole SVG) keeps a broken/empty wash from passing on
+  // the legend's coattails, and an empty group would never differ → this fails.
+  const wash = page.locator("#map-content .planet-political");
+  const present = await wash.innerHTML();
+  expect(present).not.toBe(""); // the wash drew something to animate
   await page.locator("#timescrub").evaluate((el: HTMLInputElement) => {
     el.value = el.min; // founding year
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await expect
-    .poll(async () => content.innerHTML(), { timeout: 15_000 })
-    .not.toBe(present);
+  await expect.poll(async () => wash.innerHTML(), { timeout: 15_000 }).not.toBe(present);
 });

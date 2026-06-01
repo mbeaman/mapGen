@@ -1094,23 +1094,30 @@ fn planet_style_washes_in_political_control_and_animates_with_history() {
     let mut world = generate_full(p);
 
     let present = render(&world, Style::Planet).expect("planet render");
+
+    // The WASH (the feature) must draw real land cells — scope to its group, not
+    // a bare tag, so an empty `<g class="planet-political">` can't pass on the
+    // legend's coattails (the legend emits the same colour format).
+    let wash = group_inner(&present, "planet-political");
     assert!(
-        present.contains("planet-political"),
-        "the planisphere washes in political control"
-    );
-    assert!(
-        present.contains("nation-legend"),
-        "the planisphere shows a realms key"
-    );
-    // The wash is non-empty: a realm's colour appears as a fill.
-    let [r, g, b] = world.society.nations[0].color;
-    assert!(
-        present.contains(&format!("#{r:02x}{g:02x}{b:02x}")),
-        "a realm's colour washes the map"
+        wash.contains("<polygon"),
+        "the political wash drew no land cells"
     );
 
-    // Scrubbing to the founding era changes the map (borders moved → different
-    // control → different fills). If render ignored control, these would match.
+    // The LEGEND keys colour → realm name: every realm that holds land must be
+    // named in the legend (the sibling ornate test holds nation labels to this).
+    let legend = group_inner(&present, "nation-legend");
+    for pid in land_holding_realms(&world) {
+        let name = &world.society.nations[pid as usize].name;
+        assert!(
+            legend.contains(name.as_str()),
+            "the realms legend is missing {name:?}"
+        );
+    }
+
+    // Scrubbing to the founding era changes the WASH specifically (borders moved
+    // → different control → different fills). Comparing the wash group (not the
+    // whole SVG) keeps the legend from carrying this assertion on its own.
     let (first, last) = world
         .border_change_year_span()
         .expect("a planet has border history");
@@ -1120,7 +1127,36 @@ fn planet_style_washes_in_political_control_and_animates_with_history() {
     let founding = render(&world, Style::Planet).expect("planet render at year 0");
     world.society.control = saved;
     assert_ne!(
-        present, founding,
-        "scrubbing to the founding era must change the planisphere"
+        wash,
+        group_inner(&founding, "planet-political"),
+        "scrubbing to the founding era must change the political wash"
     );
+}
+
+/// Inner content of the first `<g class="{class}">…</g>` (no nested `<g>` in the
+/// groups we scope to). Used to assert a feature drew inside its own group.
+fn group_inner<'a>(svg: &'a str, class: &str) -> &'a str {
+    let open = format!(r#"<g class="{class}">"#);
+    let start = svg
+        .find(&open)
+        .unwrap_or_else(|| panic!("no <g class=\"{class}\"> in render"));
+    let after = start + open.len();
+    let end = svg[after..]
+        .find("</g>")
+        .map(|e| after + e)
+        .unwrap_or(svg.len());
+    &svg[after..end]
+}
+
+/// Realm ids holding ≥1 land cell, ascending — mirrors `render_nation_legend`.
+fn land_holding_realms(world: &mapgen_core::WorldData) -> Vec<u32> {
+    let mut realms = std::collections::BTreeSet::new();
+    for (i, c) in world.society.control.iter().enumerate() {
+        if world.terrain.elevation.get(i).copied().unwrap_or(0.0) > 0.0 {
+            if let Some(pid) = *c {
+                realms.insert(pid);
+            }
+        }
+    }
+    realms.into_iter().collect()
 }
