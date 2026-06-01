@@ -7,12 +7,26 @@
 //!
 //! Writes `<prefix>-default.png`, `<prefix>-topdown.png`, and
 //! `<prefix>-lowangle.png` next to one another.
+//!
+//! Native-only: pollster/env_logger/image aren't reachable on wasm32.
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn main() -> anyhow::Result<()> {
+    run()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 use anyhow::Result;
+#[cfg(not(target_arch = "wasm32"))]
 use mapgen_viewer::{screenshot_with, Pose};
+#[cfg(not(target_arch = "wasm32"))]
 use mapgen_world::{generate_full, GenerateParams};
 
-fn main() -> Result<()> {
+#[cfg(not(target_arch = "wasm32"))]
+fn run() -> Result<()> {
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info,wgpu_core=warn,wgpu_hal=warn,naga=warn"),
     )

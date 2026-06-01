@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mapgen — live 3D explorer</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23f4e9cf'/%3E%3Cpath d='M16 3 L19 13 L29 16 L19 19 L16 29 L13 19 L3 16 L13 13 Z' fill='%238a3324'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #f4e9cf;
+        --ink: #2b2419;
+        --rule: #8a7f5e;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 14px/1.4 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 16px;
+      }
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.5px;
+      }
+      header .links a {
+        color: var(--ink);
+        text-decoration: underline dotted;
+      }
+      .controls {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .controls label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .controls input[type="number"],
+      .controls input[type="text"] {
+        background: transparent;
+        border: 1px solid var(--rule);
+        color: inherit;
+        font: inherit;
+        padding: 4px 6px;
+        width: 8ch;
+      }
+      .controls button {
+        background: var(--ink);
+        color: var(--bg);
+        border: none;
+        font: inherit;
+        padding: 6px 14px;
+        cursor: pointer;
+      }
+      .controls button:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+      .hint {
+        opacity: 0.7;
+      }
+      .canvas-frame {
+        border: 1px solid var(--rule);
+        background: var(--bg);
+        line-height: 0;
+      }
+      canvas {
+        display: block;
+        width: 1280px;
+        height: 800px;
+        max-width: 100%;
+      }
+      .status {
+        min-height: 1.4em;
+      }
+      .status.err {
+        color: #8a3324;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>mapgen — live 3D explorer</h1>
+      <div class="links">
+        <a href="./index.html">SVG view</a>
+      </div>
+    </header>
+
+    <form class="controls" id="form">
+      <label>
+        seed
+        <input id="seed" type="text" inputmode="numeric" value="42" />
+      </label>
+      <label>
+        cells
+        <input id="cells" type="number" min="500" max="20000" step="500" value="4000" />
+      </label>
+      <button id="go" type="submit">Generate</button>
+      <span class="hint">drag = pan · right-drag = orbit · scroll = zoom · R = reset</span>
+    </form>
+
+    <div class="status" id="status">Loading wasm…</div>
+
+    <div class="canvas-frame">
+      <canvas id="viewer" width="1280" height="800"></canvas>
+    </div>
+
+    <script type="module" src="/src/3d.ts"></script>
+  </body>
+</html>

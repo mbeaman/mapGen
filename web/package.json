@@ -6,6 +6,8 @@
   "description": "Browser frontend for the mapgen fantasy-map generator. Drives the wasm-pack output from crates/mapgen-wasm.",
   "scripts": {
     "build:wasm": "wasm-pack build --release --target web --out-dir ../../web/pkg ../crates/mapgen-wasm",
+    "build:viewer-wasm": "wasm-pack build --release --target web --out-dir ../../web/pkg-viewer ../crates/mapgen-viewer",
+    "build:all-wasm": "npm run build:wasm && npm run build:viewer-wasm",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",

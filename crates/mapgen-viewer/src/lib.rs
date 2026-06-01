@@ -18,11 +18,19 @@
 //! the binary turns winit events into these calls so this crate stays
 //! winit-agnostic at the camera/scene layer.
 
+mod app;
 mod camera;
 mod scene;
 mod screenshot;
 
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+pub use app::{App, AppArgs};
 pub use screenshot::{screenshot, screenshot_with, Pose};
+
+#[cfg(target_arch = "wasm32")]
+pub use web::start_web;
 
 use std::sync::Arc;
 

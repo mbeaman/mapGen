@@ -4,6 +4,7 @@ Cargo.lock.bak
 
 # WASM build output
 /web/pkg
+/web/pkg-viewer
 /web/node_modules
 /web/dist
 

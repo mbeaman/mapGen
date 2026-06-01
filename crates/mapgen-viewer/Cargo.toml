@@ -7,6 +7,8 @@ license.workspace = true
 description = "Real-time wgpu 3D explorer over generated worlds (see ADR 0002)."
 
 [lib]
+# rlib for the native binary + examples; cdylib for wasm-pack output.
+crate-type = ["rlib", "cdylib"]
 
 [[bin]]
 name = "viewer-native"
@@ -14,16 +16,40 @@ path = "src/bin/native.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
 log = "0.4"
 wgpu = "29"
 winit = "0.30"
-pollster = "0.4"
-env_logger = "0.11"
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.30"
 mapgen-core = { path = "../mapgen-core" }
 mapgen-world = { path = "../mapgen-world" }
+
+# Native-only deps. pollster blocks on a std condvar, env_logger talks
+# to stdout, clap drives the CLI — none of these are meaningful on web.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+env_logger = "0.11"
+clap = { workspace = true }
+
+# Web-only deps. wasm-bindgen for the JS surface, console_* for
+# panic/log routing through the browser console, web-sys for canvas
+# lookup. getrandom's `js` feature is required for transitive rand-based
+# deps (same reason mapgen-wasm pins it).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+console_log = "1"
+web-sys = { version = "0.3", features = ["HtmlCanvasElement", "Document", "Window"] }
+getrandom = { version = "0.2", features = ["js"] }
+
+# wasm-pack tries to download a specific binaryen release for wasm-opt;
+# blocked in some build environments. Match mapgen-wasm's posture.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
