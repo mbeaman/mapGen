@@ -18,10 +18,10 @@
 //! generator + Markov fallback, per `Language`." The Markov fallback
 //! is BACKLOGGED; MVP uses pure phonotactic.
 
+use std::collections::VecDeque;
+
 use mapgen_core::entities::{Language, Race};
-use mapgen_core::generate_name;
-use mapgen_core::world_data::MountainRange;
-use mapgen_core::WorldData;
+use mapgen_core::{generate_name, MeshData, MountainRange, WorldData};
 use rand_chacha::ChaCha8Rng;
 
 /// Tunables for the naming stage. Calibrated values land in
@@ -245,6 +245,63 @@ fn culture_language(world: &WorldData, cell: u32, last: usize) -> usize {
         .map(|c| c as usize)
         .unwrap_or(0)
         .min(last)
+}
+
+/// Connected components of mesh cells satisfying `keep`, by BFS over the
+/// neighbor graph, returned largest-first. Equal-sized bodies keep ascending
+/// start-cell order (Rust's sort is stable), so the body order — and therefore
+/// the RNG draw order when naming them — is deterministic.
+///
+/// Migrated from the planet renderer: continents/oceans are now flood-filled in
+/// the pipeline and named, so the renderer just reads the result. Used to find
+/// both continents (`keep` = land) and oceans (`keep` = sea).
+pub fn connected_bodies(mesh: &MeshData, keep: impl Fn(usize) -> bool) -> Vec<Vec<usize>> {
+    let n = mesh.cell_count();
+    let mut seen = vec![false; n];
+    let mut bodies: Vec<Vec<usize>> = Vec::new();
+    for start in 0..n {
+        if seen[start] || !keep(start) {
+            continue;
+        }
+        let mut body = Vec::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(start);
+        seen[start] = true;
+        while let Some(c) = queue.pop_front() {
+            body.push(c);
+            if let Some(ns) = mesh.neighbors.get(c) {
+                for &nb in ns {
+                    let nb = nb as usize;
+                    if !seen[nb] && keep(nb) {
+                        seen[nb] = true;
+                        queue.push_back(nb);
+                    }
+                }
+            }
+        }
+        bodies.push(body);
+    }
+    bodies.sort_by_key(|b| std::cmp::Reverse(b.len()));
+    bodies
+}
+
+/// The culture owning the most of `cells`, breaking ties toward the *lowest*
+/// `culture_id` so the choice is byte-stable across native↔wasm (an unstable
+/// argmax would flake the determinism golden). `None` when no listed cell is
+/// owned (e.g. an uninhabited landmass), so the caller falls back to language 0.
+pub fn dominant_culture(cells: &[usize], culture_id: &[Option<u16>]) -> Option<u16> {
+    // BTreeMap iterates keys ascending, so folding "replace only on a strictly
+    // greater count" keeps the first (lowest-id) culture on a tie.
+    let mut tally: std::collections::BTreeMap<u16, usize> = std::collections::BTreeMap::new();
+    for &c in cells {
+        if let Some(Some(cid)) = culture_id.get(c) {
+            *tally.entry(*cid).or_insert(0) += 1;
+        }
+    }
+    tally
+        .into_iter()
+        .reduce(|best, cur| if cur.1 > best.1 { cur } else { best })
+        .map(|(id, _)| id)
 }
 
 /// Hardcoded per-race phonotactic profile. Each profile leans toward a
