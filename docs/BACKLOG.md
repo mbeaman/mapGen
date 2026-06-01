@@ -30,10 +30,12 @@ system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export), the
 zoom-out planet view (increment 1: `mapgen planet`, `Style::Planet`, `mapgen
 refine --planet`), **planet zoom-out increment 2 item 1 — frontend zoom-out**
 (a "Scale: Continent · Planet" control, `Generation.planet`,
-planet-as-breadcrumb-root, click-to-drill, `?scale=planet` permalink), and
-**increment 2 item 2 — grounded continent/ocean names** (schema v17:
-`world.continents`/`oceans` named in each body's dominant culture via the lore
-naming system; the planisphere reads them instead of positional Latin) are
+planet-as-breadcrumb-root, click-to-drill, `?scale=planet` permalink),
+**item 2 — grounded continent/ocean names** (schema v17:
+`world.continents`/`oceans` named in each body's dominant culture; the
+planisphere reads them instead of positional Latin), and **item 3 —
+continent-aware drill** (a root click snaps to the continent under the cursor,
+re-centering + depth-sizing the drill on it) are
 shipped and green. Quality bar: `just check`, `just web-test`, and the
 Playwright e2e (incl. a planet-drill smoke) all pass.
 
@@ -52,16 +54,18 @@ scale (zoom out)" below), in priority order:
 2. ~~**Grounded continent / ocean names.**~~ DONE 2026-06-01 — `name_world` step 8
    flood-fills land/sea into major bodies and names each in its dominant
    culture's language (schema v17 `world.continents`/`oceans`); `style/planet.rs`
-   reads them. The flood-fill is now first-class, but only `centroid`/`cell_count`
-   are stored — **continent-aware drill** (entry below) still needs a per-cell
-   `continent_id` map.
-3. **Planet-render perf budget (do first).** Add a `Style::Planet` row to
+   reads them.
+3. ~~**Continent-aware drill.**~~ DONE 2026-06-01 — a root click snaps to the
+   clicked landmass (`continent_at` → `continentAt` wasm query → re-center +
+   depth-size), instead of the quadtree quadrant. Re-center, not tight bbox
+   framing (entry below explains why framing was deliberately skipped).
+4. **Planet-render perf budget (do first).** Add a `Style::Planet` row to
    `crates/mapgen-world/examples/perf_baseline.rs` (it budgets ornate render +
    `refine_sector` today) and to `docs/perf_baseline.md`.
-4. **Harder / later:** continent-aware drill (entry below); edge projection +
-   distortion for a true globe feel; inter-continental society & history (trade,
-   migration) — society is generated per-world today; planet-scale history viz
-   (the time-slider is hidden at planet scale — see entry below).
+5. **Harder / later:** edge projection + distortion for a true globe feel;
+   inter-continental society & history (trade, migration) — society is generated
+   per-world today; planet-scale history viz (the time-slider is hidden at planet
+   scale — see entry below); tight continent framing (entry below).
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
@@ -201,10 +205,14 @@ note.
   positional `latin_quarter`/`MARE OCEANVM`. Contract pinned in `continents_spec`
   (flood-fill disjoint/coverage, tiebreak, grounding via a two-culture fixture,
   determinism); thresholds in `docs/tuning_log.md`.
+- **Shipped (increment 2, item 3 — continent-aware drill, 2026-06-01).** A root
+  click snaps to the clicked landmass: `continent_at` (nearest cell → land body
+  → 2.5% threshold) → `continentAt` wasm query → the frontend re-centers the
+  drill on the centroid (`sectorAt`) and sizes its depth (`continentDrillLevel`).
+  Re-center, not tight framing — see the "Tight continent framing" entry below.
 - **Open follow-ups (increment 2+):** planet-render perf budget (**the immediate
-  next item**); continent-aware drill (entry below — the flood-fill now exists
-  but no per-cell `continent_id` map yet); projection / distortion at the
-  planetary edge; inter-continental society/history (trade, migration) —
+  next item**); tight continent framing (entry below); projection / distortion at
+  the planetary edge; inter-continental society/history (trade, migration) —
   currently society is generated per-world.
 - **Origin.** This session, 2026-05-25, "let's do zoom out" → chose the
   level-above-0 hierarchy.
@@ -226,29 +234,40 @@ note.
 - **Origin.** Increment-2 item 1, 2026-05-31 (advisor review of the zoom-out
   wiring flagged the gated slider as a deferral, not a drop).
 
-#### Continent-aware drill targets (quadtree quadrants bisect landmasses)
+#### Continent-aware drill — DONE 2026-06-01 (re-center)
 
-- **Why deferred.** Drilling a planet uses the quadtree (`childSectorAt`): a
-  click snaps to a `2^level × 2^level` grid cell, not to a landmass. With 32
-  plates a quadrant routinely straddles a coastline or slices a continent, so a
-  drilled sector can come up half-ocean or mid-landmass. This is inherent to
-  grid-drill-on-a-planet, not a bug — the continental view is still a valid
-  refined sector, just not framed on a whole continent.
-- **Partially unblocked (2026-06-01).** Grounded continent *detection* now
-  exists: `name_world` flood-fills the land into first-class `Continent` objects.
-  But only `centroid`/`cell_count` are persisted (the planisphere needs no more)
-  — the drill-snap wants a per-cell `continent_id: Vec<Option<u16>>` map
-  (mirroring `culture_id`) for an O(1) point-in-continent test. Remaining work:
-  populate that map in the same flood-fill, expose it through `mapgen-wasm`, and
-  have `childSectorAt`/`drillAt` snap to the continent under the cursor (framing
-  *it*) instead of a grid quadrant.
-- **Trigger for revival.** A drilled planet sector visibly comes up half-ocean
-  or mid-landmass often enough to annoy — or someone asks to "click a continent,
-  get that continent."
-- **Cost.** ~1 day now that detection exists (the `continent_id` map + wasm
-  exposure + the frontend snap).
-- **Origin.** Increment-2 item 1, 2026-05-31 (advisor review: "surface the limit,
-  ship anyway"); detection landed in item 2, 2026-06-01.
+- **Shipped.** A root click no longer snaps to whatever quadtree quadrant it
+  lands in; it snaps to the *continent under the cursor*. `continent_at(world,
+  x, y)` (nearest cell → land body → same `connected_bodies` + 2.5% threshold
+  the naming stage uses) returns the landmass centroid + cell_count; the wasm
+  `continentAt` exposes it; the frontend re-centers the drill on the centroid
+  (`sectorAt`) and sizes its depth from the landmass (`continentDrillLevel`).
+  Over sea / a speck it falls back to the quadtree drill. No per-cell
+  `continent_id` map was needed — the drill recomputes per click (its only
+  consumer), so no schema bump.
+- **Resolved design (from the advisor DA).** *Re-center, not frame.* True
+  bbox-framing was rejected: a continent isn't square, and with 32 plates
+  continents straddle quadtree midlines constantly, so "frame the extent" either
+  does nothing for straddlers (a midline continent only fits level 0) or requires
+  re-keying `refine_sector`'s `(level,sx,sy)` RNG — re-opening a working,
+  invariant-tested subsystem (the Refinery pattern). Re-center lives within the
+  grid and behaves identically for every continent. See the follow-up below.
+
+#### Tight continent framing (the bbox version)
+
+- **Why deferred.** The shipped drill re-centers on the clicked continent's mass
+  but still lands in a square quadtree sector — it does not crop tightly to the
+  continent's outline. Tight framing needs an arbitrary-rect refine, which means
+  re-keying `refine_sector`'s RNG away from `(level,sx,sy)` and re-proving the
+  seam/tiling/reproduction invariants (`scale_spec`). That is a substantial
+  rework of a load-bearing subsystem for a framing nicety.
+- **Trigger for revival.** Re-center proves insufficient in practice — users
+  consistently want the continent cropped to its coastline, not centered in a
+  square — *and* the seam/tiling invariants can be preserved (or consciously
+  relaxed) under rect-addressed refinement.
+- **Cost.** ~3-5 days (the refine RNG re-key + invariant re-proof dominate).
+- **Origin.** Continent-aware drill DA, 2026-06-01 — the option the advisor
+  steered away from as "the Refinery in new clothes."
 
 ### Local rural / hinterland maps (zoom in, countryside)
 
