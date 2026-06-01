@@ -12,7 +12,6 @@
 //! reads as the same atlas one zoom band out — drill into any sector with the
 //! Phase-7 refinement to get the continental ornate view of that region.
 
-use std::collections::VecDeque;
 use std::fmt::Write;
 
 use mapgen_core::WorldData;
@@ -214,51 +213,42 @@ fn render_major_ranges(world: &WorldData, out: &mut String) {
     out.push_str("</g>");
 }
 
-/// Engraved continent + ocean labels: flood-fill the cell graph into land and
-/// sea bodies, and label the largest by position (antique Latin descriptors).
+/// Engraved continent + ocean labels — read straight from the names the naming
+/// stage grounded in each body's dominant culture (`world.continents` /
+/// `world.oceans`), uppercased for the antique-map register. The flood-fill that
+/// used to run here now lives in the pipeline, so the renderer just places the
+/// labels at the stored centroids.
 fn render_labels(world: &WorldData, out: &mut String) {
-    let mesh = &world.mesh;
-    let elev = &world.terrain.elevation;
-    let n = mesh.cell_count();
-    let (cw, ch) = (mesh.width, mesh.height);
-
-    let land_bodies = connected_bodies(world, |i| elev.get(i).copied().unwrap_or(0.0) > 0.0);
-    let sea_bodies = connected_bodies(world, |i| elev.get(i).copied().unwrap_or(0.0) <= 0.0);
-
+    let n = world.mesh.cell_count().max(1);
     out.push_str(
         r##"<g font-family='"Cinzel", Georgia, serif' text-anchor="middle" fill="#3a2c18">"##,
     );
 
-    // Continents: the largest land bodies, named by their position on the globe.
-    let mut used: Vec<&str> = Vec::new();
-    for body in land_bodies.iter().take(6) {
-        if body.len() * 40 < n {
-            continue; // skip specks (< 2.5% of cells)
+    // Continents: the largest named landmasses (the stage already dropped specks
+    // and ordered them largest-first), sized by their share of the world.
+    for cont in world.continents.iter().take(6) {
+        if cont.name.is_empty() {
+            continue;
         }
-        let (cx, cy) = centroid(mesh, body.iter().copied());
-        let base = latin_quarter(cx, cy, cw, ch);
-        let count = used.iter().filter(|&&u| u == base).count();
-        used.push(base);
-        let name = if count == 0 {
-            base.to_string()
-        } else {
-            format!("{base} {}", roman(count + 1))
-        };
-        let size = (12.0 + (body.len() as f32 / n as f32) * 60.0).min(34.0);
+        let [cx, cy] = cont.centroid;
+        let size = (12.0 + (cont.cell_count as f32 / n as f32) * 60.0).min(34.0);
+        let label = cont.name.to_uppercase();
         write!(
             out,
-            r##"<text x="{cx:.1}" y="{cy:.1}" font-size="{size:.0}" letter-spacing="2" fill-opacity="0.5">{name}</text>"##,
+            r##"<text x="{cx:.1}" y="{cy:.1}" font-size="{size:.0}" letter-spacing="2" fill-opacity="0.5">{label}</text>"##,
         )
         .unwrap();
     }
 
-    // The widest sea body gets one ocean label.
-    if let Some(sea) = sea_bodies.first() {
-        if sea.len() * 8 >= n {
-            let (cx, cy) = centroid(mesh, sea.iter().copied());
+    // The widest ocean gets one engraved label: "MARE" — the cartographer's Latin
+    // for "sea" — plus the proper noun grounded in its coastal cultures.
+    if let Some(ocean) = world.oceans.first() {
+        if !ocean.name.is_empty() {
+            let [cx, cy] = ocean.centroid;
+            let label = ocean.name.to_uppercase();
             write!(
                 out,
-                r##"<text x="{cx:.1}" y="{cy:.1}" font-size="22" font-style="italic" letter-spacing="3" fill="#3a4e57" fill-opacity="0.5">MARE OCEANVM</text>"##,
+                r##"<text x="{cx:.1}" y="{cy:.1}" font-size="22" font-style="italic" letter-spacing="3" fill="#3a4e57" fill-opacity="0.5">MARE {label}</text>"##,
             )
             .unwrap();
         }
@@ -267,39 +257,6 @@ fn render_labels(world: &WorldData, out: &mut String) {
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-/// Connected components of cells satisfying `keep`, by BFS over the mesh graph,
-/// returned largest-first. Used to find continents and seas.
-fn connected_bodies(world: &WorldData, keep: impl Fn(usize) -> bool) -> Vec<Vec<usize>> {
-    let mesh = &world.mesh;
-    let n = mesh.cell_count();
-    let mut seen = vec![false; n];
-    let mut bodies: Vec<Vec<usize>> = Vec::new();
-    for start in 0..n {
-        if seen[start] || !keep(start) {
-            continue;
-        }
-        let mut body = Vec::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(start);
-        seen[start] = true;
-        while let Some(c) = queue.pop_front() {
-            body.push(c);
-            if let Some(ns) = mesh.neighbors.get(c) {
-                for &nb in ns {
-                    let nb = nb as usize;
-                    if !seen[nb] && keep(nb) {
-                        seen[nb] = true;
-                        queue.push_back(nb);
-                    }
-                }
-            }
-        }
-        bodies.push(body);
-    }
-    bodies.sort_by_key(|b| std::cmp::Reverse(b.len()));
-    bodies
-}
 
 fn centroid(mesh: &mapgen_core::MeshData, cells: impl IntoIterator<Item = usize>) -> (f32, f32) {
     let (mut sx, mut sy, mut k) = (0.0f32, 0.0f32, 0usize);
@@ -311,37 +268,6 @@ fn centroid(mesh: &mapgen_core::MeshData, cells: impl IntoIterator<Item = usize>
     }
     let k = k.max(1) as f32;
     (sx / k, sy / k)
-}
-
-/// An antique positional name for a landmass at `(cx, cy)` on a `cw × ch` world
-/// (y grows south): TERRA SEPTENTRIONALIS / AUSTRALIS / ORIENTALIS /
-/// OCCIDENTALIS / MEDIA — like the `Terra Australis` of old world maps.
-fn latin_quarter(cx: f32, cy: f32, cw: f32, ch: f32) -> &'static str {
-    let dx = cx - cw * 0.5;
-    let dy = cy - ch * 0.5;
-    if dx.abs() < cw * 0.16 && dy.abs() < ch * 0.16 {
-        "TERRA MEDIA"
-    } else if dy.abs() * cw >= dx.abs() * ch {
-        if dy < 0.0 {
-            "TERRA SEPTENTRIONALIS"
-        } else {
-            "TERRA AUSTRALIS"
-        }
-    } else if dx < 0.0 {
-        "TERRA OCCIDENTALIS"
-    } else {
-        "TERRA ORIENTALIS"
-    }
-}
-
-fn roman(n: usize) -> &'static str {
-    match n {
-        2 => "II",
-        3 => "III",
-        4 => "IV",
-        5 => "V",
-        _ => "VI",
-    }
 }
 
 fn write_polygon(

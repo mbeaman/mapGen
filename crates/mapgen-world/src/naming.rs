@@ -21,7 +21,7 @@
 use std::collections::VecDeque;
 
 use mapgen_core::entities::{Language, Race};
-use mapgen_core::{generate_name, MeshData, MountainRange, WorldData};
+use mapgen_core::{generate_name, Continent, MeshData, MountainRange, Ocean, WorldData};
 use rand_chacha::ChaCha8Rng;
 
 /// Tunables for the naming stage. Calibrated values land in
@@ -177,7 +177,108 @@ pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha
         .collect();
     world.mountain_ranges = ranges;
 
+    // 8. Name *major* continents + oceans. Flood-fill the land/sea into
+    //    connected bodies (the primitive the planisphere used to run at render
+    //    time), keep the significant ones, and name each in the language of the
+    //    culture that dominates it — a continent by its own owned cells, an
+    //    ocean by the cultures along its coast — falling back to language 0 when
+    //    uninhabited. RNG is consumed strictly after the range pass, so every
+    //    earlier name is byte-unchanged; only the new fields move the golden.
+    let (continents, oceans) = name_geographic_bodies(world, &languages, rng);
+    world.continents = continents;
+    world.oceans = oceans;
+
     world.languages = languages;
+}
+
+/// A body earns a name when `cell_count * DIVISOR >= total_cells`. 40 ≈ 2.5% of
+/// the world for continents (matching the planisphere's former speck-skip); 20
+/// ≈ 5% for oceans, so secondary seas still get a name.
+const MIN_CONTINENT_DIVISOR: usize = 40;
+const MIN_OCEAN_DIVISOR: usize = 20;
+
+/// Flood-fill the land and sea into major bodies and name each via the lore
+/// naming system, grounded in the dominant culture. Returns owned vectors so the
+/// caller can write them onto `world` after this immutable borrow ends. Body
+/// order (largest-first, stable) fixes the RNG draw order, so naming is
+/// deterministic; centroids are plain f32 means in body-cell order (no
+/// transcendental), so they stay byte-identical native↔wasm.
+fn name_geographic_bodies(
+    world: &WorldData,
+    languages: &[Language],
+    rng: &mut ChaCha8Rng,
+) -> (Vec<Continent>, Vec<Ocean>) {
+    let mesh = &world.mesh;
+    let n = mesh.cell_count();
+    let last = languages.len() - 1; // non-empty: caller guards cultures non-empty
+    let culture_id = &world.cultures.culture_id;
+    let elev = &world.terrain.elevation;
+    let is_land = |i: usize| elev.get(i).copied().unwrap_or(0.0) > 0.0;
+    let lang_of = |owner: Option<u16>| owner.map(|c| (c as usize).min(last)).unwrap_or(0);
+
+    let mut continents = Vec::new();
+    for body in connected_bodies(mesh, &is_land) {
+        if body.len() * MIN_CONTINENT_DIVISOR < n {
+            continue; // a speck, not a continent
+        }
+        let lang = lang_of(dominant_culture(&body, culture_id));
+        continents.push(Continent {
+            name: generate_name(&languages[lang], rng),
+            centroid: centroid(mesh, &body),
+            cell_count: body.len() as u32,
+        });
+    }
+
+    let mut oceans = Vec::new();
+    for body in connected_bodies(mesh, |i| !is_land(i)) {
+        if body.len() * MIN_OCEAN_DIVISOR < n {
+            continue; // a minor inlet, not an ocean
+        }
+        let coast = coastal_land(mesh, &body, &is_land);
+        let lang = lang_of(dominant_culture(&coast, culture_id));
+        oceans.push(Ocean {
+            name: generate_name(&languages[lang], rng),
+            centroid: centroid(mesh, &body),
+            cell_count: body.len() as u32,
+        });
+    }
+
+    (continents, oceans)
+}
+
+/// World-space mean of the cells' sites — the label anchor. Summed in the given
+/// (deterministic) cell order; plain f32 arithmetic, so byte-stable.
+fn centroid(mesh: &MeshData, cells: &[usize]) -> [f32; 2] {
+    let (mut sx, mut sy) = (0.0f32, 0.0f32);
+    for &c in cells {
+        let p = mesh.sites[c];
+        sx += p[0];
+        sy += p[1];
+    }
+    let k = cells.len().max(1) as f32;
+    [sx / k, sy / k]
+}
+
+/// Land cells adjacent to a sea body — the body's coast — in first-seen order
+/// (deterministic). Used to ground an ocean's name in the cultures on its shore.
+fn coastal_land(
+    mesh: &MeshData,
+    sea_body: &[usize],
+    is_land: &impl Fn(usize) -> bool,
+) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::new();
+    let mut coast = Vec::new();
+    for &c in sea_body {
+        if let Some(ns) = mesh.neighbors.get(c) {
+            for &nb in ns {
+                let nb = nb as usize;
+                if is_land(nb) && seen.insert(nb) {
+                    coast.push(nb);
+                }
+            }
+        }
+    }
+    coast
 }
 
 /// Minimum cluster size (in cells) for a mountain range to earn a name.

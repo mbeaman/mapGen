@@ -301,6 +301,25 @@ artifact that justified the pick, and the commit that landed the value.
 * **Method:** derived (seed-42 spot check in `naming_spec`)
 * **Source:** Phase-3e polish; `naming.rs` step 6
 
+### `MIN_CONTINENT_DIVISOR` / `MIN_OCEAN_DIVISOR`
+
+* **Current:** `40` (continents) / `20` (oceans) — a body earns a name
+  when `cell_count * DIVISOR >= total_cells`, i.e. continents ≥ 2.5% of
+  the world, oceans ≥ 5%.
+* **Why this value:** `40` reproduces the planisphere's former
+  render-time speck-skip (`body.len() * 40 < n`), so the visual set of
+  labelled continents is unchanged — only the names move from positional
+  Latin to lore-grounded. Oceans use a looser `20` (≈5%) so a secondary
+  sea still earns a name; the planisphere still only draws the largest.
+* **Grounding:** a continent is named in the language of the culture that
+  owns the most of its cells (stable lowest-id tiebreak); an ocean by the
+  dominant culture among its coastal-adjacent land cells. Uninhabited
+  bodies fall back to language 0. Naming runs as `name_world` step 8, RNG
+  drawn after the mountain-range pass so all earlier names are unchanged.
+* **Method:** derived (the renderer's prior 2.5% threshold; grounding +
+  determinism pinned in `continents_spec`)
+* **Source:** grounded-continent-names substage; `naming.rs` step 8
+
 ## History (Phase 4) — `mapgen-history`
 
 ### Turchin demographic backbone (4b) — `loops::turchin`: `GROWTH_RATE` / `FAMINE_STRESS` / drought + plague knobs
