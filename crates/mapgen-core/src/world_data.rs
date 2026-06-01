@@ -66,7 +66,7 @@ use crate::{
 ///   changed hands in a won war, so `control_at_year` can reconstruct the map at
 ///   any past year. Both goldens re-anchor for the `schema_version` byte;
 ///   `seed42_full` additionally for the recorded changes (phase2 has no history).
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -96,6 +96,14 @@ pub struct WorldData {
     /// when empty so unnamed worlds keep their on-disk shape.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mountain_ranges: Vec<MountainRange>,
+    /// Named major continents (flood-filled landmasses). Populated by the naming
+    /// stage; `skip`-elided when empty so unnamed worlds keep their on-disk shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub continents: Vec<Continent>,
+    /// Named major oceans / seas. Populated by the naming stage; `skip`-elided
+    /// when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub oceans: Vec<Ocean>,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -295,6 +303,32 @@ pub struct Lake {
 pub struct MountainRange {
     pub cells: Vec<u32>,
     pub name: String,
+}
+
+/// A named continent — a *major* connected landmass (flood-filled over the mesh
+/// graph). Produced by the naming stage for bodies above a size threshold, named
+/// in the language of the culture that dominates it (most owned cells), falling
+/// back to the first culture's language when uninhabited. Only the label anchor
+/// and size are persisted — unlike [`MountainRange`], the planisphere doesn't
+/// draw the cells, it places one engraved label; the per-cell membership a future
+/// continent-aware drill-snap needs is a separate `continent_id` map, not this.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Continent {
+    pub name: String,
+    /// World-space centroid (mean of member cell sites), the label anchor.
+    pub centroid: [f32; 2],
+    /// Number of mesh cells in the landmass — drives label size + speck-skip.
+    pub cell_count: u32,
+}
+
+/// A named ocean / sea — a *major* connected body of water. Named in the
+/// language of the culture dominating its coastal-adjacent land, falling back to
+/// the first culture's language. Same persisted shape as [`Continent`].
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Ocean {
+    pub name: String,
+    pub centroid: [f32; 2],
+    pub cell_count: u32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
