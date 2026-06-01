@@ -6,7 +6,8 @@ visible instead of hidden in compounding latency:
 - **`generate_full`** — the geography→society→history pipeline (mesh → plates →
   noise → erosion → hydrology → ocean → seasonal climate → biomes → cultures →
   religions → polities → naming → history);
-- **`render`** — the ornate SVG build over a generated world;
+- **`render`** — the ornate SVG build over a generated world, plus the
+  zoomed-out planisphere (`Style::Planet`) over an 18k-cell planet;
 - **`refine_sector`** — one on-demand zoom-in tile (Phase 7 multi-scale); the
   navigation ADR flags sector latency as directly user-facing, so it carries its
   own budget.
@@ -36,10 +37,18 @@ coastline ripples, mountains, glyphs and labels per cell. A refined sector
 recomputes the shared base field from the root seed, runs the physical pipeline
 over a haloed sub-mesh, and projects the parent society/hydrology.
 
+**`render` with `Style::Planet`** (the zoomed-out planisphere) was added
+2026-06-01. It is the heaviest render path *by cell count* (an 18k-cell planet),
+yet the cheapest in wall time: the planisphere deliberately drops the per-cell
+ornate clutter (forests, ripples, glyphs), drawing only biome-tinted fills, a
+graticule, the major rivers/ranges, and continent/ocean labels — so 18k planet
+cells render in ~13 ms versus ~78 ms for 15k ornate cells.
+
 | component       | case       | median |
 |-----------------|------------|-------:|
 | `render`        | 4,000      |  22 ms |
 | `render`        | 15,000     |  78 ms |
+| `render` planet | 18,000 (planisphere) |  13 ms |
 | `refine_sector` | 15k → 4k tile (L2) |  68 ms |
 
 ### Environment
@@ -65,6 +74,7 @@ same hardware class.** Budget tables:
 |-----------------|---------:|--------------:|
 |           4,000 |    22 ms |         33 ms |
 |          15,000 |    78 ms |        117 ms |
+| 18,000 planet   |    13 ms |         20 ms |
 
 | `refine_sector`     | baseline | budget (1.5×) |
 |---------------------|---------:|--------------:|
@@ -93,7 +103,8 @@ cargo run --release -p mapgen-world --example perf_baseline -- --check
 Both modes print a markdown table to stdout with a `status` column
 showing `ok` / `OVER` per size. `--check` adds a stderr summary and exits
 1 on any violation. The baseline + budget constants live in
-`GEN_BASELINES` / `RENDER_BASELINES` / `REFINE_BASELINE` at the top of
+`GEN_BASELINES` / `RENDER_BASELINES` / `REFINE_BASELINE` / `PLANET_RENDER_BASELINE`
+at the top of
 [`crates/mapgen-world/examples/perf_baseline.rs`](../crates/mapgen-world/examples/perf_baseline.rs)
 and must stay in sync with the tables above.
 

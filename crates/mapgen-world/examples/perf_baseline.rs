@@ -7,9 +7,11 @@
 //! on any violation:
 //!     cargo run --release -p mapgen-world --example perf_baseline -- --check
 //!
-//! Three user-facing components, three samples each:
+//! User-facing components, three samples each:
 //! - `generate_full` — the geography→society→history pipeline (4k/15k/30k).
 //! - `render` — ornate SVG build over a generated world (4k/15k).
+//! - `render` planet — the zoomed-out planisphere (`Style::Planet`) over an
+//!   18k-cell planet; most cells, least clutter, so it is the cheapest render.
 //! - `refine_sector` — one on-demand zoom-in tile (Phase 7); the navigation ADR
 //!   flags sector latency as user-facing, so it gets its own budget.
 //!
@@ -45,6 +47,12 @@ const RENDER_BASELINES: &[(usize, u64, u64)] = &[(4_000, 22, 33), (15_000, 78, 1
 /// `(parent cells, baseline ms, budget ms)`. Anchored 2026-05-25 to this box.
 const REFINE_BASELINE: (usize, u64, u64) = (15_000, 68, 102);
 
+/// `render` with `Style::Planet` (the zoomed-out planisphere) over an 18k-cell
+/// planet world — the heaviest render path by cell count, but it drops the
+/// per-cell ornate clutter (forests, ripples, glyphs), so it is far cheaper than
+/// the ornate render. `(cells, baseline ms, budget ms)`. Anchored 2026-06-01.
+const PLANET_RENDER_BASELINE: (usize, u64, u64) = (18_000, 13, 20);
+
 fn gen_params(cells: usize, seed: u64) -> GenerateParams {
     GenerateParams {
         seed,
@@ -64,9 +72,9 @@ fn measure_generate(cells: usize, seed: u64) -> Duration {
     dt
 }
 
-fn measure_render(world: &WorldData) -> Duration {
+fn measure_render(world: &WorldData, style: Style) -> Duration {
     let start = Instant::now();
-    let svg = black_box(render(black_box(world), Style::OrnateAntique).expect("render"));
+    let svg = black_box(render(black_box(world), style).expect("render"));
     let dt = start.elapsed();
     drop(svg);
     dt
@@ -115,7 +123,28 @@ fn main() {
     for &(cells, base, budget) in RENDER_BASELINES {
         let samples: Vec<Duration> = SEEDS
             .iter()
-            .map(|&s| measure_render(&generate_full(gen_params(cells, s))))
+            .map(|&s| measure_render(&generate_full(gen_params(cells, s)), Style::OrnateAntique))
+            .collect();
+        row(
+            &format!("{cells} cells"),
+            samples,
+            base,
+            budget,
+            &mut failures,
+        );
+    }
+
+    // ---- planet render (planisphere; planet generation untimed) ------------
+    header("render — planisphere (Style::Planet)");
+    {
+        let (cells, base, budget) = PLANET_RENDER_BASELINE;
+        let samples: Vec<Duration> = SEEDS
+            .iter()
+            .map(|&s| {
+                let mut p = GenerateParams::planet(s);
+                p.cell_count = cells;
+                measure_render(&generate_full(p), Style::Planet)
+            })
             .collect();
         row(
             &format!("{cells} cells"),
