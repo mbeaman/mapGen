@@ -21,15 +21,19 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
-## Up next — resume here (2026-05-25)
+## Up next — resume here (2026-05-31)
 
 Picking this branch up on a fresh clone? Start here.
 
 **Where we left off.** Branch `claude/fantasy-map-generator-1du5B`. The overlay
-system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export) and the
-zoom-out planet view — increment 1: `mapgen planet`, `Style::Planet`, `mapgen
-refine --planet` — are shipped and green. Quality bar: `just check`, `just
-web-test`, and `just perf` all pass; the Playwright e2e smoke runs in CI.
+system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export), the
+zoom-out planet view (increment 1: `mapgen planet`, `Style::Planet`, `mapgen
+refine --planet`), and **planet zoom-out increment 2 item 1 — frontend
+zoom-out** (a "Scale: Continent · Planet" control, `Generation.planet` in
+`mapgen-wasm`, planet-as-breadcrumb-root, click-to-drill into continents,
+`?scale=planet` permalink) are shipped and green. Quality bar: `just check`,
+`just web-test`, and the Playwright e2e (now incl. a planet-drill smoke) all
+pass.
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first
 wasm build; see `web/README.md`). Then `mapgen planet --seed 42` for the
@@ -41,23 +45,20 @@ distro (e.g. 26.04) install/run the e2e with
 **Immediate next — planet zoom-out, increment 2** (continues "World / planet
 scale (zoom out)" below), in priority order:
 
-1. **Frontend zoom-out (do first).** Make the planet usable in the browser, not
-   just the CLI:
-   - expose `Style::Planet` through `mapgen-wasm` + `web/src/worker.ts` (render a
-     planet-params world at level 0);
-   - treat the planet as the top breadcrumb level *above* the continental view in
-     `web/src/{sector,main,panzoom}.ts` — click a continent to `refineSector`
-     into it (the refine machinery already works; this is nav state + wiring);
-   - surface "Planet" in the UI (a scale/style affordance).
-2. **Grounded continent / ocean names.** Replace the positional Latin labels in
-   `style/planet.rs` (`latin_quarter`) with names from the lore naming system
-   (`mapgen_core::naming`).
+1. ~~**Frontend zoom-out.**~~ DONE 2026-05-31 — planet usable in the browser
+   (Scale control, `Generation.planet`, breadcrumb-root, click-to-drill).
+2. **Grounded continent / ocean names (do first).** Replace the positional Latin
+   labels in `style/planet.rs` (`latin_quarter`) with names from the lore naming
+   system (`mapgen_core::naming`). Flood-filling the land into named landmasses
+   here also unlocks **continent-aware drill targets** (see entry below) — today
+   click-to-drill snaps to a quadtree quadrant, which bisects continents.
 3. **Planet-render perf budget.** Add a `Style::Planet` row to
    `crates/mapgen-world/examples/perf_baseline.rs` (it budgets ornate render +
    `refine_sector` today) and to `docs/perf_baseline.md`.
 4. **Harder / later:** edge projection + distortion for a true globe feel;
    inter-continental society & history (trade, migration) — society is generated
-   per-world today.
+   per-world today; planet-scale history viz (the time-slider is hidden at planet
+   scale — see entry below).
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
@@ -181,14 +182,55 @@ note.
     planet → continent → region is one mechanism). Proven by
     `scale_spec::planet_root_refines_into_a_continental_sector` +
     `visual_regression::planet_render_rasterizes_to_a_sane_image`.
-- **Open follow-ups (increment 2+):** frontend zoom-out (planet as the top
-  breadcrumb level, `Style::Planet` in the worker/UI, click-to-drill from the
-  planet); projection / distortion at the planetary edge for a true globe feel;
+- **Shipped (increment 2, item 1 — frontend zoom-out, 2026-05-31).** A "Scale"
+  control (Continent · Planet) in the web UI; `Generation.planet(seed, cells,
+  nations)` in `mapgen-wasm` (same pipeline on the planet preset); the worker
+  branches the constructor on a `scale` field; the planet is the breadcrumb
+  *root* ("Planet" vs "World") and click-to-drill refines a continental sector
+  via the existing machinery; `?scale=planet` permalink. Pure nav helpers
+  `crumbLabel` / `navStyle` are unit-tested (`sector.test.ts`) and an e2e
+  (`smoke.spec.ts`) generates a planet then drills a continent.
+- **Open follow-ups (increment 2+):** named continents/oceans grounded in the
+  lore naming system (today's labels are positional — **the immediate next
+  item**); projection / distortion at the planetary edge for a true globe feel;
   inter-continental society/history (trade, migration) — currently society is
-  generated per-world; named continents/oceans grounded in the lore naming
-  system (today's labels are positional); planet-scale render perf budget.
+  generated per-world; planet-scale render perf budget.
 - **Origin.** This session, 2026-05-25, "let's do zoom out" → chose the
   level-above-0 hierarchy.
+
+#### Planet-scale history visualization
+
+- **Why deferred.** The web time-slider scrubs political borders over the
+  conquest years, but `Style::Planet` is a planisphere — it draws continents and
+  coastlines, not polity fills — so it has nothing to animate. The frontend
+  therefore hides the time-slider whenever the active scale is planet (it stays
+  live at continental scale). Not a silent drop: the capability simply has no
+  surface to render onto yet.
+- **Trigger for revival.** Someone wants to *watch* history at the globe scale —
+  e.g. an empire's spread tinting continents across centuries, or a per-epoch
+  planisphere. Needs a control-aware planet render (polity tint on the
+  planisphere) before the slider earns its place there.
+- **Cost.** ~half a day (a control overlay on `style/planet.rs` + un-gate the
+  slider for planet scale).
+- **Origin.** Increment-2 item 1, 2026-05-31 (advisor review of the zoom-out
+  wiring flagged the gated slider as a deferral, not a drop).
+
+#### Continent-aware drill targets (quadtree quadrants bisect landmasses)
+
+- **Why deferred.** Drilling a planet uses the quadtree (`childSectorAt`): a
+  click snaps to a `2^level × 2^level` grid cell, not to a landmass. With 32
+  plates a quadrant routinely straddles a coastline or slices a continent, so a
+  drilled sector can come up half-ocean or mid-landmass. This is inherent to
+  grid-drill-on-a-planet, not a bug — the continental view is still a valid
+  refined sector, just not framed on a whole continent.
+- **Trigger for revival.** We add grounded continent *detection* (flood-fill the
+  land into named landmasses — the prerequisite for grounded continent names
+  above). Once continents are first-class objects, click-to-drill can snap to
+  the continent under the cursor and frame *it* rather than a grid quadrant.
+- **Cost.** Folds into the grounded-continent-names work (~1 day combined): the
+  same flood-fill that names landmasses gives drill its snap targets.
+- **Origin.** Increment-2 item 1, 2026-05-31 (advisor review: "surface the limit,
+  ship anyway — it's part of why grounded continent detection earns its keep").
 
 ### Local rural / hinterland maps (zoom in, countryside)
 
