@@ -65,11 +65,10 @@ scale (zoom out)" below), in priority order:
    **Increment 2's tractable items are now all shipped** — what remains is the
    "harder / later" set below.
 5. **Harder / later:** ~~planet-scale history viz~~ DONE 2026-06-01; ~~globe edge
-   projection~~ DONE 2026-06-01 (the planisphere is now a Mollweide oval —
-   curved meridians, pinched poles — with the click-drill kept correct via a
-   closed-form unproject; see entry below); inter-continental society & history
-   (trade, migration) — society is generated per-world today; tight continent
-   framing (entry below). **The remaining two are the big multi-week arcs.**
+   projection~~ DONE 2026-06-01 (Mollweide oval, drill kept correct); **inter-
+   continental society & history — IN PROGRESS** (full multi-week arc, all-in incl.
+   Phase 3; design + de-risk done, building now — see `docs/inter_continental_design.md`
+   "The Sundered Lanes"); tight continent framing (entry below, advised against).
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
