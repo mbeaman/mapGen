@@ -6,11 +6,40 @@
 > advisor reconciliation. This document is the convergent, DA-hardened design and
 > the decision set for the user. It is NOT locked; it is the plan to build from.
 
-> ## ⛔ CRITICAL FINDING (2026-06-02) — THE PREMISE IS FALSE. The arc is BLOCKED pending a user decision.
+> ## ✅ RESOLVED (2026-06-02) — premise fixed at the polity level; arc UNBLOCKED.
+>
+> The CRITICAL FINDING below (society spanned every continent at gen time) was
+> **fixed**: the user chose to rework the foundation, and `cultures::populate` now
+> **instances each culture per landmass** (schema v19, commit on branch). Probe
+> confirms: polities spanning >1 landmass **3+ → 0** on planet seeds 11/19/7/4;
+> sizable-body land controlled 92–100% (earned-sparse, NOT gutted); cultures
+> 5 → 21–32, polities ~4 → 13–22 per planet. seed42 (single landmass) is a proven
+> byte-identical no-op (goldens re-anchored for the version byte alone).
+> **Polity/culture spanning — the carrier blocker — is dead.** So 3a's sea lanes
+> are now load-bearing, and the arc can proceed to the carriers.
+>
+> **Honest residue (deferred, not a bug):** RELIGION still spreads globally at gen
+> time (`religions::found` is a global spreader) — instancing confines polities,
+> not faith. "A religion provably crosses water" is the Phase-2 Diffusion
+> milestone, NOT this change; the later religion increment must reconcile gen-time
+> confinement vs Diffusion's global-then-spread.
+>
+> **Next on resume (advisor flags):** (1) **re-probe the carriers** — the old
+> `bothNone=0` "colonization can't fire" conclusion is STALE; floor-drops created
+> 0–8% `None` land = colonization fodder, so the firing preconditions inverted;
+> re-run the histogram before picking a carrier substage. (2) The cultures
+> (`>=0.0`) vs sea_lanes (`>0.0`) land-predicate divergence is pinned by a tripwire
+> test (`no_culture_instance_spans_a_sea_lanes_body`, passes trivially today since
+> no cell sits at exactly 0.0) — unify on one canonical body primitive before it
+> bites.
+>
+> ---
+>
+> ### The original finding (kept for the record):
 >
 > After shipping Phase 1 Step 3a (the isotropic sea-lane substrate), a probe of
 > the *consumer* (which the design campaign and 3a never checked) found that
-> **society already spans every continent at gen time — there is nothing for the
+> **society already spanned every continent at gen time — there was nothing for the
 > lanes to gate.**
 >
 > - **Root cause:** `crates/mapgen-world/src/polities.rs:145-148` stamps
