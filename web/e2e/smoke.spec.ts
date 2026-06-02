@@ -190,9 +190,8 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // The breadcrumb root reads "Globe".
   await expect(page.locator("#breadcrumb").getByRole("button", { name: "Globe" })).toBeVisible();
 
-  // A drag over the globe rotates it (OrbitControls) and must NOT trigger the
-  // SVG drill path — we stay at the Globe root (the SVG drill is inert in globe
-  // mode; the raycaster drill arrives in a later increment).
+  // A drag over the globe rotates it (OrbitControls) and must NOT drill — we stay
+  // at the Globe root with the sphere shown.
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
@@ -200,4 +199,19 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await page.mouse.up();
   await expect(page.locator("#breadcrumb").getByRole("button", { name: "Globe" })).toBeVisible();
   await expect(canvas).toBeVisible(); // still the globe, not a drilled SVG sector
+
+  // A click (no drag) drills: the raycaster's surface UV → uvToWorld → the SAME
+  // continentAt + refine the 2D planet uses, handing off to the 2D SVG sector.
+  // "refined in" + an L-level prove the whole chain fired (a click that did
+  // nothing, or a globe that swallowed the event, would leave us at the root).
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(status).toContainText("refined in", { timeout: 30_000 });
+  await expect(page.locator("#breadcrumb")).toContainText(/L[1-6]/);
+  await expect(page.locator("#map-content")).toBeVisible(); // the 2D sector
+  await expect(canvas).toBeHidden(); // the globe stepped aside
+
+  // The "Globe" breadcrumb returns to the sphere with NO regenerate.
+  await page.locator("#breadcrumb").getByRole("button", { name: "Globe" }).click();
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
 });

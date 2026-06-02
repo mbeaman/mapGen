@@ -16,10 +16,12 @@ import {
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  Raycaster,
   Scene,
   SphereGeometry,
   Texture,
   CanvasTexture,
+  Vector2,
   WebGLRenderer,
   SRGBColorSpace,
   RepeatWrapping,
@@ -36,6 +38,9 @@ export interface GlobeHandle {
   setTexture(source: HTMLCanvasElement): void;
   /** Re-read the container size (call on resize / on show). */
   resize(): void;
+  /** Register a click handler: fired with the surface UV (u,v ∈ [0,1]) of a
+   *  near-stationary click on the sphere (a drag rotates instead). */
+  onPick(cb: (u: number, v: number) => void): void;
   /** Full teardown: stop the loop and free GPU resources. */
   dispose(): void;
 }
@@ -135,6 +140,31 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     camera.updateProjectionMatrix();
   };
 
+  // Click-to-pick: a near-stationary press is a click (drill); a drag rotates
+  // (OrbitControls). On a click, raycast the sphere and hand the hit's intrinsic
+  // surface UV to the callback — reading UV avoids reconstructing lat/lon, so the
+  // hemisphere convention can't flip.
+  const raycaster = new Raycaster();
+  let pickCb: ((u: number, v: number) => void) | null = null;
+  let down: { x: number; y: number } | null = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    down = { x: e.clientX, y: e.clientY };
+  });
+  canvas.addEventListener("pointerup", (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+    down = null;
+    if (moved > 6 || !pickCb) return; // a drag, not a click
+    const rect = canvas.getBoundingClientRect();
+    const ndc = new Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(ndc, camera);
+    const hit = raycaster.intersectObject(sphere)[0];
+    if (hit?.uv) pickCb(hit.uv.x, hit.uv.y);
+  });
+
   return {
     show() {
       canvas.hidden = false;
@@ -162,6 +192,9 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       canvas.dataset.textured = "1";
     },
     resize,
+    onPick(cb: (u: number, v: number) => void) {
+      pickCb = cb;
+    },
     dispose() {
       this.hide();
       geometry.dispose();

@@ -12,6 +12,7 @@ import {
   ROOT,
   sectorAt,
   sectorRect,
+  uvToWorld,
   type Sector,
 } from "./sector";
 import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
@@ -99,6 +100,15 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
   if (!globe) {
     const mod = await import("./globe");
     globe = mod.mountGlobe(globeCanvas);
+    // A click on the sphere drills: surface UV → world (x,y) → the SAME
+    // continentAt query the 2D planet uses. The input is already world space
+    // (the globe is equirectangular), so it bypasses the Mollweide unproject
+    // that the SVG planet click applies.
+    globe.onPick((u, v) => {
+      if (busy || !hasWorld || !globeScale || nav.level !== 0) return;
+      const { x, y } = uvToWorld(u, v, worldW, worldH);
+      send({ type: "continentAt", x, y });
+    });
   }
   return globe;
 };
@@ -565,10 +575,11 @@ const updateBreadcrumb = () => {
     }
     breadcrumbEl.append(crumb);
   }
-  if (hasWorld && nav.level < MAX_LEVEL && !globeScale) {
+  if (hasWorld && nav.level < MAX_LEVEL) {
     const hint = document.createElement("span");
     hint.className = "crumb-hint";
-    hint.textContent = "· click the map to zoom in";
+    hint.textContent =
+      globeScale && nav.level === 0 ? "· click the globe to zoom in" : "· click the map to zoom in";
     breadcrumbEl.append(hint);
   }
   refreshTimeslider(); // nav changed → show at world scale, hide in a sector
@@ -593,6 +604,23 @@ const requestRefine = () => {
 // sectors are stateless, so this never needs the parent to be cached.
 const navTo = (target: Sector) => {
   if (busy || !hasWorld) return;
+  // Globe mode: the root (level 0) is the 3D sphere, which has no SVG parent
+  // pixels for the coarse-first zoom. So when crossing the globe boundary, hand
+  // off directly instead of animating a focusContentRect.
+  if (globeScale && (nav.level === 0 || target.level === 0)) {
+    nav = target;
+    updateBreadcrumb();
+    if (target.level === 0) {
+      // Back to the globe — re-show the (already-textured) sphere, no regenerate.
+      void enterGlobeView();
+      setStatus("Globe.", "ok");
+    } else {
+      // Drill in from the globe → leave the sphere, refine the 2D SVG sector.
+      exitGlobeView();
+      requestRefine();
+    }
+    return;
+  }
   // Was the current view the projected planet oval? Then its pixels are
   // Mollweide-projected, so frame the target's PROJECTED box, not its world box.
   const fromPlanetOval = planetScale && nav.level === 0;
@@ -639,6 +667,15 @@ const drillAt = (wx: number, wy: number) => {
 // Treat a near-stationary pointer press as a click (drill in); a drag pans.
 let downPt: { x: number; y: number } | null = null;
 mapEl.addEventListener("pointerdown", (e) => {
+  // Only a press that STARTS on the map surface is a potential drill. The
+  // breadcrumb, zoom buttons, slider, etc. live inside #map, so their clicks
+  // also bubble here — arming a drill on them would fire a spurious drill on the
+  // bubbled pointerup (e.g. clicking a breadcrumb to navigate up would instead
+  // drill down, setting `busy` and swallowing the navigation).
+  if ((e.target as HTMLElement).closest(".breadcrumb, .zoom, .timeslider, .scrubber, .overlay")) {
+    downPt = null;
+    return;
+  }
   downPt = { x: e.clientX, y: e.clientY };
 });
 mapEl.addEventListener("pointerup", (e) => {
@@ -646,10 +683,10 @@ mapEl.addEventListener("pointerup", (e) => {
   const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
   downPt = null;
   if (moved > 6 || busy || !hasWorld) return;
-  // In globe mode the 3D canvas owns interaction (OrbitControls); the globe's
-  // own raycaster drill is wired in a later increment, so the SVG drill path is
-  // inert here.
-  if (globeScale) return;
+  // At the globe ROOT the 3D canvas owns interaction (its own raycaster drill);
+  // the SVG drill path is inert. But once drilled into a 2D sector (level ≥ 1,
+  // the canvas hidden), SVG clicks drill deeper as usual.
+  if (globeScale && nav.level === 0) return;
   const c = panzoom.clientToContent(e.clientX, e.clientY);
   const cur = sectorRect(nav, worldW, worldH);
   drillAt(cur.x0 + c.x, cur.y0 + c.y);
