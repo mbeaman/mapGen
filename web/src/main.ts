@@ -102,12 +102,22 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
   }
   return globe;
 };
-// Show the sphere over the (hidden) SVG layer.
-const enterGlobeView = async () => {
+// Show the sphere over the (hidden) SVG layer, optionally texturing it from an
+// equirectangular (flat `biomes`) render of the world. The texture is applied
+// BEFORE show() so the placeholder graticule never flashes.
+const enterGlobeView = async (textureSvg?: string) => {
   contentEl.style.display = "none";
   placeholderEl.classList.add("hidden");
   mapEl.classList.remove("navigable"); // the globe rotates; it isn't zoom-in
   const g = await ensureGlobe();
+  if (textureSvg) {
+    try {
+      // Planet world is 2048×1024; a 2:1 texture wraps the sphere's UVs cleanly.
+      g.setTexture(await rasterizeSvg(textureSvg, 2048, 1024));
+    } catch {
+      // Rasterization failed (unlikely) — keep the placeholder graticule.
+    }
+  }
   g.show();
 };
 // Return to the SVG layer (used when leaving globe scale, and — later — on drill).
@@ -360,10 +370,12 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       hasWorld = true;
       nav = { ...ROOT };
       if (globeScale) {
-        // Globe view: mount/show the sphere instead of injecting the SVG. The
-        // returned SVG is ignored (Increment 2 textures the sphere from a
-        // dedicated channel). worldW/worldH were already pinned to planet dims.
-        void enterGlobeView();
+        // Globe view: texture the sphere with the returned SVG (we asked the
+        // worker for the flat `biomes` render at generate time, which is exactly
+        // the equirectangular whole-world map the sphere UVs want) and show it
+        // instead of injecting the SVG into the DOM. worldW/worldH were already
+        // pinned to planet dims.
+        void enterGlobeView(msg.svg);
         historyYears = msg.historyYears;
         updateBreadcrumb();
         narrateBtn.disabled = false;
@@ -703,23 +715,33 @@ const downloadSvg = () => {
   triggerDownload(new Blob([lastSvg], { type: "image/svg+xml;charset=utf-8" }), exportName("svg"));
 };
 
-const downloadPng = async () => {
-  if (!exportReady) return;
-  setStatus("Rasterising PNG…", "busy");
+// Rasterize an SVG string to an off-screen canvas at a given pixel size. Shared
+// by the PNG export and the 3D globe texture. The render SVG carries its fonts
+// and styles inline (base64 @font-face / literal fills), so it loads as a
+// same-origin <img> and the canvas stays untainted (no SecurityError on read).
+const rasterizeSvg = async (svg: string, w: number, h: number): Promise<HTMLCanvasElement> => {
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   try {
-    const scale = 2;
-    const blob = new Blob([lastSvg], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
     const img = new Image();
     img.src = url;
     await img.decode();
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(lastDims.w * scale);
-    canvas.height = Math.round(lastDims.h * scale);
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas 2d context unavailable");
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas;
+  } finally {
     URL.revokeObjectURL(url);
+  }
+};
+
+const downloadPng = async () => {
+  if (!exportReady) return;
+  setStatus("Rasterising PNG…", "busy");
+  try {
+    const canvas = await rasterizeSvg(lastSvg, Math.round(lastDims.w * 2), Math.round(lastDims.h * 2));
     canvas.toBlob((png) => {
       if (png) triggerDownload(png, exportName("png"));
       setStatus("PNG saved.", "ok");

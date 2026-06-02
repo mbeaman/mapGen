@@ -178,6 +178,12 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // mount + paint — strictly more than "a WebGL context exists" (a bare canvas
   // reports that with no globe at all).
   await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  // And it's textured with the REAL world (the flat biomes render), not the
+  // placeholder graticule: setTexture sets data-textured only when a rasterized
+  // world texture is applied (the constructor's placeholder never goes through
+  // setTexture). So this fails if the generate→biomes-svg→rasterize→setTexture
+  // pipeline broke and the sphere fell back to the placeholder.
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
   // The sphere is shown over the hidden SVG layer.
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();

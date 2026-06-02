@@ -157,6 +157,9 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       material.map = next;
       material.needsUpdate = true;
       prev?.dispose();
+      // Signal a real world texture was applied (vs the constructor's placeholder
+      // graticule, which never goes through setTexture). The e2e keys off this.
+      canvas.dataset.textured = "1";
     },
     resize,
     dispose() {
