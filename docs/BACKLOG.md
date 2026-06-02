@@ -70,6 +70,33 @@ scale (zoom out)" below), in priority order:
    Phase 3; design + de-risk done, building now — see `docs/inter_continental_design.md`
    "The Sundered Lanes"); tight continent framing (entry below, advised against).
 
+**The Sundered Lanes — build progress.**
+- ~~Phase 1 Step 1 (substrate skeleton)~~ DONE 2026-06-01 — schema v18
+  `WorldData::sea_lanes`, `Stage::SeaLanes`, `PipelineStage::SeaLanes` (after
+  Biomes, before Cultures), no-op `chart` stub.
+- ~~Phase 1 Step 3a (isotropic substrate)~~ DONE 2026-06-02 — `sea_lanes::chart`
+  builds the lane graph: multi-source Dijkstra "watershed" from every coastal
+  cell, one cheapest crossing per landmass pair (sea–sea + sea→land pinch scans),
+  each gated by a fixed global `min_naval_for_cost` curve (slope = roster-max
+  naval 40 / Step-0 gap 100, a *pure function of cost* — not a per-world quantile).
+  Verified across canonical seeds: 11/19/4/7 carry both crossable straits and
+  open-ocean walls; 23/42 are legitimately sundered. Endpoints are coastal *land*
+  cells (seizable by a later carrier as a `BorderChange`).
+- **Deferred within the arc (revival triggers):**
+  - *Lake-bridging robustness.* `chart`'s navigable mask is `elev <= 0`, which
+    also admits inland lakes / sub-sea-level basins; a *large* lake touching two
+    landmasses would bridge them for free. Latent only — no disconnected pool
+    touches two sizable bodies on any canonical seed. **Revive when** a planet
+    seed surfaces a spurious inter-body lane through enclosed water (restrict the
+    sea mask to the dominant ocean component, or threshold sea-component size).
+  - *`perf_baseline` row for the SeaLanes stage* (design lists it under
+    Determinism + perf). The stage is empirically fast (6 planets probed in
+    well under a second). **Add at end of Phase 1**, once 3b's anisotropic cost
+    has settled the per-lane math (no point calibrating a row that 3b moves).
+- **Next:** Phase 1 Step 3b (wind-aware anisotropic cost via `climate::wind_vector`)
+  → Phase 1 carriers (beachhead conquest + `from:None` colonization in
+  mapgen-history) → minimum surfacing (lane layer auto-ON, cross-water prose).
+
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
 
