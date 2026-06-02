@@ -66,7 +66,21 @@ use crate::{
 ///   changed hands in a won war, so `control_at_year` can reconstruct the map at
 ///   any past year. Both goldens re-anchor for the `schema_version` byte;
 ///   `seed42_full` additionally for the recorded changes (phase2 has no history).
-pub const SCHEMA_VERSION: u32 = 17;
+/// * v17 — planet view: named geographic bodies `WorldData::continents`
+///   (flood-filled landmasses) and `WorldData::oceans` (major seas), each labelled
+///   in its dominant culture's tongue so the planisphere can ground continent /
+///   ocean names. Populated by the naming stage; `skip`-elided when empty. All
+///   three goldens re-anchor for the `schema_version` byte; `seed42_full`
+///   additionally for the named bodies (phase2/sector snapshot pre-naming state).
+/// * v18 — "The Sundered Lanes" maritime substrate: `WorldData::sea_lanes`
+///   (`SeaLanesData` — inter-continental sea lanes with per-lane traversal cost +
+///   `min_naval` gate). Populated by the new `sea_lanes` stage; `skip`-elided when
+///   empty. This skeleton adds the (still-empty) field + stage wiring, so all
+///   three goldens re-anchor for the `schema_version` byte ALONE — verified by
+///   reverting the constant to 17 and confirming the goldens hold with all
+///   sea_lanes code in place (the empty field elides; the new RNG stream does not
+///   perturb other stages). The full lane graph lands in a later phase.
+pub const SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -104,6 +118,13 @@ pub struct WorldData {
     /// when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub oceans: Vec<Ocean>,
+    /// Inter-continental sea lanes — the maritime-connectivity substrate
+    /// ("The Sundered Lanes", `docs/inter_continental_design.md`). Populated by
+    /// the `sea_lanes` stage from geography (currents + winds + distance); the
+    /// history sim queries them, naval-gated, to let society reach across oceans.
+    /// `skip`-elided when empty so pre-v18 / laneless worlds keep their shape.
+    #[serde(default, skip_serializing_if = "SeaLanesData::is_empty")]
+    pub sea_lanes: SeaLanesData,
     #[serde(default)]
     pub entities: EntityStore,
     #[serde(default)]
@@ -319,6 +340,36 @@ pub struct Continent {
     pub centroid: [f32; 2],
     /// Number of mesh cells in the landmass — drives label size + speck-skip.
     pub cell_count: u32,
+}
+
+/// One inter-continental sea lane: a navigable crossing between two coastal
+/// *anchor* cells on different landmasses. `cost` is the anisotropic sea-path
+/// cost (current/wind-aware) that produced it; `min_naval` is the calibrated
+/// crossing gate — a polity crosses iff its naval skill `>= min_naval`. The flow
+/// field that produces `cost` is NOT persisted (recomputed at build time only).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SeaLane {
+    /// Coastal anchor cell ids, canonical `a < b`.
+    pub a: u32,
+    pub b: u32,
+    /// Accumulated anisotropic sea-path cost of the crossing.
+    pub cost: f32,
+    /// Naval skill required to use the lane (the dual-filter gate).
+    pub min_naval: u8,
+}
+
+/// The maritime-connectivity substrate: the set of inter-continental sea lanes.
+/// Empty until the `sea_lanes` stage runs (and on continental-scale / pre-v18
+/// worlds). Queried by the history sim at a polity's naval threshold.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SeaLanesData {
+    pub lanes: Vec<SeaLane>,
+}
+
+impl SeaLanesData {
+    pub fn is_empty(&self) -> bool {
+        self.lanes.is_empty()
+    }
 }
 
 /// A named ocean / sea — a *major* connected body of water. Named in the

@@ -26,6 +26,9 @@ pub enum Stage {
     Cultures = 13,
     /// Phase 3b — religions stage. Runs after Cultures, before Capitals.
     Religions = 14,
+    /// Maritime substrate — inter-continental sea lanes ("The Sundered Lanes").
+    /// Runs after Climate, before Cultures; appended to keep discriminants stable.
+    SeaLanes = 15,
 }
 
 /// Lightweight RNG factory. Hold the master seed; mint a fresh
@@ -135,6 +138,7 @@ mod tests {
             Stage::History,
             Stage::Render,
             Stage::Religions,
+            Stage::SeaLanes,
         ] {
             let other_first = h.stream(other).next_u64();
             assert_ne!(
@@ -167,6 +171,7 @@ mod tests {
             Stage::Render,
             Stage::Cultures,
             Stage::Religions,
+            Stage::SeaLanes,
         ] {
             assert_ne!(
                 history_first,

@@ -210,6 +210,7 @@ export function styleForStage(stage: string): StageStyle {
     case "ocean":
     case "climate":
     case "biomes":
+    case "sea_lanes":
       return "biomes";
     default:
       return "cultures";

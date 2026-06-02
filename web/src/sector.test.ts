@@ -103,6 +103,9 @@ describe("styleForStage", () => {
     expect(styleForStage("erosion")).toBe("greyscale");
     expect(styleForStage("climate")).toBe("biomes");
     expect(styleForStage("biomes")).toBe("biomes");
+    // sea_lanes runs after biomes but before cultures — cultures don't exist
+    // yet, so the richest available style is biomes, NOT the cultures default.
+    expect(styleForStage("sea_lanes")).toBe("biomes");
     expect(styleForStage("cultures")).toBe("cultures");
     expect(styleForStage("history")).toBe("cultures");
   });

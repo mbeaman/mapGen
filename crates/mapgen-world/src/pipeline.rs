@@ -16,7 +16,7 @@ use mapgen_core::{Stage, StageRng, WorldData};
 
 use crate::{
     biomes, climate::ClimateParams, climate_seasonal, cultures, erosion, hydrology, naming, ocean,
-    polities, religions, GenerateParams,
+    polities, religions, sea_lanes, GenerateParams,
 };
 
 /// The visible pipeline stages, in execution order. Discriminant order is
@@ -30,6 +30,7 @@ pub enum PipelineStage {
     Ocean,
     Climate,
     Biomes,
+    SeaLanes,
     Cultures,
     Religions,
     Polities,
@@ -39,13 +40,14 @@ pub enum PipelineStage {
 
 impl PipelineStage {
     /// Canonical execution order.
-    pub const ORDER: [PipelineStage; 11] = [
+    pub const ORDER: [PipelineStage; 12] = [
         PipelineStage::Terrain,
         PipelineStage::Erosion,
         PipelineStage::Hydrology,
         PipelineStage::Ocean,
         PipelineStage::Climate,
         PipelineStage::Biomes,
+        PipelineStage::SeaLanes,
         PipelineStage::Cultures,
         PipelineStage::Religions,
         PipelineStage::Polities,
@@ -73,6 +75,7 @@ impl PipelineStage {
             PipelineStage::Ocean => "ocean",
             PipelineStage::Climate => "climate",
             PipelineStage::Biomes => "biomes",
+            PipelineStage::SeaLanes => "sea_lanes",
             PipelineStage::Cultures => "cultures",
             PipelineStage::Religions => "religions",
             PipelineStage::Polities => "polities",
@@ -90,6 +93,7 @@ impl PipelineStage {
             PipelineStage::Ocean => "Filling the seas",
             PipelineStage::Climate => "Turning the seasons",
             PipelineStage::Biomes => "Painting biomes",
+            PipelineStage::SeaLanes => "Charting sea lanes",
             PipelineStage::Cultures => "Settling cultures",
             PipelineStage::Religions => "Founding religions",
             PipelineStage::Polities => "Drawing borders",
@@ -110,6 +114,7 @@ impl PipelineStage {
             PipelineStage::Ocean => 3,
             PipelineStage::Climate => 12,
             PipelineStage::Biomes => 3,
+            PipelineStage::SeaLanes => 4,
             PipelineStage::Cultures => 8,
             PipelineStage::Religions => 3,
             PipelineStage::Polities => 4,
@@ -303,6 +308,14 @@ impl Pipeline {
             }
             PipelineStage::Biomes => {
                 biomes::classify(&mut self.world);
+            }
+            PipelineStage::SeaLanes => {
+                let mut r = self.rng.stream(Stage::SeaLanes);
+                sea_lanes::chart(
+                    &mut self.world,
+                    sea_lanes::SeaLanesParams::default(),
+                    &mut r,
+                );
             }
             PipelineStage::Cultures => {
                 let mut r = self.rng.stream(Stage::Cultures);

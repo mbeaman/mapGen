@@ -568,7 +568,7 @@ fn progressive_style(stage: PipelineStage) -> Style {
     use PipelineStage::*;
     match stage {
         Terrain | Erosion => Style::Greyscale,
-        Hydrology | Ocean | Climate | Biomes => Style::Biomes,
+        Hydrology | Ocean | Climate | Biomes | SeaLanes => Style::Biomes,
         Cultures | Religions | Polities | Naming | History => Style::Cultures,
     }
 }

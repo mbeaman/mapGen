@@ -17,6 +17,7 @@ pub mod plates;
 pub mod polities;
 pub mod religions;
 pub mod scale;
+pub mod sea_lanes;
 pub mod soils;
 
 pub use pipeline::{FineStep, Pipeline, PipelineStage};

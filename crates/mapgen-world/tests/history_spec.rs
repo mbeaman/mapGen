@@ -59,8 +59,8 @@ fn history_runs_last_in_the_pipeline() {
     let order = PipelineStage::ORDER;
     assert_eq!(
         order.len(),
-        11,
-        "History should bring the pipeline to 11 stages"
+        12,
+        "History should bring the pipeline to 12 stages"
     );
     assert_eq!(
         *order.last().unwrap(),
