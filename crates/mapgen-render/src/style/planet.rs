@@ -554,43 +554,41 @@ impl Proj {
 mod tests {
     use super::Proj;
 
-    // CROSS-LANGUAGE PIN: the SAME reference points are asserted in the frontend
-    // (web/src/sector.test.ts). A drifted constant in either language fails one
-    // side — without this, both round-trip suites pass while a click lands in the
-    // wrong ocean. Keep these in lockstep with the TS test.
+    /// The committed Mollweide vectors (`tests/mollweide_vectors.txt`) are the
+    /// SINGLE SOURCE OF TRUTH for the projection, asserted here AND in the
+    /// frontend (`web/src/sector.test.ts`). A drifted constant in either language
+    /// fails its side against the shared grid — without this, both round-trip
+    /// suites can pass while a click lands in the wrong ocean. The grid spans the
+    /// oval (centre, edges, all quadrants, and the exactly-computed pole-boundary
+    /// rows), so a wrong sign/scale/axis can't sneak through the way it could past
+    /// a handful of hand-picked points.
     #[test]
-    fn project_matches_the_shared_reference_points() {
+    fn project_matches_the_committed_cross_language_vectors() {
         let proj = Proj::new([0.0, 0.0, 2048.0, 1024.0]);
-        // (world_x, world_y, projected_x, projected_y)
-        let refs = [
-            (1024.0, 512.0, 1024.0, 512.0),     // centre → centre
-            (2048.0, 512.0, 2048.0, 512.0),     // equator east end → right edge
-            (1536.0, 256.0, 1436.625, 208.875), // mid-latitude, off-centre
-            (1024.0, 64.0, 1024.0, 32.730),     // near the north pole
-        ];
-        for (wx, wy, ex, ey) in refs {
+        let vectors = include_str!("../../tests/mollweide_vectors.txt");
+        let mut checked = 0;
+        for line in vectors.lines() {
+            if line.starts_with('#') || line.trim().is_empty() {
+                continue;
+            }
+            let v: Vec<f32> = line
+                .split_whitespace()
+                .map(|s| s.parse().unwrap())
+                .collect();
+            let (wx, wy, ex, ey) = (v[0], v[1], v[2], v[3]);
             let (px, py) = proj.project(wx, wy);
+            // Loose tolerance: Rust uses the per-row LUT (interior < 0.12px error,
+            // pole rows exact); the vectors are exact f64. A drifted constant is
+            // off by far more than this.
             assert!(
-                (px - ex).abs() < 0.05 && (py - ey).abs() < 0.05,
-                "project({wx},{wy}) = ({px:.3},{py:.3}), expected ~({ex},{ey})"
+                (px - ex).abs() < 0.6 && (py - ey).abs() < 0.6,
+                "project({wx},{wy}) = ({px:.3},{py:.3}), committed ~({ex},{ey})"
             );
+            checked += 1;
         }
-    }
-
-    // The two pole-boundary rows are computed exactly, not interpolated: cos θ
-    // cusps to 0 at the pole, so lerping toward the singular node collapsed a
-    // row's interior toward the central meridian (~20px at the oval edge). At the
-    // extreme east edge just inside the south pole, the exact sx ≈ 1048, NOT the
-    // ~1026 the broken lerp produced.
-    #[test]
-    fn project_is_exact_in_the_pole_boundary_rows() {
-        let proj = Proj::new([0.0, 0.0, 2048.0, 1024.0]);
-        for (wy, ex) in [(1023.5, 1048.30), (0.5, 1048.30)] {
-            let (px, _) = proj.project(2048.0, wy);
-            assert!(
-                (px - ex).abs() < 1.0,
-                "pole-row project(2048,{wy}).x = {px:.2}, expected ~{ex} (not the ~1026 collapse)"
-            );
-        }
+        assert!(
+            checked >= 15,
+            "expected the full vector grid, got {checked}"
+        );
     }
 }

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   ancestors,
@@ -161,22 +162,33 @@ describe("Mollweide projection", () => {
   const PW = 2048;
   const PH = 1024;
 
-  // CROSS-LANGUAGE PIN: these exact projected values are ALSO asserted in the
-  // Rust test (style/planet.rs `project`). A drifted constant in either language
-  // breaks here — without this, both round-trip suites pass while a click lands
-  // in the wrong ocean. Do not "fix" these by recomputing one side.
-  it("maps reference world points to the known projected oval coords", () => {
-    const ref: [number, number, number, number][] = [
-      [1024, 512, 1024.0, 512.0], // centre → centre
-      [2048, 512, 2048.0, 512.0], // equator east end → right edge
-      [1536, 256, 1436.625, 208.875], // mid-latitude, off-centre
-      [1024, 64, 1024.0, 32.73], // near the north pole (pinched up)
-    ];
-    for (const [wx, wy, ex, ey] of ref) {
+  // CROSS-LANGUAGE PIN: the committed vector grid is the SINGLE SOURCE OF TRUTH,
+  // asserted here AND in the Rust test (style/planet.rs). A drifted constant in
+  // either language fails its side against the shared grid — without this, both
+  // round-trip suites pass while a click lands in the wrong ocean. Do not "fix"
+  // the file by recomputing one side; regenerate it from the exact math.
+  it("reproduces the committed cross-language projection vectors (forward + inverse)", () => {
+    const file = readFileSync(
+      new URL("../../crates/mapgen-render/tests/mollweide_vectors.txt", import.meta.url),
+      "utf-8",
+    );
+    let checked = 0;
+    for (const line of file.split("\n")) {
+      if (line.startsWith("#") || line.trim() === "") continue;
+      const [wx, wy, sx, sy] = line.trim().split(/\s+/).map(Number);
+      // Forward: TS exact ≈ the exact committed value.
       const p = mollweideProject(wx, wy, PW, PH);
-      expect(p.x).toBeCloseTo(ex, 2);
-      expect(p.y).toBeCloseTo(ey, 2);
+      expect(p.x).toBeCloseTo(sx, 2);
+      expect(p.y).toBeCloseTo(sy, 2);
+      // Inverse round-trips back to world space (null only at the singular poles).
+      const back = mollweideUnproject(sx, sy, PW, PH);
+      if (back) {
+        expect(back.x).toBeCloseTo(wx, 0);
+        expect(back.y).toBeCloseTo(wy, 0);
+      }
+      checked++;
     }
+    expect(checked).toBeGreaterThanOrEqual(15);
   });
 
   it("round-trips world → oval → world for points inside the oval", () => {
