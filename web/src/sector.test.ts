@@ -5,6 +5,7 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  latLonToWorld,
   mollweideProject,
   mollweideUnproject,
   navStyle,
@@ -12,6 +13,8 @@ import {
   sectorAt,
   sectorRect,
   styleForStage,
+  uvToWorld,
+  worldToUv,
 } from "./sector";
 
 const W = 2048;
@@ -229,5 +232,67 @@ describe("navStyle", () => {
     // Continent scale never substitutes a style, not even at the root.
     expect(navStyle(0, false, "ornate")).toBe("ornate");
     expect(navStyle(0, false, "greyscale")).toBe("greyscale");
+  });
+});
+
+describe("globe drill mapping (uvToWorld)", () => {
+  // Planet dims (2:1). MUST be 1024 high, NOT the 1280 continent default — a
+  // globe drill that inherited 1280 would skew every latitude, so the test pins
+  // the planet height explicitly.
+  const GW = 2048;
+  const GH = 1024;
+
+  // THE LOAD-BEARING ASSERTION (the "wrong ocean" guard): the UV corners map to
+  // the exact equirectangular world corners. v=1 is the texture top = NORTH =
+  // world y=0 (three.js flipY); v=0 = south = y=GH. A flipped `1-v` sends north
+  // to the bottom and fails here. (The flip's *correctness* — that v=1 really is
+  // north on the sphere — is what the globe click e2e validates end-to-end;
+  // this test guards the formula against regression once that's pinned.)
+  it("maps the UV corners to the equirectangular world corners", () => {
+    expect(uvToWorld(0, 1, GW, GH)).toEqual({ x: 0, y: 0 }); // NW: west edge, north
+    expect(uvToWorld(1, 1, GW, GH)).toEqual({ x: GW, y: 0 }); // NE
+    expect(uvToWorld(0, 0, GW, GH)).toEqual({ x: 0, y: GH }); // SW
+    expect(uvToWorld(1, 0, GW, GH)).toEqual({ x: GW, y: GH }); // SE
+    expect(uvToWorld(0.5, 0.5, GW, GH)).toEqual({ x: GW / 2, y: GH / 2 }); // equator/centre
+  });
+
+  it("round-trips world → uv → world", () => {
+    for (const [x, y] of [
+      [0, 0],
+      [GW, GH],
+      [512, 768],
+      [2000, 10],
+      [1024, 512],
+    ]) {
+      const { u, v } = worldToUv(x, y, GW, GH);
+      const w = uvToWorld(u, v, GW, GH);
+      expect(w.x).toBeCloseTo(x, 6);
+      expect(w.y).toBeCloseTo(y, 6);
+    }
+  });
+
+  // Independent cross-check: derive the world point two ways — via the geographic
+  // lat/lon convention (latLonToWorld, the same one the Mollweide inverse uses)
+  // and via the texture UV (uvToWorld) — and assert they agree. The north pole on
+  // the prime meridian is top-centre (y=0); a v-flip in uvToWorld would put it at
+  // the bottom (y=GH) and break this, tying the globe's world convention to the
+  // rest of the app's.
+  it("agrees with the equirectangular lat/lon convention", () => {
+    const cases: [number, number][] = [
+      [Math.PI / 2, 0], // north pole, prime meridian → (GW/2, 0)
+      [-Math.PI / 2, 0], // south pole → (GW/2, GH)
+      [0, 0], // equator, prime meridian → (GW/2, GH/2)
+      [0, -Math.PI], // equator, west edge → (0, GH/2)
+      [0.4, 1.2], // arbitrary interior point
+    ];
+    for (const [lat, lon] of cases) {
+      const world = latLonToWorld(lat, lon, GW, GH);
+      // The UV that samples that world point, by the texture convention.
+      const u = lon / (2 * Math.PI) + 0.5;
+      const v = lat / Math.PI + 0.5; // north (lat=+π/2) → v=1
+      const viaUv = uvToWorld(u, v, GW, GH);
+      expect(viaUv.x).toBeCloseTo(world.x, 6);
+      expect(viaUv.y).toBeCloseTo(world.y, 6);
+    }
   });
 });

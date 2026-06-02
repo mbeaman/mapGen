@@ -98,6 +98,60 @@ export function navStyle(level: number, planet: boolean, userStyle: string): str
   return planet && level === 0 ? "planet" : userStyle;
 }
 
+// ---- 3D globe drill mapping ----
+// The Globe view textures a sphere with the flat equirectangular world render
+// and, on click, reads the raycaster's intrinsic surface UV. These pure
+// functions convert that UV to the world (x,y) the existing `continentAt` query
+// expects, so a globe click reuses the very same drill the 2D planet uses.
+//
+// World coords are equirectangular in [0,worldW]×[0,worldH]: x = longitude
+// (x=0 is the west/antimeridian edge, x=worldW the east), y = latitude (y=0 is
+// the NORTH edge, y=worldH the south) — the same convention as the Mollweide
+// inverse above. The texture's top row is the north edge, and three.js's default
+// `texture.flipY` places the image top at v=1; so v=1 ⇒ north ⇒ world y=0, hence
+// the `1 - v`. (That flip is a three.js convention validated end-to-end by the
+// globe click e2e; a regression in this formula is caught by the corner anchors
+// in sector.test.ts.)
+
+/// Sphere surface UV (u,v ∈ [0,1]) → equirectangular world (x,y). The production
+/// drill path: raycaster `intersection.uv` → here → `continentAt(x,y)`.
+export function uvToWorld(
+  u: number,
+  v: number,
+  worldW: number,
+  worldH: number,
+): { x: number; y: number } {
+  return { x: u * worldW, y: (1 - v) * worldH };
+}
+
+/// World (x,y) → the texture UV that samples it — the inverse of [`uvToWorld`].
+/// Used by the tests (round-trip) and any future "aim the camera at a world
+/// point" path.
+export function worldToUv(
+  wx: number,
+  wy: number,
+  worldW: number,
+  worldH: number,
+): { u: number; v: number } {
+  return { u: wx / worldW, v: 1 - wy / worldH };
+}
+
+/// World (x,y) for a geographic lat/lon, in the SAME equirectangular convention
+/// the Mollweide inverse returns: `lat ∈ [-π/2, π/2]` (north +), `lon ∈ [-π, π]`
+/// (east +). Cross-checks [`uvToWorld`] in the tests (north pole → top-centre,
+/// which a v-flip would send to the bottom) and seeds a future camera fly-to.
+export function latLonToWorld(
+  lat: number,
+  lon: number,
+  worldW: number,
+  worldH: number,
+): { x: number; y: number } {
+  return {
+    x: worldW * (lon / (2 * Math.PI) + 0.5),
+    y: worldH * (0.5 - lat / Math.PI),
+  };
+}
+
 // ---- Mollweide projection (the planet planisphere's globe-edge look) ----
 // The planet renders as a Mollweide oval (equal-area, whole-world). These mirror
 // the Rust `project`/inverse in `style/planet.rs` EXACTLY — cross-language
