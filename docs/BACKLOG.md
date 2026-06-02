@@ -245,10 +245,15 @@ note.
   (closed-form) inverts a planet-root click before `continentAt`; corner clicks →
   null (inert); `projectedBounds` frames the coarse zoom. TS↔Rust projections
   pinned to shared reference points in both test suites. Perf re-anchored 13→19ms.
-- **Follow-up (deferred).** The forward Mollweide projection is duplicated in
-  Rust (render) and TS (`projectedBounds` framing); a drift guard exists (the
-  reference-point pin) but a single source would be cleaner. Trigger: a third
-  consumer needs the projection, or the duplication causes a bug.
+- **Follow-up — guard strengthened 2026-06-01.** The forward Mollweide
+  projection is necessarily duplicated in Rust (render) and TS (drill/framing) —
+  different runtimes, no shared code. The drift guard is now a committed
+  single-source vector grid (`crates/mapgen-render/tests/mollweide_vectors.txt`,
+  17 exact points spanning the oval) asserted by BOTH suites; a drifted constant
+  fails its side (verified by mutation). A true single implementation would need
+  the frontend to call the wasm projection on the main thread (a second wasm
+  instance + FFI in the drill hot path) — judged not worth it; the vector pin
+  covers the real risk. Revisit only if a third consumer needs the projection.
 
 #### Toggleable political wash on the planisphere (pure-physical view)
 
