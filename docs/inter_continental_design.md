@@ -6,6 +6,43 @@
 > advisor reconciliation. This document is the convergent, DA-hardened design and
 > the decision set for the user. It is NOT locked; it is the plan to build from.
 
+> ## ⛔ CRITICAL FINDING (2026-06-02) — THE PREMISE IS FALSE. The arc is BLOCKED pending a user decision.
+>
+> After shipping Phase 1 Step 3a (the isotropic sea-lane substrate), a probe of
+> the *consumer* (which the design campaign and 3a never checked) found that
+> **society already spans every continent at gen time — there is nothing for the
+> lanes to gate.**
+>
+> - **Root cause:** `crates/mapgen-world/src/polities.rs:145-148` stamps
+>   `control[cell] = polity_id` for *every cell whose `culture_id` matches the
+>   polity's founding culture*. Cultures are assigned **globally by habitat**
+>   (a culture occupies matching-habitat cells on *all* landmasses), so each
+>   polity controls all of its culture's cells across every continent. Land wars
+>   cannot cross water, so the spanning is purely gen-time.
+> - **Probe (planet seeds, `connected_bodies` landmasses):** seed 11 → 3 of 4
+>   polities span ALL 8 landmasses (`[8,8,8,3]`); seed 19 → `[6,6,6,1]`; seed 4 →
+>   `[4,4,3,4,0]`. And every inter-body lane anchor is owned at every sampled year
+>   (`bothNone=0, oneOwned=0`) — far shores are never unclaimed, so even the
+>   `from:None` colonization carrier has nothing to claim.
+> - **Consequence:** the "earned / sundered" meaning the whole arc is built on does
+>   not exist. The carriers, diffusion, first-contact, and plague all read as
+>   *nothing* when every polity is already everywhere. 3a's substrate is correct
+>   but **consumer-less**; the design's own "The problem" section below (which
+>   claims interactions "stop at `elevation < 0`") is **factually wrong** for the
+>   polity-control assignment.
+> - **The real prerequisite (the multi-week change the design flagged but
+>   mis-scoped):** society must be **landmass-distinct** at the FOUNDATION —
+>   per-landmass capitals/cultures so each continent has its own polities — for any
+>   "earned crossing" to mean anything. A surgical "confine control to the
+>   capital's landmass" is a trap: ~4–5 capitals sit on a few landmasses, leaving
+>   most of the planet uncontrolled; a *populated* per-landmass world requires
+>   editing `pick_capitals` (the cultures/capitals foundation), which re-anchors
+>   every golden and reshapes the whole society layer.
+> - **DECISION (user's):** (A) commit to landmass-distinct society — makes the arc
+>   real, multi-week, all goldens move, 3a becomes load-bearing; or (B) shelve the
+>   arc, keep the sea lanes as pure geography / a future trade-overlay (society
+>   "by habitat, globally" is a legitimate worldgen choice), and redirect.
+
 ## The problem
 
 A planet is **one** `generate_full` world over a single ~18k-cell mesh, and its
