@@ -64,11 +64,12 @@ scale (zoom out)" below), in priority order:
    renders in ~13 ms, budget 20 ms; cheapest render path despite most cells).
    **Increment 2's tractable items are now all shipped** — what remains is the
    "harder / later" set below.
-5. **Harder / later:** ~~planet-scale history viz~~ DONE 2026-06-01 (the
-   planisphere washes in political control + the time-slider is un-hidden — see
-   entry below); edge projection + distortion for a true globe feel;
-   inter-continental society & history (trade, migration) — society is generated
-   per-world today; tight continent framing (entry below).
+5. **Harder / later:** ~~planet-scale history viz~~ DONE 2026-06-01; ~~globe edge
+   projection~~ DONE 2026-06-01 (the planisphere is now a Mollweide oval —
+   curved meridians, pinched poles — with the click-drill kept correct via a
+   closed-form unproject; see entry below); inter-continental society & history
+   (trade, migration) — society is generated per-world today; tight continent
+   framing (entry below). **The remaining two are the big multi-week arcs.**
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
@@ -228,6 +229,26 @@ note.
   `render_at_year` swaps `control` before re-rendering, scrubbing animates
   empires rise/fall on the planisphere for free. Pinned by a render test
   (founding era ≠ present) + an e2e that scrubs and asserts the SVG changed.
+
+#### Globe edge projection — DONE 2026-06-01 (Mollweide)
+
+- **Resolved design (6-agent workflow + advisor DA).** Chose **Mollweide**
+  (equal-area oval) over orthographic (rejected — only a hemisphere, breaks the
+  drill for the far side), Robinson (no closed-form inverse), and sinusoidal
+  (sharp petal poles). Whole world in one view, closed-form inverse for the
+  drill, the classic antique oval-on-parchment silhouette, low warp.
+- **Shipped.** `style/planet.rs` projects every world coordinate onto the oval
+  via a `Proj` struct (Mollweide is separable — `sx = cx0 + (wx−cx0)·cosθ(wy)`,
+  `sy = f(wy)` — so it's a per-row table lookup, no per-vertex trig); the
+  graticule is now curved projected polylines; compass/cartouche/legend/vignette
+  stay in screen space. Drill kept correct: `sector.ts` `mollweideUnproject`
+  (closed-form) inverts a planet-root click before `continentAt`; corner clicks →
+  null (inert); `projectedBounds` frames the coarse zoom. TS↔Rust projections
+  pinned to shared reference points in both test suites. Perf re-anchored 13→19ms.
+- **Follow-up (deferred).** The forward Mollweide projection is duplicated in
+  Rust (render) and TS (`projectedBounds` framing); a drift guard exists (the
+  reference-point pin) but a single source would be cleaner. Trigger: a third
+  consumer needs the projection, or the duplication causes a bug.
 
 #### Toggleable political wash on the planisphere (pure-physical view)
 
