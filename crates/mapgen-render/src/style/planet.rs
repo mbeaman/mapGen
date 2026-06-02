@@ -497,7 +497,9 @@ struct Proj {
 
 impl Proj {
     /// Samples on `[vy, vy+vh]`; 2048 gives ~2 rows/pixel at planet height, so
-    /// linear interpolation is sub-pixel.
+    /// linear interpolation is sub-pixel for the interior rows. The two
+    /// pole-boundary rows can't be interpolated (cos θ cusps to 0 at the pole)
+    /// and are computed exactly in `project`.
     const N: usize = 2048;
 
     fn new(vr: [f32; 4]) -> Self {
@@ -526,9 +528,24 @@ impl Proj {
     fn project(&self, wx: f32, wy: f32) -> (f32, f32) {
         let t = ((wy - self.vy) / self.vh).clamp(0.0, 1.0) * Self::N as f32;
         let i = (t as usize).min(Self::N - 1);
-        let frac = t - i as f32;
-        let ct = self.cos_theta[i] + (self.cos_theta[i + 1] - self.cos_theta[i]) * frac;
-        let sy = self.sy[i] + (self.sy[i + 1] - self.sy[i]) * frac;
+        let (ct, sy) = if i == 0 || i == Self::N - 1 {
+            // cos θ has an infinite-slope cusp at the poles, so the two
+            // pole-boundary intervals can't be linearly interpolated (lerping
+            // toward the singular cos=0 pole node over-collapses a row's interior
+            // toward the central meridian — ~20 px at the oval edge). Compute
+            // these two rows exactly; interior rows use the cheap table.
+            let theta = mollweide_theta((0.5 - (wy - self.vy) / self.vh) * PI);
+            (
+                fmath::cos(theta),
+                self.vy + self.vh * (0.5 - fmath::sin(theta) / 2.0),
+            )
+        } else {
+            let frac = t - i as f32;
+            (
+                self.cos_theta[i] + (self.cos_theta[i + 1] - self.cos_theta[i]) * frac,
+                self.sy[i] + (self.sy[i + 1] - self.sy[i]) * frac,
+            )
+        };
         (self.cx0 + (wx - self.cx0) * ct, sy)
     }
 }
@@ -556,6 +573,23 @@ mod tests {
             assert!(
                 (px - ex).abs() < 0.05 && (py - ey).abs() < 0.05,
                 "project({wx},{wy}) = ({px:.3},{py:.3}), expected ~({ex},{ey})"
+            );
+        }
+    }
+
+    // The two pole-boundary rows are computed exactly, not interpolated: cos θ
+    // cusps to 0 at the pole, so lerping toward the singular node collapsed a
+    // row's interior toward the central meridian (~20px at the oval edge). At the
+    // extreme east edge just inside the south pole, the exact sx ≈ 1048, NOT the
+    // ~1026 the broken lerp produced.
+    #[test]
+    fn project_is_exact_in_the_pole_boundary_rows() {
+        let proj = Proj::new([0.0, 0.0, 2048.0, 1024.0]);
+        for (wy, ex) in [(1023.5, 1048.30), (0.5, 1048.30)] {
+            let (px, _) = proj.project(2048.0, wy);
+            assert!(
+                (px - ex).abs() < 1.0,
+                "pole-row project(2048,{wy}).x = {px:.2}, expected ~{ex} (not the ~1026 collapse)"
             );
         }
     }
