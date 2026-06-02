@@ -195,6 +195,36 @@ note.
   *depths*, not distinct pipelines — one mechanism, not five.
 - **Origin.** 2026-05-24 multi-scale request; built in Phase 7.
 
+### 3D globe view — DONE (2026-06-02)
+
+A user-requested interactive 3D globe: **Scale: Globe** mounts a three.js
+sphere textured with the world, rotatable (drag) + zoomable (scroll), click a
+point to drill into that region. Built in 5 gated increments (design: an
+8-agent panel + advisor chose plain three.js, lazy-loaded). Lives in
+`web/src/globe.ts` (all three.js) + pure drill math in `web/src/sector.ts`.
+
+- **three.js is dynamic-`import()`ed** into its own lazy chunk so the default
+  SVG page stays ~20KB (three is ~130KB gz). Committed guard
+  `web/scripts/check-bundle.mjs` (CI-wired, mutation-verified) fails if a static
+  import re-merges three into the entry chunk.
+- **Texture:** the flat `biomes` equirectangular render of the planet world,
+  rasterized (shared `rasterizeSvg`) to a 2048×1024 `CanvasTexture`. Unlit
+  `MeshBasicMaterial` — a paper globe, not a shaded Earth.
+- **Drill:** the raycaster's intrinsic surface UV → `uvToWorld` (Vitest-pinned,
+  mutation-verified; the `1-v` flipY convention validated end-to-end by the
+  click e2e) → the SAME `continentAt` + refine the 2D planet uses → hands off to
+  the 2D SVG sector. `?scale=globe` permalink + "Globe" breadcrumb root.
+- **Headless WebGL** works in CI via SwiftShader launch flags
+  (`playwright.config.ts`); e2e keys off a `data-rendered` first-paint signal +
+  `data-textured`, never pixels.
+- **Future work (deferred):** *Antimeridian seam + pole pinch* — the world is a
+  flat non-periodic grid, so the texture's left/right coastlines don't align at
+  lon ±180° and the poles pinch. **Revive** with a Rust-side equirectangular
+  render that fades the edge columns (and a real parchment globe skin would need
+  that render path too — biomes is the fontless v1 texture). Other niceties:
+  cinematic camera fly-to-the-clicked-point on drill; per-year re-texture so the
+  time-slider animates political control on the sphere.
+
 ### World / planet scale (zoom out) — increment 1 DONE (2026-05-25)
 
 - **Resolved design question.** Plate positions are sampled in `[0, width)`, so
