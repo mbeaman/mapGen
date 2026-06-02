@@ -119,6 +119,7 @@ const enterGlobeView = async (textureSvg?: string) => {
   contentEl.style.display = "none";
   placeholderEl.classList.add("hidden");
   mapEl.classList.remove("navigable"); // the globe rotates; it isn't zoom-in
+  styleSelect.disabled = true; // the sphere is always biomes-textured (see doRestyle)
   const g = await ensureGlobe();
   if (textureSvg) {
     try {
@@ -130,10 +131,12 @@ const enterGlobeView = async (textureSvg?: string) => {
   }
   g.show();
 };
-// Return to the SVG layer (used when leaving globe scale, and — later — on drill).
+// Return to the SVG layer (used when leaving globe scale, and on drill into a
+// 2D sector — where the style control applies again).
 const exitGlobeView = () => {
   globe?.hide();
   contentEl.style.display = "";
+  styleSelect.disabled = false;
 };
 
 // The style to send for the current nav level: the planisphere at the planet
@@ -540,6 +543,11 @@ const doNarrate = () => {
 
 const doRestyle = () => {
   if (busy) return;
+  // At the globe root the sphere is always the flat `biomes` texture (other
+  // styles embed fonts that rasterize unreliably as an <img>), so the style
+  // control doesn't apply — the select is disabled there, and this guards the
+  // path defensively. In a drilled 2D sector it works normally.
+  if (globeScale && nav.level === 0) return;
   if (!lastSvg) {
     doGenerate();
     return;
@@ -876,6 +884,12 @@ window.addEventListener("resize", () => {
   if (globeScale) globe?.resize();
   else panzoom.fit();
 });
+// Layout changes that don't fire a window resize (a collapsing panel, the
+// breadcrumb wrapping) still need the globe's camera aspect + drawing buffer
+// re-fit. The SVG path uses CSS, so it only matters for the WebGL canvas.
+new ResizeObserver(() => {
+  if (globeScale && globe) globe.resize();
+}).observe(mapEl);
 
 scrubInput.addEventListener("input", () => {
   stopReplay();

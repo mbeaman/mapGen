@@ -215,3 +215,31 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
 });
+
+// Increment 5: the style control is locked on the globe (the sphere is always
+// biomes-textured), and toggling globe↔planet reuses the one WebGLRenderer
+// without exhausting the browser's GL-context pool.
+test("globe locks the style control and survives scale toggling", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=4");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  // Style is disabled while the sphere is shown (it doesn't apply).
+  await expect(page.locator("#style")).toBeDisabled();
+
+  // Toggle planet → globe twice; the reused renderer must keep mounting/painting.
+  for (let i = 0; i < 2; i++) {
+    await page.locator("#scale").selectOption("planet");
+    await expect(status).toContainText("Generated in", { timeout: 30_000 });
+    await expect(page.locator("#map-content svg")).toBeVisible();
+    await expect(page.locator("#style")).toBeEnabled(); // style applies in 2D again
+
+    await page.locator("#scale").selectOption("globe");
+    await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+    await expect(page.locator("#style")).toBeDisabled();
+  }
+});

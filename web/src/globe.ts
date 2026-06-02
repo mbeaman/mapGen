@@ -84,6 +84,14 @@ function placeholderTexture(): CanvasTexture {
 
 /// Apply the equirectangular wrap/colour conventions shared by the placeholder
 /// and the real world texture: longitude wraps, latitude clamps at the poles.
+///
+/// KNOWN LIMITATION (accepted): the generated world is a FLAT, non-periodic grid
+/// — its left/right edges are independent coastlines, not a cylinder, and its
+/// top/bottom rows aren't single points. So `RepeatWrapping` makes the texture
+/// meet itself at the antimeridian but the two coastlines won't align (a faint
+/// vertical seam at lon ±180°), and the poles show mild pinch distortion. This
+/// is inherent to the data; hiding it would need a Rust-side equirectangular
+/// render that fades the edge columns (future work, tracked in the backlog).
 function wrapTexture(t: CanvasTexture): CanvasTexture {
   t.colorSpace = SRGBColorSpace;
   t.wrapS = RepeatWrapping; // longitude wraps around
