@@ -31,7 +31,9 @@ use mapgen_core::{
 };
 use mapgen_world::{
     cultures::{self, CulturesParams},
-    generate_full, GenerateParams,
+    generate_full,
+    naming::connected_bodies,
+    GenerateParams,
 };
 
 fn params(seed: u64) -> GenerateParams {
@@ -302,5 +304,166 @@ fn when_populate_runs_mean_habitat_fitness_meets_the_floor() {
             world.cultures.cultures[culture_idx].archetype_id,
             mean
         );
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Landmass-distinct society (the Sundered Lanes foundation rework). Cultures
+// are INSTANCED per landmass — the same archetype on two continents becomes two
+// distinct `Culture` ids — so every downstream stage (polities/control,
+// history, naming) confines to one landmass and inter-continental reach becomes
+// something the sea lanes must EARN. See docs/inter_continental_design.md.
+//
+// These run on PLANET seeds (multi-continent); seed42 is single-landmass, where
+// the instancing is the identity of the old numbering (golden no-op).
+// ──────────────────────────────────────────────────────────────────────
+
+/// Sizable landmasses (>= the sea-lanes islet threshold), and a per-cell body
+/// label (`usize::MAX` for sea / sub-threshold islets), via the same flood-fill
+/// the cultures instancing and sea-lanes stages use.
+fn sizable_body_labels(world: &WorldData) -> (usize, Vec<usize>) {
+    let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0);
+    let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+    let mut kept = 0usize;
+    for body in &bodies {
+        if body.len() < 24 {
+            continue;
+        }
+        for &c in body {
+            body_of[c] = kept;
+        }
+        kept += 1;
+    }
+    (kept, body_of)
+}
+
+#[test]
+fn cultures_are_instanced_per_landmass() {
+    // The direct instancing signal: every culture id is confined to ONE
+    // landmass. Before the rework a global "Riverfolk" spanned every continent
+    // — this asserts that can no longer happen.
+    let world = generate_full(GenerateParams::planet(11));
+    let (n_bodies, body_of) = sizable_body_labels(&world);
+    assert!(
+        n_bodies >= 2,
+        "planet seed 11 must have multiple landmasses"
+    );
+
+    let n_cultures = world.cultures.cultures.len();
+    let mut body_of_culture = vec![usize::MAX; n_cultures];
+    for (c, &bi) in body_of.iter().enumerate() {
+        if let Some(cid) = world.cultures.culture_id[c] {
+            if bi == usize::MAX {
+                continue; // sub-threshold islet — not a sizable body
+            }
+            let slot = &mut body_of_culture[cid as usize];
+            if *slot == usize::MAX {
+                *slot = bi;
+            } else {
+                assert_eq!(
+                    *slot, bi,
+                    "culture {cid} appears on two landmasses ({slot} and {bi}) — not instanced",
+                );
+            }
+        }
+    }
+    // And instancing genuinely multiplied the roster past the ~5 archetypes.
+    assert!(
+        n_cultures > 8,
+        "expected many per-landmass culture instances, got {n_cultures}",
+    );
+}
+
+#[test]
+fn polities_are_confined_to_one_landmass_yet_the_planet_is_populated() {
+    // THE load-bearing guard the premise failure named: no polity controls cells
+    // on more than one sizable landmass (probe measured 3 such polities BEFORE
+    // the rework → this asserts 0). Paired with a population floor so the test
+    // can't pass on a GUTTED planet (an over-aggressive instancing that leaves
+    // most land uncontrolled would also trivially "confine").
+    for seed in [11u64, 19] {
+        let world = generate_full(GenerateParams::planet(seed));
+        let (n_bodies, body_of) = sizable_body_labels(&world);
+        assert!(
+            n_bodies >= 2,
+            "planet seed {seed} must have multiple landmasses"
+        );
+
+        let n_pol = world.society.nations.len();
+        let mut spans: Vec<std::collections::BTreeSet<usize>> = vec![Default::default(); n_pol];
+        let (mut land, mut owned) = (0usize, 0usize);
+        for (c, &bi) in body_of.iter().enumerate() {
+            if bi == usize::MAX {
+                continue;
+            }
+            land += 1;
+            if let Some(p) = world.society.control[c] {
+                owned += 1;
+                spans[p as usize].insert(bi);
+            }
+        }
+
+        // Confinement: the carrier-blocker is gone.
+        let multi = spans.iter().filter(|s| s.len() >= 2).count();
+        assert_eq!(
+            multi, 0,
+            "seed {seed}: {multi} polities still span >1 landmass (must be 0 — reach must be earned)",
+        );
+
+        // Populated, not gutted: most sizable-body land is controlled, and there
+        // are at least as many polities as landmasses (each continent has its
+        // own society). Probe measured 92–100% controlled, 13–22 polities.
+        let pct = 100 * owned / land.max(1);
+        assert!(
+            pct >= 80,
+            "seed {seed}: only {pct}% of sizable-body land controlled — the planet is gutted",
+        );
+        assert!(
+            n_pol >= n_bodies,
+            "seed {seed}: {n_pol} polities for {n_bodies} landmasses — too sparse to be per-continent",
+        );
+    }
+}
+
+#[test]
+fn no_culture_instance_spans_a_sea_lanes_body() {
+    // The arc's premise is "the sea lanes are the ONLY inter-body link", which
+    // requires cultures and sea_lanes to agree on what a landmass IS. They use
+    // different land predicates: cultures instances over `elev >= 0.0`, sea_lanes
+    // flood-fills land with `elev > 0.0` (cells at exactly sea level are sea
+    // there). Today no cell sits at exactly 0.0 so the two agree — but a future
+    // zero-elevation cell bridging two `>0.0` components would merge them into ONE
+    // culture instance while sea_lanes still builds a lane between them, putting a
+    // single polity on both sides of a lane (the spanning bug RELATIVE to the lane
+    // graph, invisible to the >=0.0-based confinement test). This pins the
+    // invariant independently of the cultures predicate, so it fails loudly if
+    // that divergence ever becomes real. (Passes trivially today; that's the
+    // point — it's the tripwire.)
+    let world = generate_full(GenerateParams::planet(11));
+    let sea_bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0);
+    let mut sea_body_of = vec![usize::MAX; world.mesh.cell_count()];
+    for (bi, b) in sea_bodies.iter().enumerate() {
+        for &c in b {
+            sea_body_of[c] = bi;
+        }
+    }
+    let n_cultures = world.cultures.cultures.len();
+    let mut body_of_culture = vec![usize::MAX; n_cultures];
+    for (c, &sbi) in sea_body_of.iter().enumerate() {
+        if sbi == usize::MAX {
+            continue; // sea, or a cell sea_lanes counts as non-land
+        }
+        if let Some(cid) = world.cultures.culture_id[c] {
+            let slot = &mut body_of_culture[cid as usize];
+            if *slot == usize::MAX {
+                *slot = sbi;
+            } else {
+                assert_eq!(
+                    *slot, sbi,
+                    "culture {cid} spans two sea_lanes bodies ({slot} and {sbi}) — \
+                     breaks 'the sea lanes are the only inter-body link'",
+                );
+            }
+        }
     }
 }

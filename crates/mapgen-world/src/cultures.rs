@@ -12,12 +12,16 @@
 //! Architecture: `docs/ARCHITECTURE.md` §3 (data flow), §4 Phase 3a (exit
 //! criteria), §5.5 "What races want" (archetype-to-habitat utility table).
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use mapgen_core::entities::{
     Alignment, Architecture, Culture, DiplomaticPattern, MagicStyle, Race, SettlementIcon, TechEra,
     TechProfile,
 };
 use mapgen_core::{fmath, WorldData};
 use rand_chacha::ChaCha8Rng;
+
+use crate::naming::connected_bodies;
 
 /// Tunables for the cultures stage. Calibrated values land in
 /// `docs/tuning_log.md` once the implementation greens up.
@@ -480,18 +484,62 @@ pub fn populate(world: &mut WorldData, params: CulturesParams, _rng: &mut ChaCha
     let (final_assignment, survives) =
         cull_to_threshold(world, &archetypes, assignment, &near_water, &params);
 
-    // 4. Build the final roster — only surviving archetypes get a Culture.
-    let mut final_cultures = Vec::new();
-    for (i, archetype) in archetypes.iter().enumerate() {
-        if survives[i] {
-            let new_id = final_cultures.len() as u16;
-            final_cultures.push(archetype.to_culture(i as u16));
-            debug_assert!((new_id as usize) < final_cultures.len());
+    // 4. Roster + per-landmass INSTANCING. The cull above leaves a *global*
+    //    culture per surviving archetype (e.g. one "Riverfolk" spanning every
+    //    continent's river valleys) — which is why every polity ends up on every
+    //    landmass (each polity controls all of its culture's cells; see
+    //    `polities::lay_out`). To make inter-continental reach genuinely EARNED
+    //    over the sea lanes, split each global culture into one instance per
+    //    landmass: the same archetype on two continents becomes two distinct
+    //    `Culture` entries with distinct `culture_id`s. Every downstream stage
+    //    (polities/control, religions, naming, history) keys off `culture_id`,
+    //    so they all confine to a single landmass with no further edits.
+    //
+    //    Determinism: landmasses come from `connected_bodies` (largest-first,
+    //    stable), instance ids are minted body-major / survivor-minor, no RNG.
+    //    Land predicate `>= 0.0` is exactly the set cultures assigns over.
+    //    Single-landmass worlds (e.g. the seed42 golden) are the IDENTITY of the
+    //    old survivor numbering, so they stay byte-identical.
+    let survivor_archetype: Vec<usize> = (0..archetypes.len()).filter(|&i| survives[i]).collect();
+    let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0);
+    let mut body_of = vec![usize::MAX; n];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+
+    let mut instance_of: BTreeMap<(usize, u16), u16> = BTreeMap::new();
+    let mut final_cultures: Vec<Culture> = Vec::new();
+    for (bi, body) in bodies.iter().enumerate() {
+        // Survivor cultures present on this landmass, ascending.
+        let mut present: BTreeSet<u16> = BTreeSet::new();
+        for &c in body {
+            if let Some(g) = final_assignment[c] {
+                present.insert(g);
+            }
+        }
+        for &g in &present {
+            let inst = final_cultures.len() as u16;
+            instance_of.insert((bi, g), inst);
+            let arch_idx = survivor_archetype[g as usize];
+            final_cultures.push(archetypes[arch_idx].to_culture(arch_idx as u16));
+        }
+    }
+
+    let mut instanced: Vec<Option<u16>> = vec![None; n];
+    for (cell, slot) in final_assignment.iter().enumerate() {
+        if let Some(g) = *slot {
+            let bi = body_of[cell];
+            // A culture-bearing cell is land, so it belongs to some body.
+            if let Some(&inst) = instance_of.get(&(bi, g)) {
+                instanced[cell] = Some(inst);
+            }
         }
     }
 
     world.cultures.cultures = final_cultures;
-    world.cultures.culture_id = final_assignment;
+    world.cultures.culture_id = instanced;
 }
 
 fn pick_seed_cells(

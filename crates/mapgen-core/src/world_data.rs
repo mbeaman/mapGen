@@ -82,7 +82,20 @@ use crate::{
 ///   — verified by reverting the constant to 17 with all sea_lanes code in place
 ///   and confirming the goldens hold. Multi-continent (planet-scale) worlds, which
 ///   no golden covers, carry the realized lane graph.
-pub const SCHEMA_VERSION: u32 = 18;
+/// * v19 — landmass-distinct society (the Sundered Lanes foundation): the cultures
+///   stage now INSTANCES each global culture per landmass (`cultures::populate`
+///   remap — the same archetype on two continents becomes two distinct
+///   `culture_id`s), so polities/control/history/naming all confine to a single
+///   landmass and inter-continental reach must be earned over the sea lanes. No
+///   `WorldData` field SHAPE changes (`cultures: Vec<Culture>` / `culture_id:
+///   Vec<Option<u16>>` keep their types; only the Vec length grows on multi-
+///   landmass worlds), so this is a pure version-byte bump like v18. seed42 is a
+///   single landmass, where the instancing is the IDENTITY of the old survivor
+///   numbering — verified byte-identical content with the constant held at 18
+///   before bumping; the three goldens re-anchor for the version byte alone.
+///   (Religion still spreads globally at gen time — that crossing is deferred to
+///   the Phase-2 Diffusion loop, not this change.)
+pub const SCHEMA_VERSION: u32 = 19;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
