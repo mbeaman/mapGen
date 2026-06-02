@@ -263,7 +263,7 @@ fn render_labels(world: &WorldData, proj: &Proj, out: &mut String) {
         let label = escape(&cont.name.to_uppercase());
         write!(
             out,
-            r##"<text x="{cx:.1}" y="{cy:.1}" font-size="{size:.0}" letter-spacing="2" fill-opacity="0.5">{label}</text>"##,
+            r##"<text class="continent-label" x="{cx:.1}" y="{cy:.1}" font-size="{size:.0}" letter-spacing="2" fill-opacity="0.5">{label}</text>"##,
         )
         .unwrap();
     }

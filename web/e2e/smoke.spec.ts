@@ -84,16 +84,28 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   expect(await viewBoxAspect(svg)).toBeGreaterThan(1.8);
   // Its root crumb reads "Planet" (not "World").
   await expect(breadcrumb.getByRole("button", { name: "Planet" })).toBeVisible();
-  // Click the engraved "RIO" continent label (its position is the landmass
-  // centroid). The root click snaps to that continent via an async continentAt
-  // round-trip, re-centers the drill on its mass and sizes the depth → level 2.
-  // Crucially, a grid-drill (the ocean fallback, or the old synchronous drill)
-  // always yields L1, so asserting a level PAST L1 proves continent_at resolved
-  // the landmass and the re-center/depth-sizing actually fired. (mouse.click on
-  // the label's box avoids SVG hit-test interception.)
-  const rio = page.locator("#map-content").getByText("RIO", { exact: true });
-  await expect(rio).toBeVisible({ timeout: 30_000 });
-  const box = (await rio.boundingBox())!;
+  // Click the LARGEST continent's engraved label (its position is the landmass
+  // centroid; font-size scales with the continent's share of the world, so the
+  // biggest font is the biggest continent). Name-independent on purpose — the
+  // generated continent names depend on the cultures, so hardcoding one is
+  // brittle. The root click snaps to that continent via an async continentAt
+  // round-trip, re-centers the drill on its mass and sizes the depth → level ≥2.
+  // A grid-drill (the ocean fallback, or the old synchronous drill) always yields
+  // L1, so asserting a level PAST L1 proves continent_at resolved the landmass
+  // and the re-center/depth-sizing fired.
+  const labels = page.locator("#map-content .continent-label");
+  await expect(labels.first()).toBeVisible({ timeout: 30_000 });
+  const n = await labels.count();
+  let bestBox: { x: number; y: number; width: number; height: number } | null = null;
+  let bestSize = -1;
+  for (let i = 0; i < n; i++) {
+    const fs = Number((await labels.nth(i).getAttribute("font-size")) ?? 0);
+    if (fs > bestSize) {
+      bestSize = fs;
+      bestBox = await labels.nth(i).boundingBox();
+    }
+  }
+  const box = bestBox!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(status).toContainText("refined in", { timeout: 30_000 });
   await expect(breadcrumb).toContainText(/L[2-6]/);
