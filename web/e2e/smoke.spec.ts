@@ -153,3 +153,45 @@ test("planet time-slider animates political control", async ({ page }) => {
   });
   await expect.poll(async () => wash.innerHTML(), { timeout: 15_000 }).not.toBe(present);
 });
+
+// The 3D globe view (Increment 1): Scale: Globe mounts a three.js sphere over
+// the (hidden) SVG layer. The discriminating signal is a REAL WebGL context on
+// #globe-canvas — proving the lazily-imported three.js renderer actually mounted,
+// not merely that the canvas element exists. (No pixel assertions: headless
+// SwiftShader pixel readback is unreliable; correctness of the eventual texture +
+// drill is pinned by Vitest unit tests in later increments.)
+test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000");
+
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+
+  // The dropdown reflects the URL synchronously; generation finishes as a globe.
+  await expect(page.locator("#scale")).toHaveValue("globe");
+  await expect(status).toContainText("Generating globe");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+
+  // The load-bearing signal: the globe RENDERED A FRAME. globe.ts sets
+  // data-rendered="1" after the first renderer.render(), which only happens once
+  // the lazily-imported three.js WebGLRenderer instantiated (it throws if WebGL
+  // is unavailable, leaving the canvas hidden) and the RAF loop ran. This proves
+  // mount + paint — strictly more than "a WebGL context exists" (a bare canvas
+  // reports that with no globe at all).
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  // The sphere is shown over the hidden SVG layer.
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
+  // The breadcrumb root reads "Globe".
+  await expect(page.locator("#breadcrumb").getByRole("button", { name: "Globe" })).toBeVisible();
+
+  // A drag over the globe rotates it (OrbitControls) and must NOT trigger the
+  // SVG drill path — we stay at the Globe root (the SVG drill is inert in globe
+  // mode; the raycaster drill arrives in a later increment).
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 20, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator("#breadcrumb").getByRole("button", { name: "Globe" })).toBeVisible();
+  await expect(canvas).toBeVisible(); // still the globe, not a drilled SVG sector
+});

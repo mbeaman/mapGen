@@ -50,6 +50,7 @@
           <select id="scale">
             <option value="continent">Continent</option>
             <option value="planet">Planet (zoom out)</option>
+            <option value="globe">Globe (3D)</option>
           </select>
         </div>
 
@@ -84,6 +85,12 @@
 
       <section id="map" class="map" aria-label="Generated map">
         <div id="map-content" class="map-content"></div>
+
+        <!-- 3D globe view (Scale: Globe). A sibling of #map-content, shown only
+             in globe mode; OrbitControls owns its camera, so panzoom never
+             touches it. The three.js renderer that draws into it is loaded on
+             demand (dynamic import) the first time the globe is opened. -->
+        <canvas id="globe-canvas" class="globe-canvas" hidden></canvas>
 
         <div id="breadcrumb" class="breadcrumb" role="navigation" aria-label="Map scale"></div>
 

@@ -21,7 +21,21 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 1600 } },
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 1600 },
+        // The 3D globe (Scale: Globe) needs a WebGL context. Headless Chromium
+        // has no GPU, so allow software rendering (SwiftShader) — newer Chrome
+        // blocks it as "unsafe" for WebGL unless explicitly permitted.
+        launchOptions: {
+          args: [
+            "--enable-unsafe-swiftshader",
+            "--use-gl=angle",
+            "--use-angle=swiftshader",
+            "--ignore-gpu-blocklist",
+          ],
+        },
+      },
     },
   ],
   webServer: {

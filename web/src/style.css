@@ -273,6 +273,21 @@ section.map.navigable.grabbing { cursor: grabbing; }
   top: 0;
   left: 0;
 }
+
+/* The 3D globe fills the map area; OrbitControls reads pointer events on it.
+   Hidden (the `hidden` attribute) unless Scale: Globe is active. `touch-action:
+   none` lets the controls own drag/pinch without the page scrolling. */
+.globe-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+.globe-canvas[hidden] {
+  display: none;
+}
 .map-content svg {
   display: block;
   filter: drop-shadow(0 12px 40px rgba(0, 0, 0, 0.55));

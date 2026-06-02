@@ -37,7 +37,7 @@ export interface Work {
   written_year: number;
 }
 
-export type Scale = "continent" | "planet";
+export type Scale = "continent" | "planet" | "globe";
 
 /// Mirrors the Rust `ContinentInfo` — the landmass under a clicked point.
 export interface ContinentInfo {
@@ -98,9 +98,10 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       // Planet scale runs the identical pipeline on the planet preset (wide 2:1
       // globe, many plates → many continents); the worker stays style-agnostic,
       // so the planisphere-vs-continental choice rides in on `msg.style` (the
-      // main thread resolves it via `navStyle`).
+      // main thread resolves it via `navStyle`). The 3D Globe view textures a
+      // sphere with the SAME planet world, so it generates identically to planet.
       const gen =
-        msg.scale === "planet"
+        msg.scale === "planet" || msg.scale === "globe"
           ? Generation.planet(BigInt(msg.seed), msg.cells, msg.nations)
           : new Generation(BigInt(msg.seed), msg.cells, msg.nations);
       let frameCount = 0;

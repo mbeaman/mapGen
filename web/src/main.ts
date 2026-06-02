@@ -38,6 +38,7 @@ const statusEl = $<HTMLParagraphElement>("status");
 const mapEl = $<HTMLElement>("map");
 const contentEl = $<HTMLDivElement>("map-content");
 const placeholderEl = $<HTMLParagraphElement>("placeholder");
+const globeCanvas = $<HTMLCanvasElement>("globe-canvas");
 const overlayEl = $<HTMLDivElement>("overlay");
 const overlayText = $<HTMLParagraphElement>("overlay-text");
 const barFill = $<HTMLDivElement>("bar-fill");
@@ -84,6 +85,36 @@ let worldH = 1280;
 // is the planisphere overview; drilling refines a continental sector. Set at
 // generate time, so it always matches the world the worker holds.
 let planetScale = false;
+// Globe scale: the root (level 0) is the 3D sphere instead of an SVG. It
+// generates the same planet world as planet scale; drilling (a later increment)
+// hands off to the 2D SVG sector view.
+let globeScale = false;
+
+// ---- 3D globe (Scale: Globe) — three.js, lazy-loaded on first entry ----
+// `import("./globe")` is the code-split point: three lands in its own chunk so
+// the default SVG page stays tiny (guarded by scripts/check-bundle.mjs).
+type GlobeHandle = import("./globe").GlobeHandle;
+let globe: GlobeHandle | null = null;
+const ensureGlobe = async (): Promise<GlobeHandle> => {
+  if (!globe) {
+    const mod = await import("./globe");
+    globe = mod.mountGlobe(globeCanvas);
+  }
+  return globe;
+};
+// Show the sphere over the (hidden) SVG layer.
+const enterGlobeView = async () => {
+  contentEl.style.display = "none";
+  placeholderEl.classList.add("hidden");
+  mapEl.classList.remove("navigable"); // the globe rotates; it isn't zoom-in
+  const g = await ensureGlobe();
+  g.show();
+};
+// Return to the SVG layer (used when leaving globe scale, and — later — on drill).
+const exitGlobeView = () => {
+  globe?.hide();
+  contentEl.style.display = "";
+};
 
 // The style to send for the current nav level: the planisphere at the planet
 // root, the user's chosen style everywhere else (see ./sector navStyle).
@@ -117,7 +148,8 @@ interface MapState {
   scale: Scale;
 }
 
-const asScale = (v: string | null): Scale => (v === "planet" ? "planet" : "continent");
+const asScale = (v: string | null): Scale =>
+  v === "planet" ? "planet" : v === "globe" ? "globe" : "continent";
 
 const readState = (): MapState => {
   const p = new URLSearchParams(location.search);
@@ -315,6 +347,9 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       updateProgress(msg.info);
       break;
     case "frame":
+      // Globe mode hides the SVG layer and has no scrubber, so skip the live
+      // build-up frames entirely (the overlay still shows stage progress).
+      if (globeScale) break;
       frames.push({ svg: msg.svg, label: msg.info.label });
       showSvg(msg.svg);
       break;
@@ -322,13 +357,24 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       markAllDone();
       hideOverlay();
       setBusy(false);
+      hasWorld = true;
+      nav = { ...ROOT };
+      if (globeScale) {
+        // Globe view: mount/show the sphere instead of injecting the SVG. The
+        // returned SVG is ignored (Increment 2 textures the sphere from a
+        // dedicated channel). worldW/worldH were already pinned to planet dims.
+        void enterGlobeView();
+        historyYears = msg.historyYears;
+        updateBreadcrumb();
+        narrateBtn.disabled = false;
+        setStatus(`Globe ready · generated in ${(msg.genMs / 1000).toFixed(2)}s`, "ok");
+        break;
+      }
       frames.push({ svg: msg.svg, label: "Finished" });
       showSvg(msg.svg);
       setExportEnabled(true);
       setupScrubber();
-      hasWorld = true;
       // The root render establishes the world extent for sector geometry.
-      nav = { ...ROOT };
       worldW = lastDims.w || worldW;
       worldH = lastDims.h || worldH;
       historyYears = msg.historyYears;
@@ -415,6 +461,16 @@ const doGenerate = () => {
   hasWorld = false;
   nav = { ...ROOT };
   planetScale = s.scale === "planet";
+  globeScale = s.scale === "globe";
+  if (!globeScale) exitGlobeView(); // leaving globe → restore the SVG layer
+  if (globeScale) {
+    // The globe textures the SAME planet world (2048×1024). Pin the world extent
+    // to those dims NOW — the texture path bypasses showSvg, which is what
+    // normally sets worldW/worldH from the SVG viewBox, so a later drill must not
+    // inherit the stale 2048×1280 continent default.
+    worldW = 2048;
+    worldH = 1024;
+  }
   historyYears = [];
   updateBreadcrumb();
   narrateBtn.disabled = true;
@@ -422,11 +478,13 @@ const doGenerate = () => {
   stopReplay();
   frames = [];
   scrubberEl.classList.add("hidden");
-  setStatus(`Generating ${planetScale ? "planet" : "world"} seed ${s.seed}…`, "busy");
+  setStatus(`Generating ${globeScale ? "globe" : planetScale ? "planet" : "world"} seed ${s.seed}…`, "busy");
   showOverlay("Generating");
   // Final render at the root uses the effective style ("planet" at a planet
-  // root); the per-stage build-up frames pick their own style in the worker.
-  send({ type: "generate", ...s, style: effectiveStyle() });
+  // root); the per-stage build-up frames pick their own style in the worker. The
+  // globe ignores the returned SVG (it textures a sphere), so ask for the cheap
+  // flat `biomes` render rather than a slow ornate planisphere.
+  send({ type: "generate", ...s, style: globeScale ? "biomes" : effectiveStyle() });
 };
 
 // ---- Narration (Phase 5, via the native sidecar) ----
@@ -486,7 +544,7 @@ const updateBreadcrumb = () => {
     }
     const crumb = document.createElement("button");
     crumb.className = "crumb";
-    crumb.textContent = crumbLabel(a, planetScale);
+    crumb.textContent = globeScale && a.level === 0 ? "Globe" : crumbLabel(a, planetScale);
     if (a.level === nav.level) {
       crumb.classList.add("current");
       crumb.disabled = true;
@@ -495,7 +553,7 @@ const updateBreadcrumb = () => {
     }
     breadcrumbEl.append(crumb);
   }
-  if (hasWorld && nav.level < MAX_LEVEL) {
+  if (hasWorld && nav.level < MAX_LEVEL && !globeScale) {
     const hint = document.createElement("span");
     hint.className = "crumb-hint";
     hint.textContent = "· click the map to zoom in";
@@ -576,6 +634,10 @@ mapEl.addEventListener("pointerup", (e) => {
   const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
   downPt = null;
   if (moved > 6 || busy || !hasWorld) return;
+  // In globe mode the 3D canvas owns interaction (OrbitControls); the globe's
+  // own raycaster drill is wired in a later increment, so the SVG drill path is
+  // inert here.
+  if (globeScale) return;
   const c = panzoom.clientToContent(e.clientX, e.clientY);
   const cur = sectorRect(nav, worldW, worldH);
   drillAt(cur.x0 + c.x, cur.y0 + c.y);
@@ -587,8 +649,9 @@ mapEl.addEventListener("pointerup", (e) => {
 const refreshTimeslider = () => {
   // Shown at the root of either scale (the planisphere now washes in political
   // control, so scrubbing animates empires there too); hidden inside a sector,
-  // which has no timeline of its own.
-  const show = hasWorld && nav.level === 0 && historyYears.length === 2;
+  // which has no timeline of its own. The globe is present-day only (a per-year
+  // sphere re-texture is a later increment), so the slider is hidden there.
+  const show = hasWorld && nav.level === 0 && historyYears.length === 2 && !globeScale;
   timesliderEl.classList.toggle("hidden", !show);
   if (!show) return;
   const [start, end] = historyYears;
@@ -738,7 +801,7 @@ styleSelect.addEventListener("change", doRestyle);
 // it never diverges.
 scaleSelect.addEventListener("change", () => {
   if (busy) {
-    scaleSelect.value = planetScale ? "planet" : "continent";
+    scaleSelect.value = globeScale ? "globe" : planetScale ? "planet" : "continent";
     return;
   }
   doGenerate();
@@ -750,7 +813,10 @@ shareBtn.addEventListener("click", () => void copyLink());
 $<HTMLButtonElement>("zoom-in").addEventListener("click", () => panzoom.zoomIn());
 $<HTMLButtonElement>("zoom-out").addEventListener("click", () => panzoom.zoomOut());
 $<HTMLButtonElement>("zoom-fit").addEventListener("click", () => panzoom.fit());
-window.addEventListener("resize", () => panzoom.fit());
+window.addEventListener("resize", () => {
+  if (globeScale) globe?.resize();
+  else panzoom.fit();
+});
 
 scrubInput.addEventListener("input", () => {
   stopReplay();

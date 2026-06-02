@@ -83,6 +83,12 @@ jobs:
       - name: Build frontend (typecheck + bundle)
         working-directory: web
         run: npm run build
+      - name: Bundle guard (three.js stays in a lazy chunk)
+        # Fails if three.js leaks into the eager entry chunk (a static import of
+        # three or ./globe) — the default SVG page must stay tiny; the 3D globe
+        # loads three on demand. See scripts/check-bundle.mjs.
+        working-directory: web
+        run: npm run check:bundle
       - name: Install Playwright Chromium (+ system deps)
         working-directory: web
         run: npx playwright install --with-deps chromium
