@@ -4,6 +4,8 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  mollweideProject,
+  mollweideUnproject,
   navStyle,
   ROOT,
   sectorAt,
@@ -151,6 +153,54 @@ describe("continentDrillLevel", () => {
   it("never drills shallower than 1 (always zoom in) or past maxLevel", () => {
     expect(continentDrillLevel(9000, 10_000, 6)).toBe(1); // near-whole-world → still zoom in one
     expect(continentDrillLevel(1, 1_000_000, 6)).toBe(6); // a speck-sized ratio clamps to maxLevel
+  });
+});
+
+describe("Mollweide projection", () => {
+  // Planet dims (2:1). The oval inscribes exactly in this box.
+  const PW = 2048;
+  const PH = 1024;
+
+  // CROSS-LANGUAGE PIN: these exact projected values are ALSO asserted in the
+  // Rust test (style/planet.rs `project`). A drifted constant in either language
+  // breaks here — without this, both round-trip suites pass while a click lands
+  // in the wrong ocean. Do not "fix" these by recomputing one side.
+  it("maps reference world points to the known projected oval coords", () => {
+    const ref: [number, number, number, number][] = [
+      [1024, 512, 1024.0, 512.0], // centre → centre
+      [2048, 512, 2048.0, 512.0], // equator east end → right edge
+      [1536, 256, 1436.625, 208.875], // mid-latitude, off-centre
+      [1024, 64, 1024.0, 32.73], // near the north pole (pinched up)
+    ];
+    for (const [wx, wy, ex, ey] of ref) {
+      const p = mollweideProject(wx, wy, PW, PH);
+      expect(p.x).toBeCloseTo(ex, 2);
+      expect(p.y).toBeCloseTo(ey, 2);
+    }
+  });
+
+  it("round-trips world → oval → world for points inside the oval", () => {
+    for (const [wx, wy] of [
+      [1024, 512],
+      [1536, 256],
+      [700, 800],
+      [1024, 64],
+      [1400, 700],
+    ]) {
+      const p = mollweideProject(wx, wy, PW, PH);
+      const back = mollweideUnproject(p.x, p.y, PW, PH);
+      expect(back).not.toBeNull();
+      expect(back!.x).toBeCloseTo(wx, 1);
+      expect(back!.y).toBeCloseTo(wy, 1);
+    }
+  });
+
+  it("returns null for clicks in the bare oval corners (inert, not a drill)", () => {
+    // The four corners of the 2:1 box are well outside the inscribed ellipse.
+    expect(mollweideUnproject(20, 20, PW, PH)).toBeNull();
+    expect(mollweideUnproject(PW - 20, 20, PW, PH)).toBeNull();
+    expect(mollweideUnproject(20, PH - 20, PW, PH)).toBeNull();
+    expect(mollweideUnproject(PW - 20, PH - 20, PW, PH)).toBeNull();
   });
 });
 

@@ -6,7 +6,9 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  mollweideUnproject,
   navStyle,
+  projectedBounds,
   ROOT,
   sectorAt,
   sectorRect,
@@ -521,23 +523,43 @@ const requestRefine = () => {
 // sectors are stateless, so this never needs the parent to be cached.
 const navTo = (target: Sector) => {
   if (busy || !hasWorld) return;
+  // Was the current view the projected planet oval? Then its pixels are
+  // Mollweide-projected, so frame the target's PROJECTED box, not its world box.
+  const fromPlanetOval = planetScale && nav.level === 0;
   const parent = sectorRect(nav, worldW, worldH);
   nav = target;
   const child = sectorRect(nav, worldW, worldH);
   // Coarse-first: frame the target rectangle with the current (parent) pixels
-  // so the zoom feels instant, then the refined sector swaps in over it.
-  panzoom.focusContentRect(child.x0 - parent.x0, child.y0 - parent.y0, child.w, child.h);
+  // so the zoom feels instant, then the refined (equirectangular) sector swaps
+  // in over it and `fit()` reframes exactly.
+  if (fromPlanetOval) {
+    const b = projectedBounds(child.x0, child.y0, child.w, child.h, worldW, worldH);
+    panzoom.focusContentRect(b.x0, b.y0, b.w, b.h);
+  } else {
+    panzoom.focusContentRect(child.x0 - parent.x0, child.y0 - parent.y0, child.w, child.h);
+  }
   requestRefine();
 };
 
-// Drill beneath a world-space point. At the root, snap to the clicked
+// Drill beneath a content-space point. At the root, snap to the clicked
 // *continent* — the worker answers `continentAt` async, and `continentInfo`
 // re-centers + sizes the drill on its mass (so clicking a continent's edge no
 // longer lands you in a half-ocean quadrant). Deeper in, grid-drill the child.
 const drillAt = (wx: number, wy: number) => {
   if (busy || !hasWorld) return;
   if (nav.level === 0) {
-    send({ type: "continentAt", x: wx, y: wy });
+    // The planet root renders as a Mollweide oval, so the clicked content coords
+    // are projected — invert to world space before the continent query. A click
+    // in the bare oval corners unprojects to null → inert (no drill).
+    let qx = wx;
+    let qy = wy;
+    if (planetScale) {
+      const w = mollweideUnproject(wx, wy, worldW, worldH);
+      if (!w) return;
+      qx = w.x;
+      qy = w.y;
+    }
+    send({ type: "continentAt", x: qx, y: qy });
     return;
   }
   const child = childSectorAt(wx, wy, nav.level, worldW, worldH, MAX_LEVEL);

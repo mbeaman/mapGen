@@ -48,10 +48,11 @@ const RENDER_BASELINES: &[(usize, u64, u64)] = &[(4_000, 22, 33), (15_000, 78, 1
 const REFINE_BASELINE: (usize, u64, u64) = (15_000, 68, 102);
 
 /// `render` with `Style::Planet` (the zoomed-out planisphere) over an 18k-cell
-/// planet world — the heaviest render path by cell count, but it drops the
-/// per-cell ornate clutter (forests, ripples, glyphs), so it is far cheaper than
-/// the ornate render. `(cells, baseline ms, budget ms)`. Anchored 2026-06-01.
-const PLANET_RENDER_BASELINE: (usize, u64, u64) = (18_000, 13, 20);
+/// planet world. Cheaper than the ornate render despite more cells (it drops the
+/// per-cell forests/ripples/glyphs). `(cells, baseline ms, budget ms)`.
+/// Re-anchored 2026-06-01 from 13ms: the Mollweide globe projection adds a
+/// per-vertex transform (kept to a per-row table lookup, no trig), ~+6ms.
+const PLANET_RENDER_BASELINE: (usize, u64, u64) = (18_000, 19, 29);
 
 fn gen_params(cells: usize, seed: u64) -> GenerateParams {
     GenerateParams {

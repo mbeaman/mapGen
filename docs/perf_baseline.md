@@ -39,16 +39,18 @@ over a haloed sub-mesh, and projects the parent society/hydrology.
 
 **`render` with `Style::Planet`** (the zoomed-out planisphere) was added
 2026-06-01. It is the heaviest render path *by cell count* (an 18k-cell planet),
-yet the cheapest in wall time: the planisphere deliberately drops the per-cell
+yet far cheaper than ornate in wall time: the planisphere drops the per-cell
 ornate clutter (forests, ripples, glyphs), drawing only biome-tinted fills, a
-graticule, the major rivers/ranges, and continent/ocean labels — so 18k planet
-cells render in ~13 ms versus ~78 ms for 15k ornate cells.
+graticule, the major rivers/ranges, and continent/ocean labels. The Mollweide
+globe projection (added 2026-06-01) maps every coordinate onto the oval; it is
+kept to a per-row table lookup (no per-vertex trig), so 18k planet cells render
+in ~19 ms (was ~13 ms equirectangular) versus ~78 ms for 15k ornate cells.
 
 | component       | case       | median |
 |-----------------|------------|-------:|
 | `render`        | 4,000      |  22 ms |
 | `render`        | 15,000     |  78 ms |
-| `render` planet | 18,000 (planisphere) |  13 ms |
+| `render` planet | 18,000 (Mollweide planisphere) |  19 ms |
 | `refine_sector` | 15k → 4k tile (L2) |  68 ms |
 
 ### Environment
@@ -74,7 +76,7 @@ same hardware class.** Budget tables:
 |-----------------|---------:|--------------:|
 |           4,000 |    22 ms |         33 ms |
 |          15,000 |    78 ms |        117 ms |
-| 18,000 planet   |    13 ms |         20 ms |
+| 18,000 planet   |    19 ms |         29 ms |
 
 | `refine_sector`     | baseline | budget (1.5×) |
 |---------------------|---------:|--------------:|

@@ -98,6 +98,105 @@ export function navStyle(level: number, planet: boolean, userStyle: string): str
   return planet && level === 0 ? "planet" : userStyle;
 }
 
+// ---- Mollweide projection (the planet planisphere's globe-edge look) ----
+// The planet renders as a Mollweide oval (equal-area, whole-world). These mirror
+// the Rust `project`/inverse in `style/planet.rs` EXACTLY — cross-language
+// agreement is pinned by shared reference points in the tests, because a drifted
+// constant would pass both round-trip suites yet land a click in the wrong
+// ocean. World coords are equirectangular in `[0,worldW]×[0,worldH]`; screen
+// coords are the projected oval inscribed in the same box.
+
+const SQRT2 = Math.SQRT2;
+
+/// Solve Mollweide's `2θ + sin2θ = π·sin(lat)` for the auxiliary angle θ
+/// (Newton). The poles (θ = ±π/2) are special-cased — there the derivative
+/// `2 + 2cos2θ` vanishes.
+function mollweideTheta(lat: number): number {
+  const HALF_PI = Math.PI / 2;
+  if (Math.abs(lat) >= HALF_PI - 1e-6) return Math.sign(lat) * HALF_PI;
+  let theta = lat;
+  const target = Math.PI * Math.sin(lat);
+  for (let i = 0; i < 8; i++) {
+    const den = 2 + 2 * Math.cos(2 * theta);
+    if (Math.abs(den) < 1e-9) break;
+    theta -= (2 * theta + Math.sin(2 * theta) - target) / den;
+  }
+  return theta;
+}
+
+/// World → projected oval (forward). Maps `[0,worldW]×[0,worldH]` onto the
+/// Mollweide ellipse inscribed in the same box; the centre stays the centre,
+/// the equator's ends touch the left/right edges, the poles pinch to points.
+export function mollweideProject(
+  wx: number,
+  wy: number,
+  worldW: number,
+  worldH: number,
+): { x: number; y: number } {
+  const lon = (wx / worldW - 0.5) * 2 * Math.PI; // [-π, π]
+  const lat = (0.5 - wy / worldH) * Math.PI; // [π/2 (north) .. -π/2]
+  const theta = mollweideTheta(lat);
+  const mx = ((2 * SQRT2) / Math.PI) * lon * Math.cos(theta); // [-2√2, 2√2]
+  const my = SQRT2 * Math.sin(theta); // [-√2, √2]
+  return {
+    x: worldW * (0.5 + mx / (4 * SQRT2)),
+    y: worldH * (0.5 - my / (2 * SQRT2)), // flip: north (my>0) → small y
+  };
+}
+
+/// Projected oval → world (inverse, closed-form). Returns `null` for a point
+/// outside the ellipse (the bare parchment corners) — the caller treats that as
+/// an inert click, not a drill.
+export function mollweideUnproject(
+  px: number,
+  py: number,
+  worldW: number,
+  worldH: number,
+): { x: number; y: number } | null {
+  const mx = (px / worldW - 0.5) * 4 * SQRT2; // [-2√2, 2√2]
+  const my = (0.5 - py / worldH) * 2 * SQRT2; // [-√2, √2]
+  // Outside the Mollweide ellipse (semi-axes 2√2, √2) → bare corner, inert.
+  if ((mx / (2 * SQRT2)) ** 2 + (my / SQRT2) ** 2 > 1) return null;
+  const theta = Math.asin(Math.max(-1, Math.min(1, my / SQRT2)));
+  const cosTheta = Math.cos(theta);
+  if (cosTheta < 1e-6) return null; // at a pole: longitude is undefined
+  const lon = (mx * Math.PI) / (2 * SQRT2 * cosTheta);
+  if (Math.abs(lon) > Math.PI + 1e-3) return null;
+  const lat = Math.asin(Math.max(-1, Math.min(1, (2 * theta + Math.sin(2 * theta)) / Math.PI)));
+  return {
+    x: worldW * (lon / (2 * Math.PI) + 0.5),
+    y: worldH * (0.5 - lat / Math.PI),
+  };
+}
+
+/// The projected bounding box of a world-space rectangle on the Mollweide oval —
+/// frames the coarse-first zoom when drilling out of the projected planet. The
+/// projected edges curve, so it samples a grid rather than trusting the corners.
+export function projectedBounds(
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  worldW: number,
+  worldH: number,
+): { x0: number; y0: number; w: number; h: number } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  const N = 8;
+  for (let i = 0; i <= N; i++) {
+    for (let j = 0; j <= N; j++) {
+      const p = mollweideProject(x0 + (w * i) / N, y0 + (h * j) / N, worldW, worldH);
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+  return { x0: minX, y0: minY, w: maxX - minX, h: maxY - minY };
+}
+
 export type StageStyle = "greyscale" | "biomes" | "cultures";
 
 /// Richest style whose inputs exist by a given build stage (used to render the
