@@ -73,13 +73,15 @@ use crate::{
 ///   three goldens re-anchor for the `schema_version` byte; `seed42_full`
 ///   additionally for the named bodies (phase2/sector snapshot pre-naming state).
 /// * v18 — "The Sundered Lanes" maritime substrate: `WorldData::sea_lanes`
-///   (`SeaLanesData` — inter-continental sea lanes with per-lane traversal cost +
-///   `min_naval` gate). Populated by the new `sea_lanes` stage; `skip`-elided when
-///   empty. This skeleton adds the (still-empty) field + stage wiring, so all
-///   three goldens re-anchor for the `schema_version` byte ALONE — verified by
-///   reverting the constant to 17 and confirming the goldens hold with all
-///   sea_lanes code in place (the empty field elides; the new RNG stream does not
-///   perturb other stages). The full lane graph lands in a later phase.
+///   (`SeaLanesData` — inter-continental sea lanes, each a coastal-anchor pair
+///   `a<b` with a `min_naval` crossing gate; the f32 `cost` is `serde(skip)`, off
+///   the hashed path). Populated by the new `sea_lanes` stage, `skip`-elided when
+///   empty. The graph is inter-*continental*, so it stays empty on a single-
+///   landmass world: the three goldens (continental seed 42 + its phase2/sector
+///   snapshots) grow no lanes and re-anchored for the `schema_version` byte alone
+///   — verified by reverting the constant to 17 with all sea_lanes code in place
+///   and confirming the goldens hold. Multi-continent (planet-scale) worlds, which
+///   no golden covers, carry the realized lane graph.
 pub const SCHEMA_VERSION: u32 = 18;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -343,16 +345,25 @@ pub struct Continent {
 }
 
 /// One inter-continental sea lane: a navigable crossing between two coastal
-/// *anchor* cells on different landmasses. `cost` is the anisotropic sea-path
-/// cost (current/wind-aware) that produced it; `min_naval` is the calibrated
-/// crossing gate — a polity crosses iff its naval skill `>= min_naval`. The flow
-/// field that produces `cost` is NOT persisted (recomputed at build time only).
+/// *anchor* cells on different landmasses. `cost` is the sea-path cost that
+/// produced it; `min_naval` is the calibrated crossing gate — a polity crosses
+/// iff its naval skill `>= min_naval`.
+///
+/// `cost` is `#[serde(skip)]`: it is an f32 used only at build time (to derive
+/// `min_naval` and order candidate crossings) and consumed by no one post-gen,
+/// so it is kept *off* the hashed, native↔wasm-checked path — only the integer
+/// `(a, b, min_naval)` are serialized. (A cross-platform f32 wobble that does
+/// not cross a `min_naval` quantization boundary is then invisible to the
+/// golden; one that does still flips `min_naval` and is caught.) Deserializes to
+/// `cost = 0.0`; lanes are recomputed fresh each run, never round-tripped.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SeaLane {
     /// Coastal anchor cell ids, canonical `a < b`.
     pub a: u32,
     pub b: u32,
-    /// Accumulated anisotropic sea-path cost of the crossing.
+    /// Sea-path cost of the crossing (world units). Build-time only — see the
+    /// struct note on why this is `#[serde(skip)]`.
+    #[serde(skip)]
     pub cost: f32,
     /// Naval skill required to use the lane (the dual-filter gate).
     pub min_naval: u8,
