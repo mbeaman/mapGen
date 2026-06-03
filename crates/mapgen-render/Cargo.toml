@@ -18,3 +18,7 @@ euclid = { workspace = true }
 
 [dev-dependencies]
 mapgen-world = { path = "../mapgen-world" }
+# Canonical seeds + the earned-overseas-seizure probe for the political
+# legibility claims. Dev-only; the testsupport -> world -> (dev) render cycle is
+# permitted by Cargo (closes through a dev edge).
+mapgen-testsupport = { path = "../mapgen-testsupport" }

@@ -81,8 +81,8 @@ with its red-mutation recorded here and verified once by hand.
 | **No** earned crossing on any sundered seed — the naval gate is load-bearing | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` (mutation-verified: removing the gate makes seed 23 span `[0,2,8]`) | remove the `lane.min_naval > naval_a` gate |
 | Exact per-seed crossing counts (11→4, 19→3, 7→2, 4→1) | Data | 11, 19, 7, 4 | **GAP (intentional, won't fix)** — *presence* is pinned per seed; exact counts are deliberately not (any history tweak shifts them → brittle regression gate) | n/a |
 | The earned crossing flips in at a specific year under the slider's reconstruction | Replay | 11, 19, 7, 4 | `sundered_lanes_claims.rs::the_earned_crossing_replays_faithfully_in_the_time_slider` (mutation-verified: off-by-one in `control_at_year` flips it red; uses the slider's own `control_at_year` — earned cell is *not* the conqueror's at year-1, *is* at year, and `control_at_year(last) == society.control`) | `>` → `>=` in `control_at_year` |
-| Scrubbing the slider **visibly** reveals the overseas exclave (web/DOM) | Replay+Observable | crossing | **GAP — blocked on substage 4.** The data flip is proven (row above); but you cannot assert the slider *reveals* an exclave that is color-indistinguishable from a native realm (mod-5). Needs legibility + per-region polity exposure in the planisphere DOM first | (folded into substage 4) |
-| The overseas exclave is **visually distinct** on the planisphere | Observable | crossing | **GAP — KNOWN FALSE.** `polity_color` wraps mod-5 over ~22 polities, so an exclave shares a color with a native realm. The closest test, `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history`, asserts the wash exists & animates — not that an exclave is distinct | (no test — substage 4; the test is RED until legibility is built) |
+| Scrubbing the slider **visibly** reveals the overseas exclave (web/DOM) | Replay+Observable | crossing | **PARTIAL.** Legibility is now built (row above) so a human *sees* the distinct exclave appear; but an automated e2e still can't point at *the* exclave region — the planisphere is per-cell polygons with no per-region polity id in the DOM. Remaining work: expose polity per region (e.g. group wash polygons by realm) so an e2e can assert the specific exclave flips in | (deferred — needs DOM polity exposure) |
+| Bordering realms (incl. the overseas exclave) render in distinct colors | Observable | 11, 19, 7, 4 | `political_legibility.rs::{bordering_realms_render_in_distinct_colours, the_overseas_exclave_is_colour_distinct_from_the_realms_it_borders, the_political_wash_renders_exactly_the_realms_legible_colours}` (mutation-verified: disabling `recolor_political` reverts the adjacency test to red). FIXED by post-history greedy graph-coloring (`polities::recolor_political`) replacing mod-5 `polity_color` | disable `recolor_political` |
 
 ## Planet & globe presentation
 
@@ -107,10 +107,12 @@ with its red-mutation recorded here and verified once by hand.
 
 ## Open gaps (the work this registry exposes)
 
-1. **Observable — exclave distinctness** *(KNOWN FALSE, substage 4)*: the #1 item.
-   mod-5 `polity_color` makes an overseas exclave indistinguishable from a native
-   same-color realm. The render-level test is red until exclave-distinct rendering
-   is built — TDD-first.
+1. ~~**Observable — exclave distinctness**~~ *(CLOSED, substage 4)*: `recolor_political`
+   greedy-graph-colors the polity adjacency post-history; `political_legibility.rs`
+   pins it (mutation-verified). Goldens re-anchored (delta proven to be `nation.color`
+   only). **Residual:** an *automated* e2e that scrubs to the crossing year and asserts
+   *the* exclave region appears still needs per-region polity exposure in the DOM
+   (the colors are now distinct, so a human sees it; the machine can't yet point at it).
 2. ~~**Replay — earned crossing → year-specific flip**~~ *(Rust side CLOSED, substage 3)*:
    `the_earned_crossing_replays_faithfully_in_the_time_slider` pins it via the
    slider's own `control_at_year`, mutation-verified. The **web/DOM** half ("scrubbing

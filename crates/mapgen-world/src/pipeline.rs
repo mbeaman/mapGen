@@ -344,6 +344,9 @@ impl Pipeline {
                     mapgen_history::HistoryParams::default(),
                     &mut r,
                 );
+                // Final borders are now settled (exclaves included) — assign
+                // legible, border-distinct political colors over the result.
+                polities::recolor_political(&mut self.world);
             }
         }
     }

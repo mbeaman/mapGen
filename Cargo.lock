@@ -956,6 +956,7 @@ dependencies = [
  "euclid",
  "libm",
  "mapgen-core",
+ "mapgen-testsupport",
  "mapgen-world",
  "roughr",
  "serde",

@@ -19,7 +19,7 @@
 //! Spec: `crates/mapgen-world/tests/polities_spec.rs`.
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BTreeSet, BinaryHeap, HashSet};
 
 use mapgen_core::entities::{Settlement, SettlementTier};
 use mapgen_core::world_data::{Nation, Road};
@@ -155,18 +155,97 @@ pub fn lay_out(world: &mut WorldData, params: PolitiesParams, _rng: &mut ChaCha8
     world.society.control = control;
 }
 
-/// Distinct color per polity for renderer use. Wraps around for >5
-/// polities; the cultures roster caps out at 5 in MVP so wrap rarely
-/// fires.
+/// Provisional color per polity at gen-time (before borders move). A pure
+/// function of id; the final legible colors are assigned post-history by
+/// [`recolor_political`], so this only ever shows in the pre-history build-up
+/// (the "Drawing borders" stage frame), where adjacency isn't settled yet.
 fn polity_color(polity_id: usize) -> [u8; 3] {
-    const PALETTE: &[[u8; 3]] = &[
-        [180, 90, 70],  // muted brick
-        [90, 130, 60],  // moss
-        [70, 100, 150], // dusty blue
-        [170, 130, 60], // bronze
-        [130, 80, 150], // plum
-    ];
-    PALETTE[polity_id % PALETTE.len()]
+    POLITICAL_PALETTE[polity_id % POLITICAL_PALETTE.len()]
+}
+
+/// Render palette for political control: enough distinct, muted parchment tones
+/// that a greedy graph-coloring of the (low-degree) polity adjacency graph need
+/// not repeat a color between bordering realms. Greedy needs at most
+/// `max_degree + 1` colors; the observed max polity degree across planet seeds
+/// is ~5, so 12 is comfortable headroom (the first 5 entries are the original
+/// pre-recolor palette, kept byte-identical so the gen-time UI frame is stable).
+const POLITICAL_PALETTE: &[[u8; 3]] = &[
+    [180, 90, 70],   // brick
+    [90, 130, 60],   // moss
+    [70, 100, 150],  // dusty blue
+    [170, 130, 60],  // bronze
+    [130, 80, 150],  // plum
+    [70, 140, 135],  // teal
+    [150, 150, 75],  // olive
+    [190, 115, 150], // rose
+    [110, 95, 130],  // mauve
+    [200, 140, 95],  // sand
+    [95, 120, 95],   // sage
+    [120, 160, 195], // sky
+];
+
+/// Recolor polities so no two that share a border carry the same color — making
+/// the political wash, and overseas exclaves in particular, legible. Runs
+/// post-history (so exclaves minted by the cross-water carrier are part of the
+/// adjacency), overwriting the provisional gen-time colors.
+///
+/// Greedy graph-coloring over the polity adjacency graph built from the FINAL
+/// control map. Deterministic: polities are colored in id order, each taking the
+/// lowest palette index no already-colored neighbor uses. Integer-only, so
+/// native and wasm agree byte-for-byte. The result is stored per-polity (stable
+/// across the time-slider, which renders past years from the same `nation.color`
+/// — so two realms adjacent only in a *past* year may share a color; the present
+/// map, the canonical view, is the one kept legible).
+pub fn recolor_political(world: &mut WorldData) {
+    let n_pol = world.society.nations.len();
+    if n_pol == 0 {
+        return;
+    }
+    let n_cells = world.mesh.cell_count();
+
+    // Adjacency from final control: polities whose cells neighbor across a border.
+    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n_pol];
+    for cell in 0..n_cells {
+        let Some(a) = world.society.control.get(cell).copied().flatten() else {
+            continue;
+        };
+        let a = a as usize;
+        if a >= n_pol {
+            continue;
+        }
+        let Some(nbrs) = world.mesh.neighbors.get(cell) else {
+            continue;
+        };
+        for &nb in nbrs {
+            if let Some(b) = world.society.control.get(nb as usize).copied().flatten() {
+                let b = b as usize;
+                if b < n_pol && b != a {
+                    adj[a].insert(b);
+                    adj[b].insert(a);
+                }
+            }
+        }
+    }
+
+    let mut chosen = vec![usize::MAX; n_pol];
+    for p in 0..n_pol {
+        let mut used = vec![false; POLITICAL_PALETTE.len()];
+        for &q in &adj[p] {
+            if chosen[q] != usize::MAX {
+                used[chosen[q]] = true;
+            }
+        }
+        // Lowest free palette slot. If a realm somehow borders more realms than
+        // the palette has colors (degree ≥ 12 — never observed; max is ~5), wrap
+        // to a localized collision; the legibility tests would fail loudly if it
+        // ever fired.
+        let idx = used
+            .iter()
+            .position(|&free| !free)
+            .unwrap_or(p % POLITICAL_PALETTE.len());
+        chosen[p] = idx;
+        world.society.nations[p].color = POLITICAL_PALETTE[idx];
+    }
 }
 
 fn pick_capitals(
