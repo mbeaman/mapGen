@@ -66,12 +66,12 @@ with its red-mutation recorded here and verified once by hand.
 
 | Claim | Layer | Seed | Test | Red-mutation |
 |---|---|---|---|---|
-| A canonical planet grows a both-tier lane graph (`min_naval` 12 **and** 64) | Data | **19 only** | `sea_lanes_spec.rs::canonical_seed_grows_lanes_spanning_both_tiers` | clamp `min_naval` to a single tier |
+| Every crossing seed grows a both-tier lane graph (a crossable strait `≤40` **and** an open-ocean wall `>40`) | Data | 11, 19, 7, 4 | `sea_lanes_spec.rs::every_crossing_seed_grows_lanes_spanning_both_tiers` (tier split 11→6/9, 19→4/6, 7→3/5, 4→3/5) | clamp `min_naval` to a single tier |
 | A one-cell strait forms a lane the sea-scan alone would miss | Data | synthetic | `sea_lanes_spec.rs::one_cell_pinch_strait_forms_a_lane_the_sea_scan_alone_would_miss` | drop the sea→land pinch scan |
 | A strait maps to crossable, open ocean to a wall | Data | synthetic | `sea_lanes_spec.rs::synthetic_fixture_maps_strait_to_crossable_and_ocean_to_wall` | invert the cost gate |
 | Lanes are deterministic for a fixed seed | Determinism | 19 | `sea_lanes_spec.rs::lanes_are_deterministic_for_a_fixed_seed` | key the lane heap on a non-stable tiebreak |
 | Sundered seeds yield no earned crossing (lanes exist but are gated too-expensive) | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` pins the *outcome*. The mutation proof showed seed 23 *does* chart inter-body lanes (they'd carry `[0,2,8]` with the gate off) — so "sundered" = gated, not laneless. The substrate-level "no lane crossable at achievable naval" is confirmed but not a standing assertion | (see the carrier gate row) |
-| Both-tier holds on **all** crossing seeds (11/19/7/4), not just 19 | Data | 11, 19, 7, 4 | **GAP** — only seed 19 is pinned today | (no test — substage 2) |
+| Sundered seeds carry only walls (no crossable lane) | Data | 23, 42 | covered by the carrier outcome test (`sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed`) — see the carrier section | (see carrier gate row) |
 
 ## Carrier — beachhead cross-water conquest (Phase 1)
 
@@ -121,9 +121,8 @@ with its red-mutation recorded here and verified once by hand.
 3. ~~**Data — sundered seeds grow no crossable lane**~~ *(CLOSED, substage 2)*: the
    *absent* half is now pinned in both directions by `sundered_lanes_claims.rs`,
    mutation-verified.
-4. **Data — both-tier substrate across all crossing seeds** *(low priority)*: only
-   seed 19 asserts both `min_naval` tiers; the other crossing seeds are exercised
-   end-to-end by the outcome test but their tier breadth is unpinned. (Exact
+4. ~~**Data — both-tier substrate across all crossing seeds**~~ *(CLOSED)*: all four
+   crossing seeds now assert a crossable strait + an open-ocean wall. (Exact
    per-seed crossing *counts* are intentionally never pinned — brittle.)
 
 ## How to extend this file

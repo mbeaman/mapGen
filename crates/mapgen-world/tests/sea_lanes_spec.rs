@@ -21,6 +21,7 @@
 //!    the anti-Goodhart trap the design cut.
 
 use mapgen_core::{MeshData, TerrainData, WorldData};
+use mapgen_testsupport::CROSSING_SEEDS;
 use mapgen_world::{
     naming::connected_bodies,
     pipeline::{Pipeline, PipelineStage},
@@ -310,31 +311,33 @@ fn world_through_sea_lanes(seed: u64) -> WorldData {
 }
 
 #[test]
-fn canonical_seed_grows_lanes_spanning_both_tiers() {
-    // Seed 19: the Step-0 probe measured inter-body gaps of [19 … 1521] — a clear
-    // strait AND a clear open-ocean wall — so a correct substrate must surface
-    // both tiers. (Sundered seeds legitimately have only walls; not asserted.)
-    let world = world_through_sea_lanes(19);
-    let lanes = &world.sea_lanes.lanes;
-    assert!(
-        !lanes.is_empty(),
-        "a six-continent planet must grow inter-body sea lanes"
-    );
-
-    let crossable = lanes.iter().any(|l| l.min_naval <= NAVAL_CEILING);
-    let wall = lanes.iter().any(|l| l.min_naval > NAVAL_CEILING);
-    assert!(
-        crossable,
-        "seed 19 must have at least one crossable strait (min_naval <= {NAVAL_CEILING}); \
-         lanes: {:?}",
-        lanes.iter().map(|l| l.min_naval).collect::<Vec<_>>()
-    );
-    assert!(
-        wall,
-        "seed 19 must have at least one open-ocean wall (min_naval > {NAVAL_CEILING}); \
-         lanes: {:?}",
-        lanes.iter().map(|l| l.min_naval).collect::<Vec<_>>()
-    );
+fn every_crossing_seed_grows_lanes_spanning_both_tiers() {
+    // A correct substrate surfaces BOTH a crossable strait (min_naval <= ceiling)
+    // and an open-ocean wall (> ceiling) — not all crossings cheap, not all
+    // impossible. Probed across all crossing seeds, the tier split is 11→6/9,
+    // 19→4/6, 7→3/5, 4→3/5, so every one carries both. (Sundered seeds
+    // legitimately have only walls; asserted absent in sundered_lanes_claims.)
+    for &seed in CROSSING_SEEDS {
+        let world = world_through_sea_lanes(seed);
+        let lanes = &world.sea_lanes.lanes;
+        let tiers = || lanes.iter().map(|l| l.min_naval).collect::<Vec<_>>();
+        assert!(
+            !lanes.is_empty(),
+            "crossing seed {seed} must grow inter-body sea lanes"
+        );
+        assert!(
+            lanes.iter().any(|l| l.min_naval <= NAVAL_CEILING),
+            "crossing seed {seed} must have a crossable strait (min_naval <= {NAVAL_CEILING}); \
+             tiers: {:?}",
+            tiers()
+        );
+        assert!(
+            lanes.iter().any(|l| l.min_naval > NAVAL_CEILING),
+            "crossing seed {seed} must have an open-ocean wall (min_naval > {NAVAL_CEILING}); \
+             tiers: {:?}",
+            tiers()
+        );
+    }
 }
 
 #[test]
