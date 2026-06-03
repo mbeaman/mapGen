@@ -24,14 +24,33 @@
 > milestone, NOT this change; the later religion increment must reconcile gen-time
 > confinement vs Diffusion's global-then-spread.
 >
-> **Next on resume (advisor flags):** (1) **re-probe the carriers** — the old
-> `bothNone=0` "colonization can't fire" conclusion is STALE; floor-drops created
-> 0–8% `None` land = colonization fodder, so the firing preconditions inverted;
-> re-run the histogram before picking a carrier substage. (2) The cultures
-> (`>=0.0`) vs sea_lanes (`>0.0`) land-predicate divergence is pinned by a tripwire
-> test (`no_culture_instance_spans_a_sea_lanes_body`, passes trivially today since
-> no cell sits at exactly 0.0) — unify on one canonical body primitive before it
-> bites.
+> ## ✅ CARRIER SHIPPED (2026-06-02) — earned cross-water conquest works.
+>
+> The **beachhead carrier** is built (`loops/mearsheimer.rs`): a war can now cross
+> a sea lane the aggressor's culture has the `naval` tech to sail (`SimState.naval`
+> per polity = max coastal-culture naval tech; lane gated by `min_naval`). On a win
+> it seizes the loser's far-shore anchor cell as a beachhead, recorded as a
+> `BorderChange` so it replays for free in the time-slider and on the planisphere.
+> Proven on planet seeds: earned overseas holdings on 11(4)/19(3)/7(2)/4(1), and
+> the "both-directions" property of the lanes (sundered on 23/42). seed42 goldens
+> hold byte-identical (integer-only path = no-op there); mutation-verified
+> earned-crossing test (`cross_water_conquest_produces_earned_overseas_holdings`).
+>
+> **Deferred (named, not vague):**
+> 1. **Exclave legibility / surfacing — THE gating work for a *visible* Phase 1.**
+>    `polity_color` wraps **mod-5** over ~22 polities, so an overseas exclave is the
+>    same color as some native same-color realm — the conquest is in the DATA and
+>    replays in the slider, but it is NOT yet visually distinguishable on the
+>    planisphere. The data replays for free; the legibility does not. Until a
+>    polity has a stable, exclave-distinct rendering, do NOT claim "you can see the
+>    sundering" — only "it animates in the slider." This is the next high-value item.
+> 2. **Colonization carrier (`from:None` far-shore claim).** Re-probe confirmed it
+>    fires only on seed 11 (floor-drops leave 0–8% `None` land = sparse fodder) —
+>    lower-value than the beachhead, which fires everywhere. Build after legibility.
+> 3. **Land-predicate unification.** cultures (`>=0.0`) vs sea_lanes (`>0.0`)
+>    divergence is pinned by a tripwire (`no_culture_instance_spans_a_sea_lanes_body`,
+>    passes trivially today — no cell sits at exactly 0.0). Unify on one canonical
+>    body primitive before it bites.
 >
 > ---
 >
