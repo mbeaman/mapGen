@@ -92,8 +92,9 @@ with its red-mutation recorded here and verified once by hand.
 
 | Religions are confined to one landmass at gen-time (no faith pre-crosses oceans) | Data | 11, 19, 7, 4, 23, 42 | `diffusion_claims.rs::religions_are_confined_to_one_landmass_at_gen_time` (stepped to `PipelineStage::Religions`; mutation-verified: dropping the body filter makes a faith span). `religions::found` confines alignment-spread to the founder's body | drop the `home_body[r] != cell_body` filter in `religions::found` |
 | A faith crosses water EARNED over a crossable lane — and only there | Data | 11, 19, 7, 4 (fires); 23, 42 (absent) | `diffusion_claims.rs::diffusion_carries_a_faith_across_water_only_over_a_crossable_lane` (mutation-verified both ways: disable the loop → fires red; drop the naval gate → sundered seed 23 spans `[0,1]` → absent red). `loops/diffusion.rs` (`LoopId::Diffusion`) crosses crossable lanes + spreads inland over history | disable the Diffusion loop / drop the `min_naval` gate |
+| The Faith lens surfaces a crossing on the map | Observable | 11, 19, 7, 4 | `faith_overlay.rs::the_faith_wash_surfaces_every_faith_that_crossed_water` (mutation-verified: disable `render_faith` → red). The planet `planet-faith` wash draws each faith as a `data-religion` group; every religion spanning ≥2 bodies appears. e2e `smoke.spec.ts::the Faith lens toggles on` (the Faith preset sets `on-faith`, swapping the political wash for faith via `FAITH_LENS_STYLE`) | disable `render_faith` |
 
-> **Not yet surfaced (honest residual):** faith is not rendered per-cell — the crossing is pinned at the data layer (`religion_id`), not shown on the map. A faith overlay is the surfacing pass (analogous to exclave legibility for political control), deferred.
+> **Surfacing residual (minor):** the faith wash is the PRESENT distribution; it does not animate over years (religion has no `border_changes`-style replay channel — the slider replays political control only). The crossing is visible (a faith spans continents) but not its year-by-year advance. A faith-replay channel is deferred.
 
 ## Planet & globe presentation
 

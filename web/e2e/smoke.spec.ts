@@ -32,6 +32,32 @@ test("auto-loads a map, regenerates, applies a lens, enables narration", async (
   await expect(svg).toHaveClass(/on-climate/, { timeout: 10_000 });
 });
 
+// The Faith lens (Phase 2 Diffusion surfaced): the "Faith" overlay comes from the
+// shared layer manifest, and toggling it sets the root `on-faith` class. This test
+// runs at the DEFAULT scale (continental) + style (ornate), so the gate it exercises
+// is the ornate LAYER_STYLE rule `svg.on-faith .layer-faith{display:inline}` — NOT
+// the planet-scale FAITH_LENS_STYLE (.planet-political→.planet-faith), which the Rust
+// render test faith_overlay.rs pins. We assert the actual reveal: the off-by-default
+// `.layer-faith` group flips computed display none→inline. Asserting only the
+// `on-faith` class would pass green even if the CSS gate were mistyped and revealed
+// nothing — so we pin the swap, not just the wiring.
+test("the Faith lens swaps in the faith wash", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+
+  // Off by default: the ornate faith layer ships `display="none"`.
+  const faithLayer = svg.locator(".layer-faith");
+  await expect(faithLayer).toHaveCSS("display", "none");
+
+  await page.locator("#layers-panel summary").click();
+  await page.getByRole("button", { name: "Faith", exact: true }).click();
+
+  // The toggle fired (root class) AND the gate revealed the layer (display swap).
+  await expect(svg).toHaveClass(/on-faith/, { timeout: 10_000 });
+  await expect(faithLayer).toHaveCSS("display", "inline", { timeout: 10_000 });
+});
+
 // width/height of the live SVG's viewBox. The planet preset is a 2:1 globe
 // (2048×1024 → aspect 2.0); a continent is 2048×1280 → 1.6. So aspect > 1.8 is
 // a render signal that the planet preset actually produced this map — not just

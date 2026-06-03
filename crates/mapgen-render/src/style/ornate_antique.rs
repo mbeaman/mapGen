@@ -123,6 +123,7 @@ pub fn render(world: &WorldData) -> String {
     // the frontend flips layers via the `LAYER_STYLE` rules.
     layer(&mut out, "land", false, |o| render_land_fill(world, o));
     layer(&mut out, "political", true, |o| render_political(world, o));
+    layer(&mut out, "faith", true, |o| render_faith(world, o));
     layer(&mut out, "climate", true, |o| render_climate(world, o));
     layer(&mut out, "relief", true, |o| render_relief(world, o));
     layer(&mut out, "precip", true, |o| render_precip(world, o));
@@ -208,6 +209,7 @@ pub fn render(world: &WorldData) -> String {
 const LAYER_STYLE: &str = r##"<style>
 svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coastline,svg.off-rivers .layer-rivers,svg.off-mountains .layer-mountains,svg.off-forests .layer-forests,svg.off-roads .layer-roads,svg.off-borders .layer-borders,svg.off-settlements .layer-settlements,svg.off-sacred .layer-sacred,svg.off-labels .layer-labels{display:none}
 svg.on-political .layer-political{display:inline !important}
+svg.on-faith .layer-faith{display:inline !important}
 svg.on-climate .layer-climate,svg.on-climate .legend-climate{display:inline !important}
 svg.on-relief .layer-relief,svg.on-relief .legend-relief{display:inline !important}
 svg.on-precip .layer-precip,svg.on-precip .legend-precip{display:inline !important}
@@ -244,6 +246,40 @@ fn render_political(world: &WorldData, out: &mut String) {
             continue;
         };
         let [r, g, b] = nation.color;
+        out.push_str(r##"<polygon points=""##);
+        for (k, &vi) in verts.iter().enumerate() {
+            let v = mesh.vertices[vi as usize];
+            if k > 0 {
+                out.push(' ');
+            }
+            write!(out, "{:.1},{:.1}", v[0], v[1]).unwrap();
+        }
+        write!(
+            out,
+            r##"" fill="#{r:02x}{g:02x}{b:02x}" fill-opacity="0.42"/>"##
+        )
+        .unwrap();
+    }
+}
+
+/// Faith overlay (a data layer, off by default): each land cell washed in its
+/// religion's colour — the continental view of where each faith reaches. Mirrors
+/// `render_political`, coloured by `religion_id` instead of polity control.
+fn render_faith(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    let religion_id = &world.religions.religion_id;
+    if religion_id.is_empty() {
+        return;
+    }
+    let elev = &world.terrain.elevation;
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            continue; // land only
+        }
+        let Some(rid) = religion_id.get(i).copied().flatten() else {
+            continue;
+        };
+        let [r, g, b] = super::faith_color(rid);
         out.push_str(r##"<polygon points=""##);
         for (k, &vi) in verts.iter().enumerate() {
             let v = mesh.vertices[vi as usize];

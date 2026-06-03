@@ -7,6 +7,12 @@
       "legend": false
     },
     {
+      "name": "faith",
+      "label": "Faith",
+      "overlay": true,
+      "legend": false
+    },
+    {
       "name": "climate",
       "label": "Temperature",
       "overlay": true,
@@ -125,6 +131,23 @@
         "sacred",
         "labels",
         "political"
+      ]
+    },
+    {
+      "name": "faith",
+      "label": "Faith",
+      "caption": "Faiths washed over a decluttered base — where each religion reaches.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "roads",
+        "borders",
+        "settlements",
+        "sacred",
+        "labels",
+        "faith"
       ]
     },
     {

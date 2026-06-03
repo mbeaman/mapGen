@@ -22,6 +22,28 @@ pub mod greyscale;
 pub mod ornate_antique;
 pub mod planet;
 
+/// Render palette for the FAITH wash — one colour per religion (by roster index,
+/// mod-wrapped). Deliberately jewel-toned and distinct from the muted political
+/// palette so the Faith lens reads as a different map. Up to ~12 religions exist
+/// post-history (founders + schism sects), so 10 entries keep reuse rare.
+pub(crate) const FAITH_PALETTE: &[[u8; 3]] = &[
+    [150, 40, 50],  // crimson
+    [40, 90, 150],  // sapphire
+    [200, 160, 40], // gold
+    [60, 130, 90],  // jade
+    [120, 60, 150], // amethyst
+    [210, 110, 40], // amber
+    [60, 140, 160], // turquoise
+    [170, 70, 120], // magenta
+    [95, 115, 45],  // olive
+    [110, 90, 175], // iris
+];
+
+/// The faith wash colour for a religion roster index.
+pub(crate) fn faith_color(religion_id: u16) -> [u8; 3] {
+    FAITH_PALETTE[religion_id as usize % FAITH_PALETTE.len()]
+}
+
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Style {
     /// Flat heightmap visualization for development.

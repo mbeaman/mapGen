@@ -33,6 +33,7 @@ pub fn render(world: &WorldData) -> String {
     .unwrap();
     out.push_str("<defs>");
     out.push_str(&FONT_FACE_BLOCK);
+    out.push_str(FAITH_LENS_STYLE);
     out.push_str(
         r##"<radialGradient id="parchment" cx="50%" cy="50%" r="75%">
 <stop offset="0%" stop-color="#f0e3bf"/>
@@ -61,6 +62,9 @@ pub fn render(world: &WorldData) -> String {
     // world has society; with the time-slider it animates empires rise + fall
     // (renderAtYear swaps control before re-rendering, so this gets it for free).
     render_political(world, &proj, &mut out);
+    // The Faith lens (off by default). Toggling "faith" on the frontend swaps the
+    // political wash + its legend out and this in — see FAITH_LENS_STYLE.
+    render_faith(world, &proj, &mut out);
     render_coast(world, &proj, &mut out);
     render_graticule(&proj, &mut out);
     render_major_rivers(world, &proj, &mut out);
@@ -77,9 +81,17 @@ pub fn render(world: &WorldData) -> String {
     render_compass(w, h, &mut out);
     render_cartouche(w, h, "ORBIS TERRARUM", &mut out);
     render_nation_legend(world, w, h, &mut out);
+    render_faith_legend(world, w, h, &mut out);
     out.push_str("</svg>");
     out
 }
+
+/// CSS for the Faith lens. The political wash + realms legend are the always-on
+/// baseline; under the root `on-faith` class (set by the frontend layer toggle)
+/// they hide and the faith wash + faiths legend appear. `planet-faith` /
+/// `faith-legend` carry `display="none"` so a class-less rasterize (the CLI /
+/// resvg, which ignores selectors) shows the political baseline by default.
+const FAITH_LENS_STYLE: &str = r##"<style>svg.on-faith .planet-political,svg.on-faith .nation-legend{display:none}svg.on-faith .planet-faith,svg.on-faith .faith-legend{display:inline}</style>"##;
 
 /// Per-cell fill: land in its biome colour (matching the ornate detailed view),
 /// sea shaded by depth so basins and shelves read.
@@ -453,6 +465,103 @@ fn render_nation_legend(world: &WorldData, _w: f32, h: f32, out: &mut String) {
         )
         .unwrap();
         let name = escape(&nation.name);
+        let nx = tx + sw + 8.0 * scale;
+        write!(
+            out,
+            r##"<text x="{nx:.1}" y="{ty:.1}" font-family='"EB Garamond", Georgia, serif' font-size="{fs:.1}" fill="#2a2418">{name}</text>"##
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+/// The Faith wash: each land cell tinted by its religion — the Diffusion payoff
+/// made visible (a faith founded on one continent shows on others it reached over
+/// a sea lane). `display="none"` by default; the `on-faith` lens reveals it (and
+/// hides the political wash — FAITH_LENS_STYLE). Per-religion `<g data-religion>`
+/// groups so a faith is identifiable, mirroring the political realm groups.
+fn render_faith(world: &WorldData, proj: &Proj, out: &mut String) {
+    let religion_id = &world.religions.religion_id;
+    if religion_id.is_empty() {
+        return;
+    }
+    let mesh = &world.mesh;
+    let elev = &world.terrain.elevation;
+    let mut groups: std::collections::BTreeMap<u16, Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            continue;
+        }
+        if let Some(rid) = religion_id.get(i).copied().flatten() {
+            groups.entry(rid).or_default().push(i);
+        }
+    }
+    out.push_str(r##"<g class="planet-faith" display="none">"##);
+    for (&rid, cells) in &groups {
+        let [r, g, b] = super::faith_color(rid);
+        let fill = format!("#{r:02x}{g:02x}{b:02x}");
+        write!(out, r##"<g class="faith" data-religion="{rid}">"##).unwrap();
+        for &c in cells {
+            write_polygon(mesh, &mesh.cell_vertices[c], &fill, 0.42, proj, out);
+        }
+        out.push_str("</g>");
+    }
+    out.push_str("</g>");
+}
+
+/// Faiths legend (SW corner, the same slot as the realms legend — mutually
+/// exclusive via the lens CSS, so they may share it). `display="none"` until the
+/// faith lens is on.
+fn render_faith_legend(world: &WorldData, _w: f32, h: f32, out: &mut String) {
+    let religion_id = &world.religions.religion_id;
+    let elev = &world.terrain.elevation;
+    let mut seen = std::collections::BTreeSet::new();
+    for (i, r) in religion_id.iter().enumerate() {
+        if elev.get(i).copied().unwrap_or(0.0) > 0.0 {
+            if let Some(rid) = *r {
+                seen.insert(rid);
+            }
+        }
+    }
+    let faiths: Vec<u16> = seen.into_iter().collect();
+    if faiths.is_empty() {
+        return;
+    }
+    let scale = (h / 1024.0).clamp(0.7, 1.4);
+    let row_h = 22.0 * scale;
+    let pad = 12.0 * scale;
+    let sw = 15.0 * scale;
+    let fs = 13.0 * scale;
+    let box_w = 200.0 * scale;
+    let box_h = pad * 2.0 + row_h * (faiths.len() as f32 + 1.0);
+    let x0 = 50.0 * scale;
+    let y0 = h - box_h - 50.0 * scale;
+    let tx = x0 + pad;
+    write!(out, r##"<g class="faith-legend" display="none">"##).unwrap();
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="6" fill="#f0e3bf" fill-opacity="0.82" stroke="#5a3a25" stroke-width="1.2"/>"##
+    )
+    .unwrap();
+    let mut ty = y0 + pad + row_h * 0.7;
+    write!(
+        out,
+        r##"<text x="{tx:.1}" y="{ty:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" letter-spacing="2" fill="#2a2418">FAITHS</text>"##
+    )
+    .unwrap();
+    for rid in faiths {
+        ty += row_h;
+        let Some(religion) = world.religions.religions.get(rid as usize) else {
+            continue;
+        };
+        let [r, g, b] = super::faith_color(rid);
+        let sy = ty - sw * 0.85;
+        write!(
+            out,
+            r##"<rect x="{tx:.1}" y="{sy:.1}" width="{sw:.1}" height="{sw:.1}" fill="#{r:02x}{g:02x}{b:02x}" stroke="#2a2418" stroke-width="0.8"/>"##
+        )
+        .unwrap();
+        let name = escape(&religion.name);
         let nx = tx + sw + 8.0 * scale;
         write!(
             out,

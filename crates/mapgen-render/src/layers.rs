@@ -53,6 +53,7 @@ const fn overlay(name: &'static str, label: &'static str, legend: bool) -> Layer
 /// order (overlays first), independent of the SVG draw order.
 pub const LAYERS: &[LayerInfo] = &[
     overlay("political", "Political territory", false),
+    overlay("faith", "Faith", false),
     overlay("climate", "Temperature", true),
     overlay("relief", "Elevation", true),
     overlay("precip", "Rainfall", true),
@@ -114,6 +115,23 @@ pub const PRESETS: &[Preset] = &[
             "sacred",
             "labels",
             "political",
+        ],
+    },
+    Preset {
+        name: "faith",
+        label: "Faith",
+        caption: "Faiths washed over a decluttered base — where each religion reaches.",
+        enabled: &[
+            "land",
+            "ocean",
+            "coastline",
+            "rivers",
+            "roads",
+            "borders",
+            "settlements",
+            "sacred",
+            "labels",
+            "faith",
         ],
     },
     Preset {

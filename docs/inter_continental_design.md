@@ -25,8 +25,12 @@
 > across crossable sea lanes + inland over history. "A religion provably crosses
 > water" is pinned both-directions (`diffusion_claims.rs`): a faith spans ≥2
 > landmasses on crossing seeds, none on sundered. The reconcile (gen-time
-> confinement → history diffusion) is done. Residual: faith isn't rendered
-> per-cell yet (the crossing is data-level; a faith overlay is the surfacing pass).
+> confinement → history diffusion) is done, AND surfaced: a **Faith lens** (the
+> "faith" overlay/preset) renders the per-religion `planet-faith` wash, swapping
+> the political wash out under `on-faith` — so a faith spanning continents is
+> visible on the map (`faith_overlay.rs` + the lens e2e). Minor residual: the
+> faith wash is the present distribution, not animated over years (no faith
+> replay channel — the slider replays political control only).
 >
 > ## ✅ CARRIER SHIPPED (2026-06-02) — earned cross-water conquest works.
 >
