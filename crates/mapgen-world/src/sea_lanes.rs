@@ -125,10 +125,15 @@ pub fn chart(world: &mut WorldData, params: SeaLanesParams, _rng: &mut ChaCha8Rn
     let sites = &world.mesh.sites;
     let neighbors = &world.mesh.neighbors;
     // Navigable water is any cell at/below sea level. NOTE: this also admits
-    // inland lakes / sub-sea-level basins; a *large* lake touching two landmasses
-    // could bridge them. On every canonical seed no disconnected pool touches two
-    // sizable bodies, so this is latent, not live — restricting to the dominant
-    // ocean component is deferred (tracked in the backlog).
+    // inland lakes / sub-sea-level basins; a lake touching two landmasses would
+    // bridge them (a lake touching one body just labels its cells with that body
+    // and forms no crossing). This is latent, not live — pinned by
+    // `sea_lanes_spec::only_the_open_ocean_bridges_landmasses_no_inland_pool_does`,
+    // which asserts that on every canonical seed the only sea component adjacent
+    // to ≥2 sizable bodies is the dominant ocean. The fix (restrict to the ocean)
+    // is deferred because a strait and a bridging-lake are topologically identical
+    // here, so it needs real ocean-connectivity geometry; the tripwire fires if a
+    // real lake ever bridges two continents.
     let is_sea = |i: usize| elev[i] <= 0.0;
 
     let mut body_of = vec![usize::MAX; n];

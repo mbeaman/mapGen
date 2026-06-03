@@ -84,11 +84,18 @@ scale (zoom out)" below), in priority order:
   cells (seizable by a later carrier as a `BorderChange`).
 - **Deferred within the arc (revival triggers):**
   - *Lake-bridging robustness.* `chart`'s navigable mask is `elev <= 0`, which
-    also admits inland lakes / sub-sea-level basins; a *large* lake touching two
-    landmasses would bridge them for free. Latent only — no disconnected pool
-    touches two sizable bodies on any canonical seed. **Revive when** a planet
-    seed surfaces a spurious inter-body lane through enclosed water (restrict the
-    sea mask to the dominant ocean component, or threshold sea-component size).
+    also admits inland lakes / sub-sea-level basins; a lake touching two
+    landmasses would bridge them for free. **Now PINNED** (not just noted) by
+    `sea_lanes_spec::only_the_open_ocean_bridges_landmasses_no_inland_pool_does`:
+    on every canonical seed the only sea component adjacent to ≥2 sizable bodies
+    is the dominant ocean, so the hazard is latent, not live — and the tripwire
+    fires the moment that stops being true. The algorithmic fix stays deferred on
+    purpose: a strait and a bridging-lake are topologically identical in this code
+    (both are a sea pocket touching two bodies, and the synthetic fixture models a
+    legit strait as a *disconnected* pool), so "exclude non-ocean pools" would
+    kill straits. **Revive when** the tripwire fires, OR when a Rust equirect
+    renderer / real ocean-connectivity primitive lands that can tell open ocean
+    from enclosed water (then restrict the mask and redo the strait fixture).
   - *`perf_baseline` row for the SeaLanes stage* (design lists it under
     Determinism + perf). The stage is empirically fast (6 planets probed in
     well under a second). **Add at end of Phase 1**, once 3b's anisotropic cost

@@ -21,13 +21,14 @@
 //!    the anti-Goodhart trap the design cut.
 
 use mapgen_core::{MeshData, TerrainData, WorldData};
-use mapgen_testsupport::CROSSING_SEEDS;
+use mapgen_testsupport::{CROSSING_SEEDS, SUNDERED_SEEDS};
 use mapgen_world::{
     naming::connected_bodies,
     pipeline::{Pipeline, PipelineStage},
     sea_lanes::{self, SeaLanesParams},
     GenerateParams,
 };
+use std::collections::BTreeSet;
 
 /// The roster's ordinary naval ceiling (Riverfolk = 40). A lane is *crossable*
 /// by an ordinary culture iff `min_naval <= NAVAL_CEILING`.
@@ -354,4 +355,66 @@ fn lanes_are_deterministic_for_a_fixed_seed() {
     let b = world_through_sea_lanes(19).sea_lanes.lanes;
     assert!(!a.is_empty(), "expected lanes to compare");
     assert_eq!(a, b, "sea lanes must be identical for a fixed seed");
+}
+
+#[test]
+fn only_the_open_ocean_bridges_landmasses_no_inland_pool_does() {
+    // The latent "lake bridging" hazard: `sea_lanes` treats EVERY `<= 0.0` cell as
+    // navigable, so a sea pool touching two sizable landmasses forges a lane
+    // between them — even an enclosed lake, not just the open ocean. This pins
+    // that it is NOT live: on every canonical planet seed the only sea component
+    // adjacent to ≥2 sizable landmasses is the dominant (largest) one — the ocean.
+    // A lake touching one body labels its cells with that body and creates no
+    // crossing; a lake touching two would.
+    //
+    // The algorithmic fix (restrict the navigable mask to the ocean) is
+    // DEFERRED on purpose: in this code a strait and a bridging-lake are
+    // topologically identical — both are a sea pocket touching two bodies — and
+    // the synthetic fixture above models a legit strait as a *disconnected* pool,
+    // so excluding non-ocean pools would wrongly kill straits. Telling them apart
+    // needs real ocean-connectivity geometry (a larger change). Until then this
+    // guard fires the moment a real lake ever bridges two continents.
+    let min_body = SeaLanesParams::default().min_body_cells;
+    for &seed in CROSSING_SEEDS.iter().chain(SUNDERED_SEEDS.iter()) {
+        let world = world_through_sea_lanes(seed);
+        let n = world.mesh.cell_count();
+
+        let lands = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0);
+        let mut body_of = vec![usize::MAX; n];
+        let mut bid = 0usize;
+        for comp in &lands {
+            if comp.len() < min_body {
+                continue;
+            }
+            for &x in comp {
+                body_of[x] = bid;
+            }
+            bid += 1;
+        }
+
+        let mut sea = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] <= 0.0);
+        sea.sort_by_key(|b| std::cmp::Reverse(b.len())); // dominant ocean first
+        for (rank, comp) in sea.iter().enumerate() {
+            if rank == 0 {
+                continue; // the dominant ocean is allowed (and expected) to bridge
+            }
+            let mut touched = BTreeSet::new();
+            for &s in comp {
+                for &nb in &world.mesh.neighbors[s] {
+                    let b = body_of[nb as usize];
+                    if b != usize::MAX {
+                        touched.insert(b);
+                    }
+                }
+            }
+            assert!(
+                touched.len() < 2,
+                "seed {seed}: an inland sea pool ({} cells) borders {} sizable landmasses \
+                 {touched:?} — the lake-bridging hazard is now LIVE; sea_lanes must restrict \
+                 its navigable mask to the ocean",
+                comp.len(),
+                touched.len(),
+            );
+        }
+    }
 }

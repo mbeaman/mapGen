@@ -72,6 +72,7 @@ with its red-mutation recorded here and verified once by hand.
 | Lanes are deterministic for a fixed seed | Determinism | 19 | `sea_lanes_spec.rs::lanes_are_deterministic_for_a_fixed_seed` | key the lane heap on a non-stable tiebreak |
 | Sundered seeds yield no earned crossing (lanes exist but are gated too-expensive) | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` pins the *outcome*. The mutation proof showed seed 23 *does* chart inter-body lanes (they'd carry `[0,2,8]` with the gate off) — so "sundered" = gated, not laneless. The substrate-level "no lane crossable at achievable naval" is confirmed but not a standing assertion | (see the carrier gate row) |
 | Sundered seeds carry only walls (no crossable lane) | Data | 23, 42 | covered by the carrier outcome test (`sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed`) — see the carrier section | (see carrier gate row) |
+| Only the open ocean bridges landmasses — no inland lake forges a lane (latent-hazard guard) | Data | 11, 19, 7, 4, 23, 42 | `sea_lanes_spec.rs::only_the_open_ocean_bridges_landmasses_no_inland_pool_does` (mutation-verified). The algorithmic fix is deferred — strait ≡ bridging-lake topologically here; needs ocean-connectivity geometry | a non-dominant `<=0.0` sea pool comes to border ≥2 sizable bodies |
 
 ## Carrier — beachhead cross-water conquest (Phase 1)
 
