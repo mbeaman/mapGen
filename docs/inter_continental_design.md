@@ -46,9 +46,14 @@
 >    planisphere. The data replays for free; the legibility does not. Until a
 >    polity has a stable, exclave-distinct rendering, do NOT claim "you can see the
 >    sundering" — only "it animates in the slider." This is the next high-value item.
-> 2. **Colonization carrier (`from:None` far-shore claim).** Re-probe confirmed it
->    fires only on seed 11 (floor-drops leave 0–8% `None` land = sparse fodder) —
->    lower-value than the beachhead, which fires everywhere. Build after legibility.
+> 2. ~~**Colonization carrier (`from:None` far-shore claim).**~~ **DONE** —
+>    `loops/colonization.rs` (`LoopId::Colonization`): a polity settles an
+>    unclaimed lane far-anchor (`from:None` overseas `BorderChange`), the sibling
+>    of the beachhead's `from:Some` conquest. A re-probe of the post-foundation
+>    world found it fires on seeds 2/5/9/11/18 (persistently-unclaimed far
+>    anchors), not just 11. Pinned both-directions + mutation-verified
+>    (`colonization_settles_unclaimed_far_shores_and_nowhere_else`). Own RNG
+>    stream → seed42 no-op (goldens hold). **Phase 1's carriers are complete.**
 > 3. **Land-predicate unification.** cultures (`>=0.0`) vs sea_lanes (`>0.0`)
 >    divergence is pinned by a tripwire (`no_culture_instance_spans_a_sea_lanes_body`,
 >    passes trivially today — no cell sits at exactly 0.0). Unify on one canonical

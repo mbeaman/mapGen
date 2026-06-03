@@ -13,8 +13,9 @@
 //! `history_spec::cross_water_conquest_produces_earned_overseas_holdings`.
 
 use mapgen_testsupport::{
-    an_earned_overseas_seizure, planet_params, polities_spanning_multiple_landmasses,
-    sizable_landmasses, CROSSING_SEEDS, SUNDERED_SEEDS,
+    an_earned_overseas_seizure, overseas_colonizations, planet_params,
+    polities_spanning_multiple_landmasses, sizable_landmasses, COLONIZE_SEEDS, CROSSING_SEEDS,
+    SUNDERED_SEEDS,
 };
 use mapgen_world::generate_full;
 
@@ -26,12 +27,15 @@ fn cross_water_conquest_fires_on_every_crossing_seed() {
             sizable_landmasses(&world).len() >= 2,
             "planet seed {seed} must have ≥2 landmasses for a crossing to mean anything"
         );
-        let overseas = polities_spanning_multiple_landmasses(&world);
+        // an_earned_overseas_seizure is CONQUEST-specific (it filters `from:Some`),
+        // so this cannot be satisfied by the colonization carrier — it pins that a
+        // WAR conquered a beachhead on a second landmass. Seed 11 is also a
+        // COLONIZE_SEED, so a from-agnostic spanning check could green here on a
+        // colony alone — exactly the false-green the anti-false-green rule targets.
         assert!(
-            !overseas.is_empty(),
-            "crossing seed {seed}: no polity holds land on a second landmass — the \
-             cross-water carrier never fired. Reach must be EARNED, and this canonical \
-             seed earns it (the Step-0 probe proved a crossable lane exists here)."
+            an_earned_overseas_seizure(&world).is_some(),
+            "crossing seed {seed}: no polity CONQUERED land on a second landmass — the \
+             cross-water beachhead never fired. Reach must be EARNED by conquest here."
         );
     }
 }
@@ -54,6 +58,37 @@ fn no_cross_water_conquest_on_any_sundered_seed() {
              crossable here — the carrier fired where it must not (gate broken, or this \
              seed is mislabeled sundered): {overseas:?}",
             overseas.len(),
+        );
+    }
+}
+
+#[test]
+fn colonization_settles_unclaimed_far_shores_and_nowhere_else() {
+    // The second carrier (`from:None`), sibling of the beachhead. A polity SETTLES
+    // an unclaimed far-shore anchor across a sailable lane — vs the beachhead's
+    // conquest of an OWNED anchor. The signal ONLY colonization produces: a
+    // `BorderChange{from:None, to:Some(P)}`. Pinned both directions: it fires where
+    // a lane pairs an owner-who-can-sail-it with a persistently-unclaimed far
+    // anchor (COLONIZE_SEEDS), and NOT on 4/7/19 or the sundered seeds — which
+    // colonize nothing because no such pairing exists there (the far anchor is
+    // owned, OR unclaimed but behind a naval wall its owner can't sail — seed 4's
+    // cell 7719 — OR the lane is itself a sundered wall). The absent half guards
+    // against a carrier that colonizes owned land or ignores the naval gate.
+    for &seed in COLONIZE_SEEDS {
+        let world = generate_full(planet_params(seed));
+        assert!(
+            !overseas_colonizations(&world).is_empty(),
+            "colonize seed {seed}: expected a from:None overseas settlement, found none"
+        );
+    }
+    for &seed in [4u64, 7, 19].iter().chain(SUNDERED_SEEDS.iter()) {
+        let world = generate_full(planet_params(seed));
+        let colonies = overseas_colonizations(&world);
+        assert!(
+            colonies.is_empty(),
+            "seed {seed}: no lane pairs an unclaimed far anchor with an owner that can sail it, \
+             so no from:None overseas settlement should occur — got {colonies:?} (carrier \
+             colonizing where it must not)"
         );
     }
 }

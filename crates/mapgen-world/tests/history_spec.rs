@@ -440,9 +440,13 @@ fn wars_are_well_formed() {
 
 #[test]
 fn history_shifts_borders_conserving_controlled_cells() {
-    // History (4e wars) must move borders — but only *reassign* cells, never
-    // create or destroy controlled territory. Snapshot control after Naming
-    // (the stage before History) and compare to the finished world.
+    // History moves borders, and the controlled-cell count is conserved EXCEPT
+    // for colonization: wars and the beachhead only *reassign* cells (`from:Some`,
+    // net 0), but the colonization carrier *settles* previously-unclaimed cells
+    // (`from:None`), adding exactly one controlled cell each. So the count grows
+    // by precisely the number of `from:None` changes — and on seed 42 (continental,
+    // no sea lanes) that is zero, so this reduces to strict conservation here.
+    // Snapshot control after Naming (the stage before History) and compare.
     let mut p = Pipeline::new(fixed(42));
     let mut before = Vec::new();
     while let Some(stage) = p.step() {
@@ -450,14 +454,22 @@ fn history_shifts_borders_conserving_controlled_cells() {
             before = p.world().society.control.clone();
         }
     }
-    let after = p.into_world().society.control;
+    let world = p.into_world();
+    let after = &world.society.control;
     let controlled = |c: &[Option<u32>]| c.iter().filter(|x| x.is_some()).count();
+    let colonized = world
+        .history
+        .border_changes
+        .iter()
+        .filter(|ch| ch.from.is_none())
+        .count();
     assert_eq!(
-        controlled(&before),
-        controlled(&after),
-        "wars must conserve the controlled-cell count (reassign, not create/destroy)"
+        controlled(after),
+        controlled(&before) + colonized,
+        "wars/beachhead reassign cells (from:Some, net 0); colonization (from:None) adds one \
+         each — the controlled count must grow by exactly the colony count"
     );
-    assert_ne!(before, after, "wars should have shifted some borders");
+    assert_ne!(&before, after, "history should have shifted some borders");
 }
 
 #[test]

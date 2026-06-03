@@ -46,6 +46,20 @@ pub const CROSSING_SEEDS: &[u64] = &[11, 19, 7, 4];
 /// "earned" mean something.)
 pub const SUNDERED_SEEDS: &[u64] = &[23, 42];
 
+/// Planet seeds on which the colonization carrier settles an UNCLAIMED far-shore
+/// anchor across a sea lane — a `from:None` overseas `BorderChange` (vs the
+/// beachhead's `from:Some` conquest). These are the seeds with a lane that pairs
+/// an owner-who-can-sail-it with a *persistently* unclaimed far anchor (gen-time
+/// floor-drops never filled), so over the sim colonization reliably claims it.
+///
+/// The absent direction — crossing seeds 4/7/19 and the [`SUNDERED_SEEDS`] —
+/// colonizes nothing, but NOT (only) because their far anchors are owned: a seed
+/// can have an unclaimed far anchor that simply sits behind a naval *wall* its
+/// owner can't sail (seed 4's cell 7719 is exactly this). What they lack is a
+/// lane that pairs an unclaimed far anchor with an owner whose naval clears the
+/// gate. So this set also guards the `min_naval` gate, not just "all owned".
+pub const COLONIZE_SEEDS: &[u64] = &[2, 5, 9, 11, 18];
+
 /// A connected land body must hold at least this many cells to count as a
 /// "sizable landmass"; smaller bodies are islets. Matches the threshold used
 /// inline across `cultures_spec` / `history_spec`.
@@ -146,26 +160,69 @@ pub fn an_earned_overseas_seizure(world: &WorldData) -> Option<(u32, u32, i32)> 
             .filter(|&c| body_of[c] != usize::MAX && baseline[c] == Some(p))
             .map(|c| body_of[c])
             .collect();
-        // An earned overseas cell: p controls it now, on a body that was not
-        // p's at gen-time. Lowest id for determinism.
-        let earned = (0..world.mesh.cell_count()).find(|&c| {
-            body_of[c] != usize::MAX
-                && !home.contains(&body_of[c])
-                && world.society.control[c] == Some(p)
-        });
-        let Some(cell) = earned else { continue };
-        let year = world
-            .history
-            .border_changes
-            .iter()
-            .filter(|ch| ch.cell as usize == cell && ch.to == Some(p))
-            .map(|ch| ch.year)
-            .max();
-        if let Some(year) = year {
-            return Some((p, cell as u32, year));
+        // An earned overseas cell that was CONQUERED — `p` controls it now, it is
+        // on a body that was not `p`'s at gen-time, AND a recorded change SEIZED
+        // it from a prior owner (`from: Some`). The `from: Some` filter keeps this
+        // a *conquest* probe: it can never return a cell the colonization carrier
+        // settled (`from: None`), so the conquest replay test stays conquest-
+        // specific even though both carriers now produce overseas holdings. Iterate
+        // all of `p`'s overseas cells (lowest id first) so a colonized lower-id
+        // cell can't hide a conquered one.
+        for (cell, &bi) in body_of.iter().enumerate() {
+            if bi == usize::MAX
+                || home.contains(&bi)
+                || world.society.control.get(cell).copied().flatten() != Some(p)
+            {
+                continue;
+            }
+            let year = world
+                .history
+                .border_changes
+                .iter()
+                .filter(|ch| ch.cell as usize == cell && ch.to == Some(p) && ch.from.is_some())
+                .map(|ch| ch.year)
+                .max();
+            if let Some(year) = year {
+                return Some((p, cell as u32, year));
+            }
         }
     }
     None
+}
+
+/// Colonies settled across the sea: `(polity, cell, year)` for each recorded
+/// `BorderChange { from: None, to: Some(p) }` whose cell lies on a sizable body.
+/// This is the signal ONLY the colonization carrier produces — the beachhead and
+/// border-transfers always record `from: Some`. Colonization targets a sea
+/// lane's far anchor, which sits on a *different* body from the launch coast, so
+/// these are overseas colonies by construction.
+///
+/// (No capital-body filter: keying "overseas" off the polity's capital silently
+/// dropped every colony of a polity whose capital sits on a sub-sizable islet —
+/// a false-negative in a both-directions guard. The `from: None` + sizable-body
+/// pair is the precise signal.)
+pub fn overseas_colonizations(world: &WorldData) -> Vec<(u32, u32, i32)> {
+    let bodies = sizable_landmasses(world);
+    let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+    let mut out = Vec::new();
+    for ch in &world.history.border_changes {
+        if ch.from.is_some() {
+            continue; // colonization is from:None; the beachhead is from:Some
+        }
+        let Some(p) = ch.to else { continue };
+        let on_sizable = body_of
+            .get(ch.cell as usize)
+            .is_some_and(|&b| b != usize::MAX);
+        if on_sizable {
+            out.push((p, ch.cell, ch.year));
+        }
+    }
+    out
 }
 
 #[cfg(test)]

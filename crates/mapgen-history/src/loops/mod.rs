@@ -11,6 +11,7 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::SimState;
 
+pub mod colonization;
 pub mod hero;
 pub mod khaldun;
 pub mod mearsheimer;
@@ -32,17 +33,19 @@ pub enum LoopId {
     Succession = 4,
     Schism = 5,
     Hero = 6,
+    Colonization = 7,
 }
 
 /// The fixed per-year execution order. Determinism depends on this order being
 /// stable; append new loops at the end. Must match [`default_loops`].
-pub const ORDER: [LoopId; 6] = [
+pub const ORDER: [LoopId; 7] = [
     LoopId::Turchin,
     LoopId::Khaldun,
     LoopId::Mearsheimer,
     LoopId::Succession,
     LoopId::Schism,
     LoopId::Hero,
+    LoopId::Colonization,
 ];
 
 /// Everything a loop may touch during one yearly tick. The driver builds a
@@ -78,6 +81,7 @@ pub fn default_loops() -> Vec<Box<dyn CausalLoop>> {
         Box::new(succession::Succession),
         Box::new(schism::Schism),
         Box::new(hero::Hero),
+        Box::new(colonization::Colonization),
     ];
     loops
 }
