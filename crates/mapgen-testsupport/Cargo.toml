@@ -1,0 +1,16 @@
+[package]
+name = "mapgen-testsupport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# Shared test fixtures (canonical seeds + parameter builders) for the workspace.
+# Dev-dependency only: nothing ships this. It depends on mapgen-world for
+# `GenerateParams`; consumers (e.g. mapgen-world's own `tests/`) dev-depend on
+# it back, forming a dev-dependency cycle — permitted by Cargo because the
+# cycle passes through a dev edge.
+
+[dependencies]
+mapgen-world = { path = "../mapgen-world" }

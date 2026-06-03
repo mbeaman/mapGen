@@ -1,0 +1,125 @@
+# Claims registry
+
+Every claim we make about the generator — in commit messages, in
+`docs/inter_continental_design.md`, in `.local/sessionstate.md`, in the README —
+should map to **one layer** and to **one test that goes red if the claim becomes
+false**. This file is that map.
+
+It exists because of a failure that has recurred four times: a test passes at a
+*lower* layer (the data is correct) and the claim quietly inflates to a *higher*
+one (you can see it). The mod-5 exclave-invisibility shipped as "done" for
+exactly this reason — a data-layer test was green, so "the data is right" was
+sold as "you can see the sundering." See `[[feedback_false_green_tests]]` and the
+"verify the observable, not the data" lesson.
+
+## The rule
+
+> **A feature is not "done at layer L" until a test exists at layer L.**
+
+If a row's test cell says **GAP**, the claim is *not yet validated at that layer*
+— do not describe it as done there. A GAP is a unit of work, not a footnote.
+
+## The layers
+
+| Layer | Proves | Asserted where |
+|---|---|---|
+| **Determinism** | byte-reproducibility & cross-platform identity (the contract under everything) | blake3 goldens, `cross_platform.rs`, `fmath_purity.rs` |
+| **Data** | the `WorldData` is semantically correct after the real `Pipeline` runs | Rust `tests/*.rs` stepping the pipeline on canonical seeds |
+| **Replay** | the time channel (`border_changes`) actually *evolves* — the thing animates | year-over-year deltas in history / e2e slider |
+| **Observable** | the rendered artifact (SVG / raster / DOM) *shows* the thing | `svg_invariants.rs`, `visual_regression.rs`, Playwright e2e |
+
+**Canonical seeds** live in `crates/mapgen-testsupport` (`REFERENCE_SEED=42`,
+`CROSSING_SEEDS=[11,19,7,4]`, `SUNDERED_SEEDS=[23,42]`, `SIZABLE_BODY_MIN=24`) and
+in the param builders `reference_params` / `planet_params`. Reference them by
+name, never as a magic literal.
+
+The **Red-mutation** column is the one-line change that *should* flip the test
+red — it is the proof the test is not false-green. Each new claim test must ship
+with its red-mutation recorded here and verified once by hand.
+
+---
+
+## Determinism contract (cross-cutting)
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| Same seed → byte-identical world | Determinism | 42 | full `WorldData`: golden `tests/golden/seed42_full.blake3.txt` (via `pipeline_spec.rs::full_pipeline_golden_hash`) — the load-bearing cite. Geography run-to-run only: `determinism.rs::same_seed_same_world` (2000 cells, `generate()`, no society/history) | perturb any `StageRng` draw or a `BTree` iteration order |
+| Different seed → different world | Determinism | 42 vs other | `determinism.rs::different_seed_different_world` | ignore the seed in any stage |
+| Native ≡ wasm32 byte-identical (full pipeline) | Determinism | 42 | `mapgen-wasm/tests/cross_platform.rs::full_pipeline_golden_hash_matches_native_under_wasm` | replace an `fmath` call with raw `f32::sin` in a stage |
+| Native ≡ wasm32 byte-identical (refined sector) | Determinism | 42 sector | `cross_platform.rs::refined_sector_golden_matches_native_under_wasm` | change a refine-path transcendental |
+| No raw transcendentals in any `src/` | Determinism | — | `mapgen-history/tests/fmath_purity.rs` | add `x.sin()` / `.powf()` in any crate `src` |
+| Pipeline stepping ≡ `generate_full` (coarse) | Data | 42 | `pipeline_spec.rs::stepper_matches_generate_full` | skip a stage in the stepper |
+| Pipeline stepping ≡ `generate_full` (fine) | Data | 7 | `pipeline_spec.rs::fine_stepper_matches_generate_full` | merge two fine erosion sub-steps |
+| `WorldData` round-trips through JSON | Data | 42 | `determinism.rs::full_world_round_trips_through_json` | drop a `#[serde]` field |
+
+## Foundation — landmass-distinct society (schema v19)
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| Each culture is instanced per landmass (same archetype on 2 continents → 2 ids) | Data | planet | `cultures_spec.rs::cultures_are_instanced_per_landmass` | revert `populate` to the global roster build |
+| Polities are confined to one landmass **at gen-time** (0 spanning) | Data | planet | `cultures_spec.rs::polities_are_confined_to_one_landmass_yet_the_planet_is_populated` (stepped to `PipelineStage::Polities`) | stamp control by global culture id again |
+| The planet stays earned-sparse (land controlled, not gutted) | Data | planet | same test (≥80% sizable-body land) | confine cultures to a single cell each |
+| No culture instance spans a sea-lanes body (predicate tripwire) | Data | planet | `cultures_spec.rs::no_culture_instance_spans_a_sea_lanes_body` | change the body predicate `>=0.0` ↔ `>0.0` so a cell at exactly 0.0 splits |
+| seed 42 (single landmass) is a byte-identical no-op under v19 | Determinism | 42 | the goldens above (re-anchored for the version byte only) | make instancing fire on a single-body world |
+
+## Sea-lane substrate (Phase 1 Step 3a)
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| A canonical planet grows a both-tier lane graph (`min_naval` 12 **and** 64) | Data | **19 only** | `sea_lanes_spec.rs::canonical_seed_grows_lanes_spanning_both_tiers` | clamp `min_naval` to a single tier |
+| A one-cell strait forms a lane the sea-scan alone would miss | Data | synthetic | `sea_lanes_spec.rs::one_cell_pinch_strait_forms_a_lane_the_sea_scan_alone_would_miss` | drop the sea→land pinch scan |
+| A strait maps to crossable, open ocean to a wall | Data | synthetic | `sea_lanes_spec.rs::synthetic_fixture_maps_strait_to_crossable_and_ocean_to_wall` | invert the cost gate |
+| Lanes are deterministic for a fixed seed | Determinism | 19 | `sea_lanes_spec.rs::lanes_are_deterministic_for_a_fixed_seed` | key the lane heap on a non-stable tiebreak |
+| **Sundered seeds grow no crossable inter-continental lane** | Data | 23, 42 | **GAP** — `sea_lanes_spec` deliberately asserts only the *present* case on seed 19 (asserting "has a crossing" across all seeds is false-green); the *absent* case on `SUNDERED_SEEDS` is unpinned | (no test — substage 2) |
+| Both-tier holds on **all** crossing seeds (11/19/7/4), not just 19 | Data | 11, 19, 7, 4 | **GAP** — only seed 19 is pinned today | (no test — substage 2) |
+
+## Carrier — beachhead cross-water conquest (Phase 1)
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| Earned cross-water conquest produces overseas holdings post-history | Data | crossing | `history_spec.rs::cross_water_conquest_produces_earned_overseas_holdings` (mutation-verified) | gate cross-water targets out of the war loop |
+| The crossing fires on **all** crossing seeds with the observed counts (11→4…) | Data | 11, 19, 7, 4 | **GAP** — the existing test asserts ≥1 polity on ≥2 bodies; per-seed counts unpinned | (no test — substage 2) |
+| The earned crossing is recorded as a `BorderChange` at a specific year (so it replays) | Replay | crossing | **GAP** — `history_spec.rs::history_shifts_borders_conserving_controlled_cells` checks borders move in general; nothing ties an *earned cross-water* crossing to a year delta | (no test — substage 3) |
+| Scrubbing the slider to year Y reveals the overseas exclave | Replay | crossing | **GAP** — `smoke.spec.ts::planet time-slider animates political control` asserts *generic* `.planet-political` swaps, not the earned crossing | (no test — substage 3) |
+| The overseas exclave is **visually distinct** on the planisphere | Observable | crossing | **GAP — KNOWN FALSE.** `polity_color` wraps mod-5 over ~22 polities, so an exclave shares a color with a native realm. The closest test, `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history`, asserts the wash exists & animates — not that an exclave is distinct | (no test — substage 4; the test is RED until legibility is built) |
+
+## Planet & globe presentation
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| Planisphere is a Mollweide oval; drill unproject stays correct | Observable | — | `web/src/sector.test.ts` (mollweide project/unproject duality) + shared vector pin (`crates/mapgen-render` + web) | perturb the Mollweide forward constant in one place only |
+| A planet generates and a continent drill refines (≥ L2) | Observable | 4 | `smoke.spec.ts::generates a planet, then drills into a continent` | make the drill no-op |
+| `?scale=planet` permalink reloads as a planet | Observable | — | `smoke.spec.ts::?scale=planet permalink reloads as a planet` | drop the permalink read |
+| The globe renders a frame and applies the texture | Observable | — | `smoke.spec.ts::globe scale mounts a 3D sphere and renders a frame` (`data-rendered`/`data-textured`) | never call `renderer.render` |
+| The globe locks the style control & survives scale toggling | Observable | — | `smoke.spec.ts::globe locks the style control and survives scale toggling` | leak the GL context on swap |
+| The political wash animates over years | Replay | 4 | `smoke.spec.ts::planet time-slider animates political control` + `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history` | freeze the wash to year 0 |
+
+## Render invariants
+
+| Claim | Layer | Seed | Test | Red-mutation |
+|---|---|---|---|---|
+| Biomes SVG well-formed; polygon count = cell count; no NaN coords | Observable | 42 | `mapgen-render/tests/svg_invariants.rs::{svg_envelope_is_well_formed, polygon_count_matches_cell_count, no_nan_coordinates_in_output}` | emit one stray `<rect>` / a NaN coord |
+| Ornate / planet / every preset rasterize to a sane image | Observable | 42 | `mapgen-cli/tests/visual_regression.rs::{ornate_render…, planet_render…, every_preset…}` | render a blank/uniform canvas |
+| Ornate draws borders between adjacent polities | Observable | 42 | `svg_invariants.rs::ornate_antique_draws_borders_between_adjacent_polities` | skip the border layer |
+
+---
+
+## Open gaps (the work this registry exposes)
+
+1. **Observable — exclave distinctness** *(KNOWN FALSE, substage 4)*: the #1 item.
+   mod-5 `polity_color` makes an overseas exclave indistinguishable from a native
+   same-color realm. The render-level test is red until exclave-distinct rendering
+   is built — TDD-first.
+2. **Replay — earned crossing → year-specific `BorderChange`** *(substage 3)*: the
+   "it animates in the slider" claim is asserted only generically today.
+3. **Data — sundered seeds grow no crossable lane** *(substage 2)*: the *absent*
+   half of the both-directions sea-lane claim is unpinned.
+4. **Data — per-seed crossing counts & both-tier across all crossing seeds**
+   *(substage 2)*: today only seed 19 (lanes) / "≥1 crossing" (carrier) is pinned.
+
+## How to extend this file
+
+When you add a feature, add its rows here *in the same change* as its tests:
+name the layer, the canonical seed, the test `path::fn`, and the red-mutation you
+verified flips it red. When you claim something is done, grep this file first —
+if the row says GAP at that layer, the claim is wrong.

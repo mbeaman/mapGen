@@ -964,6 +964,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mapgen-testsupport"
+version = "0.1.0"
+dependencies = [
+ "mapgen-world",
+]
+
+[[package]]
 name = "mapgen-wasm"
 version = "0.1.0"
 dependencies = [
@@ -992,6 +999,7 @@ dependencies = [
  "mapgen-geom",
  "mapgen-history",
  "mapgen-render",
+ "mapgen-testsupport",
  "noise",
  "proptest",
  "rand 0.8.6",

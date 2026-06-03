@@ -9,6 +9,7 @@ members = [
     "crates/mapgen-lore",
     "crates/mapgen-cli",
     "crates/mapgen-wasm",
+    "crates/mapgen-testsupport",
 ]
 
 [workspace.package]
