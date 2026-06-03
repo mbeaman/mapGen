@@ -70,15 +70,16 @@ with its red-mutation recorded here and verified once by hand.
 | A one-cell strait forms a lane the sea-scan alone would miss | Data | synthetic | `sea_lanes_spec.rs::one_cell_pinch_strait_forms_a_lane_the_sea_scan_alone_would_miss` | drop the sea→land pinch scan |
 | A strait maps to crossable, open ocean to a wall | Data | synthetic | `sea_lanes_spec.rs::synthetic_fixture_maps_strait_to_crossable_and_ocean_to_wall` | invert the cost gate |
 | Lanes are deterministic for a fixed seed | Determinism | 19 | `sea_lanes_spec.rs::lanes_are_deterministic_for_a_fixed_seed` | key the lane heap on a non-stable tiebreak |
-| **Sundered seeds grow no crossable inter-continental lane** | Data | 23, 42 | **GAP** — `sea_lanes_spec` deliberately asserts only the *present* case on seed 19 (asserting "has a crossing" across all seeds is false-green); the *absent* case on `SUNDERED_SEEDS` is unpinned | (no test — substage 2) |
+| Sundered seeds yield no earned crossing (lanes exist but are gated too-expensive) | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` pins the *outcome*. The mutation proof showed seed 23 *does* chart inter-body lanes (they'd carry `[0,2,8]` with the gate off) — so "sundered" = gated, not laneless. The substrate-level "no lane crossable at achievable naval" is confirmed but not a standing assertion | (see the carrier gate row) |
 | Both-tier holds on **all** crossing seeds (11/19/7/4), not just 19 | Data | 11, 19, 7, 4 | **GAP** — only seed 19 is pinned today | (no test — substage 2) |
 
 ## Carrier — beachhead cross-water conquest (Phase 1)
 
 | Claim | Layer | Seed | Test | Red-mutation |
 |---|---|---|---|---|
-| Earned cross-water conquest produces overseas holdings post-history | Data | crossing | `history_spec.rs::cross_water_conquest_produces_earned_overseas_holdings` (mutation-verified) | gate cross-water targets out of the war loop |
-| The crossing fires on **all** crossing seeds with the observed counts (11→4…) | Data | 11, 19, 7, 4 | **GAP** — the existing test asserts ≥1 polity on ≥2 bodies; per-seed counts unpinned | (no test — substage 2) |
+| Earned cross-water conquest fires on **every** crossing seed | Data | 11, 19, 7, 4 | `sundered_lanes_claims.rs::cross_water_conquest_fires_on_every_crossing_seed` (mutation-verified: early-returning `cross_water_targets` flips it red on seed 11) | early-return from `cross_water_targets` |
+| **No** earned crossing on any sundered seed — the naval gate is load-bearing | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` (mutation-verified: removing the gate makes seed 23 span `[0,2,8]`) | remove the `lane.min_naval > naval_a` gate |
+| Exact per-seed crossing counts (11→4, 19→3, 7→2, 4→1) | Data | 11, 19, 7, 4 | **GAP (intentional, won't fix)** — *presence* is pinned per seed; exact counts are deliberately not (any history tweak shifts them → brittle regression gate) | n/a |
 | The earned crossing is recorded as a `BorderChange` at a specific year (so it replays) | Replay | crossing | **GAP** — `history_spec.rs::history_shifts_borders_conserving_controlled_cells` checks borders move in general; nothing ties an *earned cross-water* crossing to a year delta | (no test — substage 3) |
 | Scrubbing the slider to year Y reveals the overseas exclave | Replay | crossing | **GAP** — `smoke.spec.ts::planet time-slider animates political control` asserts *generic* `.planet-political` swaps, not the earned crossing | (no test — substage 3) |
 | The overseas exclave is **visually distinct** on the planisphere | Observable | crossing | **GAP — KNOWN FALSE.** `polity_color` wraps mod-5 over ~22 polities, so an exclave shares a color with a native realm. The closest test, `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history`, asserts the wash exists & animates — not that an exclave is distinct | (no test — substage 4; the test is RED until legibility is built) |
@@ -112,10 +113,13 @@ with its red-mutation recorded here and verified once by hand.
    is built — TDD-first.
 2. **Replay — earned crossing → year-specific `BorderChange`** *(substage 3)*: the
    "it animates in the slider" claim is asserted only generically today.
-3. **Data — sundered seeds grow no crossable lane** *(substage 2)*: the *absent*
-   half of the both-directions sea-lane claim is unpinned.
-4. **Data — per-seed crossing counts & both-tier across all crossing seeds**
-   *(substage 2)*: today only seed 19 (lanes) / "≥1 crossing" (carrier) is pinned.
+3. ~~**Data — sundered seeds grow no crossable lane**~~ *(CLOSED, substage 2)*: the
+   *absent* half is now pinned in both directions by `sundered_lanes_claims.rs`,
+   mutation-verified.
+4. **Data — both-tier substrate across all crossing seeds** *(low priority)*: only
+   seed 19 asserts both `min_naval` tiers; the other crossing seeds are exercised
+   end-to-end by the outcome test but their tier breadth is unpinned. (Exact
+   per-seed crossing *counts* are intentionally never pinned — brittle.)
 
 ## How to extend this file
 

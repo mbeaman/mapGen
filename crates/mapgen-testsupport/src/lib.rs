@@ -13,7 +13,10 @@
 //!
 //! This is a dev-dependency only; nothing ships it.
 
+use mapgen_core::WorldData;
+use mapgen_world::naming::connected_bodies;
 use mapgen_world::GenerateParams;
+use std::collections::BTreeSet;
 
 /// The golden-anchor seed. At the continental reference size it is a *single
 /// dominant landmass*, which is why the per-landmass society rework (schema v19)
@@ -69,6 +72,48 @@ pub fn reference_params(seed: u64) -> GenerateParams {
 /// the intent rather than the constructor.
 pub fn planet_params(seed: u64) -> GenerateParams {
     GenerateParams::planet(seed)
+}
+
+/// The connected land bodies (`elevation >= 0.0`) of at least [`SIZABLE_BODY_MIN`]
+/// cells — the "real continents", with islets dropped. Deterministic order
+/// (`connected_bodies` walks cells in id order). This is the body primitive the
+/// data-layer claim tests partition the world by; consolidating it here keeps
+/// the `>= 0.0` predicate in exactly one place (see the `no_culture_instance_…`
+/// tripwire in `docs/CLAIMS.md` for why the predicate matters).
+pub fn sizable_landmasses(world: &WorldData) -> Vec<Vec<usize>> {
+    connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0)
+        .into_iter()
+        .filter(|b| b.len() >= SIZABLE_BODY_MIN)
+        .collect()
+}
+
+/// Polity ids that control cells on **≥2 sizable landmasses**. At gen-time this
+/// is empty — society is landmass-confined (schema v19). Post-history a
+/// non-empty result is an *earned* overseas holding: the only path to it is the
+/// cross-water carrier (land wars never cross water), so this is the signal that
+/// the Sundered Lanes payoff actually fired. Used by the data-layer claim tests
+/// in *both* directions: non-empty on a crossing seed, empty on a sundered one.
+pub fn polities_spanning_multiple_landmasses(world: &WorldData) -> Vec<u32> {
+    let bodies = sizable_landmasses(world);
+    let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+    let n_pol = world.society.nations.len();
+    let mut spans: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n_pol];
+    for (cell, &bi) in body_of.iter().enumerate() {
+        if bi == usize::MAX {
+            continue;
+        }
+        if let Some(p) = world.society.control[cell] {
+            spans[p as usize].insert(bi);
+        }
+    }
+    (0..n_pol as u32)
+        .filter(|&p| spans[p as usize].len() >= 2)
+        .collect()
 }
 
 #[cfg(test)]

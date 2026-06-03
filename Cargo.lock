@@ -967,6 +967,7 @@ dependencies = [
 name = "mapgen-testsupport"
 version = "0.1.0"
 dependencies = [
+ "mapgen-core",
  "mapgen-world",
 ]
 

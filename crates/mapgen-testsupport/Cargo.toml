@@ -14,3 +14,5 @@ publish = false
 
 [dependencies]
 mapgen-world = { path = "../mapgen-world" }
+# For `WorldData` in the body-span analysis helpers.
+mapgen-core = { path = "../mapgen-core" }

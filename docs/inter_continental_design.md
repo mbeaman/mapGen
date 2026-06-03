@@ -33,8 +33,10 @@
 > `BorderChange` so it replays for free in the time-slider and on the planisphere.
 > Proven on planet seeds: earned overseas holdings on 11(4)/19(3)/7(2)/4(1), and
 > the "both-directions" property of the lanes (sundered on 23/42). seed42 goldens
-> hold byte-identical (integer-only path = no-op there); mutation-verified
-> earned-crossing test (`cross_water_conquest_produces_earned_overseas_holdings`).
+> hold byte-identical (integer-only path = no-op there); the earned-crossing
+> claim is now pinned in BOTH directions, mutation-verified, by
+> `sundered_lanes_claims.rs` (`cross_water_conquest_fires_on_every_crossing_seed`
+> + `no_cross_water_conquest_on_any_sundered_seed`). See `docs/CLAIMS.md`.
 >
 > **Deferred (named, not vague):**
 > 1. **Exclave legibility / surfacing — THE gating work for a *visible* Phase 1.**
