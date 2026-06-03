@@ -13,8 +13,8 @@
 //! `history_spec::cross_water_conquest_produces_earned_overseas_holdings`.
 
 use mapgen_testsupport::{
-    planet_params, polities_spanning_multiple_landmasses, sizable_landmasses, CROSSING_SEEDS,
-    SUNDERED_SEEDS,
+    an_earned_overseas_seizure, planet_params, polities_spanning_multiple_landmasses,
+    sizable_landmasses, CROSSING_SEEDS, SUNDERED_SEEDS,
 };
 use mapgen_world::generate_full;
 
@@ -56,4 +56,55 @@ fn no_cross_water_conquest_on_any_sundered_seed() {
             overseas.len(),
         );
     }
+}
+
+// ---- Replay layer ---------------------------------------------------------
+// The carrier records each seizure as a `BorderChange`, and the time-slider
+// reconstructs control at any past year via `WorldData::control_at_year`. The
+// payoff claim is "the exclave appears at a year as you scrub" — so we assert,
+// using the slider's OWN function, that the earned cell is NOT the conqueror's
+// the year before the crossing and IS the year of it. (The web/DOM half of this
+// claim — "scrubbing visibly reveals the exclave" — is blocked on exclave
+// legibility, substage 4: an exclave you cannot see cannot be asserted visible.)
+
+#[test]
+fn the_earned_crossing_replays_faithfully_in_the_time_slider() {
+    let mut proven = 0;
+    for &seed in CROSSING_SEEDS {
+        let world = generate_full(planet_params(seed));
+
+        // The slider's final frame must equal the live control, or its present
+        // would not match the rendered map.
+        if let Some((_, last)) = world.border_change_year_span() {
+            assert_eq!(
+                world.control_at_year(last),
+                world.society.control,
+                "seed {seed}: control_at_year(last) != present control — replay is unfaithful"
+            );
+        }
+
+        let Some((p, cell, year)) = an_earned_overseas_seizure(&world) else {
+            panic!("crossing seed {seed}: no earned overseas seizure to replay");
+        };
+        let before = world.control_at_year(year - 1);
+        let at = world.control_at_year(year);
+        assert_ne!(
+            before[cell as usize],
+            Some(p),
+            "seed {seed}: cell {cell} was already polity {p}'s the year before the crossing \
+             — the slider would not show it flip in, so it is not earned-at-{year}"
+        );
+        assert_eq!(
+            at[cell as usize],
+            Some(p),
+            "seed {seed}: cell {cell} is not polity {p}'s at year {year} — the recorded \
+             crossing year disagrees with the slider reconstruction"
+        );
+        proven += 1;
+    }
+    assert_eq!(
+        proven,
+        CROSSING_SEEDS.len(),
+        "every crossing seed must replay a crossing"
+    );
 }

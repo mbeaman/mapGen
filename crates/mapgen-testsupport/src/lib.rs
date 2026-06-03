@@ -116,6 +116,58 @@ pub fn polities_spanning_multiple_landmasses(world: &WorldData) -> Vec<u32> {
         .collect()
 }
 
+/// For a world where the carrier fired, find one *earned overseas seizure*:
+/// `(polity, cell, year)` where `polity` now controls `cell`, `cell` sits on a
+/// landmass where `polity` had **no** presence at gen-time (so it was reached
+/// across water), and `year` is when a recorded `BorderChange` set `cell` to
+/// `polity`. Returns `None` on a sundered world (no spanning polity).
+///
+/// "Gen-time" is reconstructed with the slider's own machinery:
+/// [`WorldData::control_at_year`]`(first_change_year - 1)` undoes every recorded
+/// border change, yielding the pre-history control. So this is a replay-layer
+/// probe — the slider replaying `border_changes` must show `cell` flip into
+/// `polity` at exactly `year`.
+pub fn an_earned_overseas_seizure(world: &WorldData) -> Option<(u32, u32, i32)> {
+    let (first_year, _) = world.border_change_year_span()?;
+    let baseline = world.control_at_year(first_year - 1);
+
+    let bodies = sizable_landmasses(world);
+    let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+
+    for p in polities_spanning_multiple_landmasses(world) {
+        // The polity's gen-time landmass(es): the bodies holding its baseline
+        // cells. Gen-time society is landmass-confined, so normally one body.
+        let home: BTreeSet<usize> = (0..world.mesh.cell_count())
+            .filter(|&c| body_of[c] != usize::MAX && baseline[c] == Some(p))
+            .map(|c| body_of[c])
+            .collect();
+        // An earned overseas cell: p controls it now, on a body that was not
+        // p's at gen-time. Lowest id for determinism.
+        let earned = (0..world.mesh.cell_count()).find(|&c| {
+            body_of[c] != usize::MAX
+                && !home.contains(&body_of[c])
+                && world.society.control[c] == Some(p)
+        });
+        let Some(cell) = earned else { continue };
+        let year = world
+            .history
+            .border_changes
+            .iter()
+            .filter(|ch| ch.cell as usize == cell && ch.to == Some(p))
+            .map(|ch| ch.year)
+            .max();
+        if let Some(year) = year {
+            return Some((p, cell as u32, year));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -80,8 +80,8 @@ with its red-mutation recorded here and verified once by hand.
 | Earned cross-water conquest fires on **every** crossing seed | Data | 11, 19, 7, 4 | `sundered_lanes_claims.rs::cross_water_conquest_fires_on_every_crossing_seed` (mutation-verified: early-returning `cross_water_targets` flips it red on seed 11) | early-return from `cross_water_targets` |
 | **No** earned crossing on any sundered seed — the naval gate is load-bearing | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` (mutation-verified: removing the gate makes seed 23 span `[0,2,8]`) | remove the `lane.min_naval > naval_a` gate |
 | Exact per-seed crossing counts (11→4, 19→3, 7→2, 4→1) | Data | 11, 19, 7, 4 | **GAP (intentional, won't fix)** — *presence* is pinned per seed; exact counts are deliberately not (any history tweak shifts them → brittle regression gate) | n/a |
-| The earned crossing is recorded as a `BorderChange` at a specific year (so it replays) | Replay | crossing | **GAP** — `history_spec.rs::history_shifts_borders_conserving_controlled_cells` checks borders move in general; nothing ties an *earned cross-water* crossing to a year delta | (no test — substage 3) |
-| Scrubbing the slider to year Y reveals the overseas exclave | Replay | crossing | **GAP** — `smoke.spec.ts::planet time-slider animates political control` asserts *generic* `.planet-political` swaps, not the earned crossing | (no test — substage 3) |
+| The earned crossing flips in at a specific year under the slider's reconstruction | Replay | 11, 19, 7, 4 | `sundered_lanes_claims.rs::the_earned_crossing_replays_faithfully_in_the_time_slider` (mutation-verified: off-by-one in `control_at_year` flips it red; uses the slider's own `control_at_year` — earned cell is *not* the conqueror's at year-1, *is* at year, and `control_at_year(last) == society.control`) | `>` → `>=` in `control_at_year` |
+| Scrubbing the slider **visibly** reveals the overseas exclave (web/DOM) | Replay+Observable | crossing | **GAP — blocked on substage 4.** The data flip is proven (row above); but you cannot assert the slider *reveals* an exclave that is color-indistinguishable from a native realm (mod-5). Needs legibility + per-region polity exposure in the planisphere DOM first | (folded into substage 4) |
 | The overseas exclave is **visually distinct** on the planisphere | Observable | crossing | **GAP — KNOWN FALSE.** `polity_color` wraps mod-5 over ~22 polities, so an exclave shares a color with a native realm. The closest test, `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history`, asserts the wash exists & animates — not that an exclave is distinct | (no test — substage 4; the test is RED until legibility is built) |
 
 ## Planet & globe presentation
@@ -111,8 +111,10 @@ with its red-mutation recorded here and verified once by hand.
    mod-5 `polity_color` makes an overseas exclave indistinguishable from a native
    same-color realm. The render-level test is red until exclave-distinct rendering
    is built — TDD-first.
-2. **Replay — earned crossing → year-specific `BorderChange`** *(substage 3)*: the
-   "it animates in the slider" claim is asserted only generically today.
+2. ~~**Replay — earned crossing → year-specific flip**~~ *(Rust side CLOSED, substage 3)*:
+   `the_earned_crossing_replays_faithfully_in_the_time_slider` pins it via the
+   slider's own `control_at_year`, mutation-verified. The **web/DOM** half ("scrubbing
+   *visibly* reveals the exclave") is blocked on legibility → folded into #1.
 3. ~~**Data — sundered seeds grow no crossable lane**~~ *(CLOSED, substage 2)*: the
    *absent* half is now pinned in both directions by `sundered_lanes_claims.rs`,
    mutation-verified.
