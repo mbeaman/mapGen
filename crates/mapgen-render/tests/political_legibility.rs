@@ -96,6 +96,36 @@ fn the_overseas_exclave_is_colour_distinct_from_the_realms_it_borders() {
     }
 }
 
+#[test]
+fn every_territorial_change_flips_the_rendered_colour() {
+    // The time-slider animates by re-rendering past control with the SAME
+    // `nation.color`. A cell that passes from realm X to realm Y must therefore
+    // change color as you scrub across that year — but X and Y need not still
+    // border each other on the present map (X may have retreated), so present
+    // adjacency alone can leave them the same color, freezing the slider for that
+    // conquest. (This is the regression the seed-4 @ 2000 e2e caught: the whole
+    // founding-vs-present wash came out identical.) The configs below include
+    // that exact e2e world.
+    for (seed, cells) in [(4u64, 2000usize), (11, 18_000), (19, 18_000), (7, 18_000)] {
+        let mut p = planet_params(seed);
+        p.cell_count = cells;
+        let world = generate_full(p);
+        let nations = &world.society.nations;
+        for ch in &world.history.border_changes {
+            if let (Some(x), Some(y)) = (ch.from, ch.to) {
+                if x != y {
+                    assert_ne!(
+                        nations[x as usize].color, nations[y as usize].color,
+                        "seed {seed}/{cells}c: cell {} passes from realm {x} to realm {y} in year \
+                         {}, but they share a color — the slider won't show that conquest",
+                        ch.cell, ch.year,
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Distinct `fill="#rrggbb"` values inside a `<g class="...">` group.
 fn distinct_fills(svg: &str, group_class: &str) -> BTreeSet<String> {
     let needle = format!(r#"class="{group_class}""#);

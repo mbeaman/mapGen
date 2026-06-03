@@ -189,13 +189,14 @@ const POLITICAL_PALETTE: &[[u8; 3]] = &[
 /// post-history (so exclaves minted by the cross-water carrier are part of the
 /// adjacency), overwriting the provisional gen-time colors.
 ///
-/// Greedy graph-coloring over the polity adjacency graph built from the FINAL
-/// control map. Deterministic: polities are colored in id order, each taking the
-/// lowest palette index no already-colored neighbor uses. Integer-only, so
-/// native and wasm agree byte-for-byte. The result is stored per-polity (stable
-/// across the time-slider, which renders past years from the same `nation.color`
-/// — so two realms adjacent only in a *past* year may share a color; the present
-/// map, the canonical view, is the one kept legible).
+/// Greedy graph-coloring over the polity adjacency graph. Two realms are joined
+/// (must differ in color) if they border on the present map OR if any recorded
+/// `border_change` passed a cell between them — so the present map is legible AND
+/// every conquest visibly flips a cell's color as the time-slider scrubs across
+/// its year (the slider re-renders past control with these same stored colors).
+/// Deterministic: polities are colored in id order, each taking the lowest palette
+/// index no already-colored neighbor uses. Integer-only, so native and wasm agree
+/// byte-for-byte.
 pub fn recolor_political(world: &mut WorldData) {
     let n_pol = world.society.nations.len();
     if n_pol == 0 {
@@ -223,6 +224,22 @@ pub fn recolor_political(world: &mut WorldData) {
                     adj[a].insert(b);
                     adj[b].insert(a);
                 }
+            }
+        }
+    }
+
+    // Also separate the two sides of every recorded territorial change. A cell
+    // that passes from realm X to realm Y over history must visibly flip color
+    // as the time-slider scrubs across that year — but X and Y need not still
+    // border each other on the present map (X may have retreated), so the
+    // present-adjacency pass above can leave them the same color, freezing the
+    // slider. Force `color[X] != color[Y]` for every change.
+    for ch in &world.history.border_changes {
+        if let (Some(x), Some(y)) = (ch.from, ch.to) {
+            let (x, y) = (x as usize, y as usize);
+            if x < n_pol && y < n_pol && x != y {
+                adj[x].insert(y);
+                adj[y].insert(x);
             }
         }
     }
