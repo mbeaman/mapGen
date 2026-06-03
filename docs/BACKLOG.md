@@ -21,9 +21,12 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
-## Up next — resume here (2026-06-01)
+## Up next — resume here (2026-06-03)
 
-Picking this branch up on a fresh clone? Start here.
+Picking this branch up on a fresh clone? Start here. **Active arc: The Sundered
+Lanes** — Phase 1 carriers + Phase 2 Diffusion are shipped and surfaced on the
+map (faith lens). See **The Sundered Lanes — build progress** below for the live
+state and what's next.
 
 **Where we left off.** Branch `claude/fantasy-map-generator-1du5B`. The overlay
 system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export), the
@@ -100,9 +103,31 @@ scale (zoom out)" below), in priority order:
     Determinism + perf). The stage is empirically fast (6 planets probed in
     well under a second). **Add at end of Phase 1**, once 3b's anisotropic cost
     has settled the per-lane math (no point calibrating a row that 3b moves).
-- **Next:** Phase 1 Step 3b (wind-aware anisotropic cost via `climate::wind_vector`)
-  → Phase 1 carriers (beachhead conquest + `from:None` colonization in
-  mapgen-history) → minimum surfacing (lane layer auto-ON, cross-water prose).
+- ~~Phase 1 carriers~~ DONE 2026-06-02/03 — the beachhead carrier (earned
+  cross-water conquest: a polity adjacent to a charted lane seizes the far
+  landing as a `BorderChange`, `62cee5e`) + the `from:None` colonization carrier
+  (settles unclaimed far shores and updates Turchin capacity, `53e4d3b`). Pinned
+  in both directions on every crossing seed; legible exclave colors (conqueror ≠
+  victim) keep the slider readable (`79f98af`).
+- ~~Phase 1 surfacing — realms in the planisphere DOM~~ DONE 2026-06-03
+  (`bbbede5`) — the planet wash groups each realm `<g class="realm" data-polity>`
+  and an overseas exclave as `.realm.exclave`; the e2e scrubs min→present to make
+  the earned exclave appear.
+- ~~Phase 2 Diffusion — a faith provably crosses water~~ DONE 2026-06-03
+  (`b018323`) — `LoopId::Diffusion` (double-buffered naval + land spread;
+  religions confined to their home landmass until a lane carries them across),
+  pinned by `diffusion_claims`.
+- ~~Phase 2 surfacing — the Faith lens~~ DONE 2026-06-03 (`7f1f7bd`) — a per-cell
+  faith wash colored by `religion_id` (planet `planet-faith` + SW legend, ornate
+  `layer-faith`), a `faith` overlay + preset, swapped in under `on-faith`. Render
+  test pins the planet wash surfaces every faith that crossed water; e2e pins the
+  continental display swap. Both mutation-verified.
+- **Next:** the deferred-within-arc polish (see `docs/CLAIMS.md` deferred list):
+  a faith-*replay* channel (animate the wash over years, not just the present
+  distribution); trade diffusion (`TradeRouteOpened` → Turchin capacity);
+  embargoes. Phase 1 Step 3b (wind-aware anisotropic lane cost) was never built —
+  the carriers ride the isotropic 3a substrate; revive only if lanes look too
+  symmetric to read as wind-driven.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
