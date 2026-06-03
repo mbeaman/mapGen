@@ -166,6 +166,44 @@ test("planet time-slider animates political control", async ({ page }) => {
   await expect.poll(async () => wash.innerHTML(), { timeout: 15_000 }).not.toBe(present);
 });
 
+// The Sundered Lanes payoff, surfaced in the DOM: the planet wash groups each
+// realm as <g class="realm" data-polity="N">, and an overseas exclave (a realm
+// holding land on a SECOND landmass, earned by the cross-water carrier) as
+// <g class="realm exclave" data-polity="N">. Seed 15 @ 2000 has exactly one such
+// exclave at the present and NONE at the slider's founding (min) year — so
+// scrubbing min->present makes the exclave appear. This is the machine-pointable
+// version of "you can see the sundering": the e2e selects the exclave element by
+// class, no pixels. Discriminator is present/absent ACROSS years, so an empty or
+// always-present group can't pass.
+test("scrubbing the slider reveals an overseas exclave region", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  const status = page.locator("#status");
+  const generate = page.locator("#generate");
+
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+  await expect(generate).toBeEnabled({ timeout: 30_000 });
+  await page.locator("#seed").fill("15");
+  await page.locator("#cells").fill("2000");
+  await page.locator("#scale").selectOption("planet");
+  await expect(status).toContainText("Generating planet");
+  await expect(status).toContainText("Generated in", { timeout: 30_000 });
+  await expect(page.locator("#timeslider")).not.toHaveClass(/hidden/);
+
+  // At the present (slider defaults to max) the earned exclave is on the map.
+  const exclaves = page.locator("#map-content .planet-political .exclave[data-polity]");
+  await expect(exclaves).not.toHaveCount(0, { timeout: 30_000 });
+
+  // Scrub to the founding era (slider min): the cross-water seizure has not
+  // happened yet (control_at_year undoes it), so the exclave is gone. The
+  // web-first assertion auto-retries, doubling as the wait for the year-frame.
+  await page.locator("#timescrub").evaluate((el: HTMLInputElement) => {
+    el.value = el.min;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(exclaves).toHaveCount(0, { timeout: 15_000 });
+});
+
 // The 3D globe view (Increment 1): Scale: Globe mounts a three.js sphere over
 // the (hidden) SVG layer. The discriminating signal is a REAL WebGL context on
 // #globe-canvas — proving the lazily-imported three.js renderer actually mounted,

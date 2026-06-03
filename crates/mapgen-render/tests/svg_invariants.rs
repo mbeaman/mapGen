@@ -1141,11 +1141,26 @@ fn group_inner<'a>(svg: &'a str, class: &str) -> &'a str {
         .find(&open)
         .unwrap_or_else(|| panic!("no <g class=\"{class}\"> in render"));
     let after = start + open.len();
-    let end = svg[after..]
-        .find("</g>")
-        .map(|e| after + e)
-        .unwrap_or(svg.len());
-    &svg[after..end]
+    // Balance nested <g>/</g> so a sub-group's </g> (e.g. an exclave realm group
+    // inside the political wash) doesn't end us early.
+    let b = svg.as_bytes();
+    let mut i = after;
+    let mut depth = 1i32; // already inside the opened group
+    while i < b.len() {
+        if b[i..].starts_with(b"</g>") {
+            depth -= 1;
+            if depth == 0 {
+                break;
+            }
+            i += 4;
+        } else if b[i..].starts_with(b"<g") {
+            depth += 1;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    &svg[after..i.min(svg.len())]
 }
 
 /// Realm ids holding ≥1 land cell, ascending — mirrors `render_nation_legend`.

@@ -296,7 +296,25 @@ fn render_political(world: &WorldData, proj: &Proj, out: &mut String) {
         return;
     }
     let elev = &world.terrain.elevation;
-    out.push_str(r##"<g class="planet-political">"##);
+    let n = mesh.cell_count();
+
+    // Connected land bodies (elev > 0.0). `connected_bodies` lives in
+    // mapgen-world, which this crate can't depend on, so flood-fill locally.
+    let body_of = land_body_of(mesh, elev);
+    let mut body_size = vec![0usize; n]; // body ids are < n
+    for &b in &body_of {
+        if b != usize::MAX {
+            body_size[b] += 1;
+        }
+    }
+    // A "sizable" body is a real continent, not an islet (matches the
+    // SIZABLE_BODY_MIN the landmass-confinement tests use).
+    const SIZABLE_LANDMASS_CELLS: usize = 24;
+
+    // Group controlled land cells by (polity, body), cells ascending — so the
+    // wash emits one `<g data-polity>` per realm-on-a-landmass, deterministically.
+    let mut groups: std::collections::BTreeMap<(u32, usize), Vec<usize>> =
+        std::collections::BTreeMap::new();
     for (i, verts) in mesh.cell_vertices.iter().enumerate() {
         if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
             continue; // land only
@@ -304,20 +322,78 @@ fn render_political(world: &WorldData, proj: &Proj, out: &mut String) {
         let Some(pid) = control.get(i).copied().flatten() else {
             continue;
         };
+        let bi = body_of[i];
+        if bi == usize::MAX {
+            continue;
+        }
+        groups.entry((pid, bi)).or_default().push(i);
+    }
+
+    // Home (primary) sizable body per polity = the sizable body it holds the most
+    // cells on (ties → lowest body id). An exclave is a holding on any OTHER
+    // sizable body — so a realm is tagged `exclave` iff it controls ≥2 sizable
+    // landmasses, exactly the spanning condition the data-layer tests pin.
+    let mut home: std::collections::BTreeMap<u32, (usize, usize)> =
+        std::collections::BTreeMap::new(); // pid -> (best_cell_count, body)
+    for (&(pid, bi), cells) in &groups {
+        if body_size[bi] < SIZABLE_LANDMASS_CELLS {
+            continue;
+        }
+        let e = home.entry(pid).or_insert((0, bi));
+        if cells.len() > e.0 {
+            *e = (cells.len(), bi);
+        }
+    }
+
+    out.push_str(r##"<g class="planet-political">"##);
+    for (&(pid, bi), cells) in &groups {
         let Some(nation) = world.society.nations.get(pid as usize) else {
             continue;
         };
+        let is_exclave = body_size[bi] >= SIZABLE_LANDMASS_CELLS
+            && home.get(&pid).map(|&(_, h)| h != bi).unwrap_or(false);
+        let class = if is_exclave { "realm exclave" } else { "realm" };
+        write!(out, r##"<g class="{class}" data-polity="{pid}">"##).unwrap();
         let [r, g, b] = nation.color;
-        write_polygon(
-            mesh,
-            verts,
-            &format!("#{r:02x}{g:02x}{b:02x}"),
-            0.40,
-            proj,
-            out,
-        );
+        let fill = format!("#{r:02x}{g:02x}{b:02x}");
+        for &c in cells {
+            write_polygon(mesh, &mesh.cell_vertices[c], &fill, 0.40, proj, out);
+        }
+        out.push_str("</g>");
     }
     out.push_str("</g>");
+}
+
+/// Connected land bodies by flood-fill over `mesh.neighbors` with `elev > 0.0`
+/// (the canonical land predicate). Returns a body id per cell (`usize::MAX` for
+/// sea), assigned in ascending cell order so it is deterministic. A local
+/// re-implementation because `mapgen_world::naming::connected_bodies` is not a
+/// dependency of this crate.
+fn land_body_of(mesh: &mapgen_core::MeshData, elev: &[f32]) -> Vec<usize> {
+    let n = mesh.cell_count();
+    let mut body = vec![usize::MAX; n];
+    let is_land = |i: usize| elev.get(i).copied().unwrap_or(0.0) > 0.0;
+    let mut next = 0usize;
+    let mut stack: Vec<usize> = Vec::new();
+    for start in 0..n {
+        if !is_land(start) || body[start] != usize::MAX {
+            continue;
+        }
+        let id = next;
+        next += 1;
+        body[start] = id;
+        stack.push(start);
+        while let Some(c) = stack.pop() {
+            for &nb in &mesh.neighbors[c] {
+                let v = nb as usize;
+                if is_land(v) && body[v] == usize::MAX {
+                    body[v] = id;
+                    stack.push(v);
+                }
+            }
+        }
+    }
+    body
 }
 
 /// A key in the SW corner: each realm that holds land, by colour + name — so the

@@ -82,7 +82,8 @@ with its red-mutation recorded here and verified once by hand.
 | **No** earned crossing on any sundered seed — the naval gate is load-bearing | Data | 23, 42 | `sundered_lanes_claims.rs::no_cross_water_conquest_on_any_sundered_seed` (mutation-verified: removing the gate makes seed 23 span `[0,2,8]`) | remove the `lane.min_naval > naval_a` gate |
 | Exact per-seed crossing counts (11→4, 19→3, 7→2, 4→1) | Data | 11, 19, 7, 4 | **GAP (intentional, won't fix)** — *presence* is pinned per seed; exact counts are deliberately not (any history tweak shifts them → brittle regression gate) | n/a |
 | The earned crossing flips in at a specific year under the slider's reconstruction | Replay | 11, 19, 7, 4 | `sundered_lanes_claims.rs::the_earned_crossing_replays_faithfully_in_the_time_slider` (mutation-verified: off-by-one in `control_at_year` flips it red; uses the slider's own `control_at_year` — earned cell is *not* the conqueror's at year-1, *is* at year, and `control_at_year(last) == society.control`) | `>` → `>=` in `control_at_year` |
-| Scrubbing the slider **visibly** reveals the overseas exclave (web/DOM) | Replay+Observable | crossing | **PARTIAL.** Legibility is now built (row above) so a human *sees* the distinct exclave appear; but an automated e2e still can't point at *the* exclave region — the planisphere is per-cell polygons with no per-region polity id in the DOM. Remaining work: expose polity per region (e.g. group wash polygons by realm) so an e2e can assert the specific exclave flips in | (deferred — needs DOM polity exposure) |
+| Scrubbing the slider reveals the overseas exclave region (web/DOM) | Replay+Observable | 15 @ 2000 | `web/e2e/smoke.spec.ts::scrubbing the slider reveals an overseas exclave region` — the wash now groups realms as `<g class="realm" data-polity="N">` and exclaves as `<g class="realm exclave" data-polity="N">`; the e2e asserts `.planet-political .exclave[data-polity]` ≥1 at the present and 0 at the slider min (founding). Backed by the Rust render test below | drop the `exclave` tag in `planet.rs::render_political` |
+| The wash groups each realm and tags exclaves faithfully | Observable | 11, 19, 7, 4, 23, 42 | `political_legibility.rs::the_wash_groups_each_realm_and_tags_overseas_exclaves` (mutation-verified: forcing `class="realm"` trips it). Exclave-tagged polities == polities spanning ≥2 sizable landmasses; wash polygon count == controlled land cells | force `class="realm"` for all groups |
 | Bordering realms (incl. the overseas exclave) render in distinct colors | Observable | 11, 19, 7, 4 | `political_legibility.rs::{bordering_realms_render_in_distinct_colours, the_overseas_exclave_is_colour_distinct_from_the_realms_it_borders, the_political_wash_renders_exactly_the_realms_legible_colours}` (mutation-verified: disabling `recolor_political` reverts the adjacency test to red). FIXED by post-history greedy graph-coloring (`polities::recolor_political`) replacing mod-5 `polity_color` | disable `recolor_political` |
 | Every territorial change visibly flips a cell's color in the slider | Replay+Observable | 4@2k, 11, 19, 7 | `political_legibility.rs::every_territorial_change_flips_the_rendered_colour` (mutation-verified: dropping the from↔to edges reverts it to red). A conqueror that retreats is no longer present-adjacent to its victim, so present-adjacency alone froze the slider — caught by the seed-4 e2e; fixed by also joining `from`↔`to` of every `border_change` in the coloring graph | drop the `border_change` from↔to edges in `recolor_political` |
 
@@ -112,13 +113,14 @@ with its red-mutation recorded here and verified once by hand.
 1. ~~**Observable — exclave distinctness**~~ *(CLOSED, substage 4)*: `recolor_political`
    greedy-graph-colors the polity adjacency post-history; `political_legibility.rs`
    pins it (mutation-verified). Goldens re-anchored (delta proven to be `nation.color`
-   only). **Residual:** an *automated* e2e that scrubs to the crossing year and asserts
-   *the* exclave region appears still needs per-region polity exposure in the DOM
-   (the colors are now distinct, so a human sees it; the machine can't yet point at it).
-2. ~~**Replay — earned crossing → year-specific flip**~~ *(Rust side CLOSED, substage 3)*:
-   `the_earned_crossing_replays_faithfully_in_the_time_slider` pins it via the
-   slider's own `control_at_year`, mutation-verified. The **web/DOM** half ("scrubbing
-   *visibly* reveals the exclave") is blocked on legibility → folded into #1.
+   only). ~~**Residual:** an automated e2e that points at *the* exclave region~~ — now
+   CLOSED: the wash exposes `data-polity` realm groups + `.exclave` tags, and
+   `smoke.spec.ts::scrubbing the slider reveals an overseas exclave region` asserts it
+   (seed 15 @ 2000: exclave present at the present, absent at the founding min).
+2. ~~**Replay — earned crossing → year-specific flip**~~ *(CLOSED, substages 3 + DOM-surfacing)*:
+   the Rust side via `the_earned_crossing_replays_faithfully_in_the_time_slider`, and the
+   **web/DOM** half via the exclave-reveal e2e above (no longer blocked — legibility +
+   `data-polity` realm groups landed).
 3. ~~**Data — sundered seeds grow no crossable lane**~~ *(CLOSED, substage 2)*: the
    *absent* half is now pinned in both directions by `sundered_lanes_claims.rs`,
    mutation-verified.
