@@ -44,6 +44,65 @@ const HONORBOUND_MULT: f32 = 1.4;
 const STAKES_REF: f32 = 2000.0;
 const EPS: f32 = 1e-3;
 
+/// How a war reaches its target: over land (the frozen border adjacency) or
+/// across water over a passable sea lane ("The Sundered Lanes" carrier). A Sea
+/// crossing carries the two coastal *anchor* cells — `a_anchor` controlled by
+/// the attacker `a`, `b_anchor` by the target `b` — so a won cross-water war can
+/// seize the loser's anchor as a beachhead.
+#[derive(Clone, Copy)]
+enum Crossing {
+    Land,
+    Sea { a_anchor: u32, b_anchor: u32 },
+}
+
+/// Polities polity `a` can attack ACROSS WATER this year: for each passable sea
+/// lane (`min_naval <= a`'s frozen naval) where `a` controls one anchor and some
+/// other polity controls the opposite anchor, that polity is a war target.
+/// Reads CURRENT control (so reach tracks conquests), iterates lanes in their
+/// canonical Vec order, and appends to `out` — leaving land targets first so a
+/// laneless world (the seed42 golden) is byte-identical. No RNG.
+fn cross_water_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<(usize, Crossing)>) {
+    let owns =
+        |c: usize, pid: usize| world.society.control.get(c).copied().flatten() == Some(pid as u32);
+    for lane in &world.sea_lanes.lanes {
+        if lane.min_naval > naval_a {
+            continue; // a can't sail this lane
+        }
+        let (aa, ab) = (lane.a as usize, lane.b as usize);
+        let (mine, theirs) = if owns(aa, a) {
+            (aa, ab)
+        } else if owns(ab, a) {
+            (ab, aa)
+        } else {
+            continue; // a controls neither anchor — can't launch from this lane
+        };
+        if let Some(b) = world.society.control.get(theirs).copied().flatten() {
+            let b = b as usize;
+            if b != a {
+                out.push((
+                    b,
+                    Crossing::Sea {
+                        a_anchor: mine as u32,
+                        b_anchor: theirs as u32,
+                    },
+                ));
+            }
+        }
+    }
+}
+
+/// Whether `a` can actually press a war against `b` given the crossing: a land
+/// war needs a current shared border (so cells can move); a cross-water war's
+/// anchors were already confirmed controlled + passable by the enumeration, so
+/// it can always land a beachhead. Evaluated only after the ignition roll
+/// passes (so the O(cells) `share_border` scan stays rare).
+fn can_press_war(world: &WorldData, a: usize, b: usize, crossing: Crossing) -> bool {
+    match crossing {
+        Crossing::Land => share_border(world, a, b),
+        Crossing::Sea { .. } => true,
+    }
+}
+
 /// Mearsheimer power-balance loop.
 pub struct Mearsheimer;
 
@@ -95,19 +154,31 @@ impl CausalLoop for Mearsheimer {
             if year.saturating_sub(ctx.state.last_war[a]) < WAR_COOLDOWN {
                 continue;
             }
-            let neighbors = ctx.state.adjacency.get(a).cloned().unwrap_or_default();
-            for b in neighbors {
+            // War targets: land neighbours first (frozen border adjacency), then
+            // any polity reachable over a PASSABLE sea lane (the adjacency fold).
+            // Cross-water targets are appended AFTER land, so a world with no sea
+            // lanes (the seed42 golden) draws the identical ignition-roll
+            // sequence — the carrier is a determinism no-op there.
+            let mut candidates: Vec<(usize, Crossing)> = ctx
+                .state
+                .adjacency
+                .get(a)
+                .map(|ns| ns.iter().map(|&b| (b, Crossing::Land)).collect())
+                .unwrap_or_default();
+            cross_water_targets(ctx.world, ctx.state.naval[a], a, &mut candidates);
+            for (b, crossing) in candidates {
                 if ctx.state.dissolved[b] {
                     continue;
                 }
-                // A war only happens if it can change the map — the two polities
-                // must currently share a border (frozen adjacency over-counts
-                // once a frontier has been fully absorbed). Kills repeated
-                // 0-transfer wars. `share_border` (O(cells)) is checked only when
-                // the cheap ignition roll passes.
-                if war_ignites(ctx, a, b) && share_border(ctx.world, a, b) {
+                // A war only happens if it can change the map (land: the realms
+                // must currently share a border — frozen adjacency over-counts
+                // once a frontier is absorbed; sea: the anchors are controlled +
+                // passable by construction). `can_press_war` (the O(cells)
+                // `share_border` for land) runs only when the cheap ignition roll
+                // passes, so the cross-water fold adds no land-war cost.
+                if war_ignites(ctx, a, b) && can_press_war(ctx.world, a, b, crossing) {
                     ctx.state.last_war[a] = year;
-                    resolve_war(ctx, a, b, year);
+                    resolve_war(ctx, a, b, year, crossing);
                     break;
                 }
             }
@@ -216,7 +287,7 @@ fn assert_claim(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
     ctx.state.claims.push((a as u16, b as u16, year, claim_ev));
 }
 
-fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
+fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Crossing) {
     let (Some(ruler_a), Some(ruler_b)) = (ctx.state.courts[a].ruler, ctx.state.courts[b].ruler)
     else {
         return;
@@ -314,8 +385,38 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         .causes(&[war_ev])
         .push(ctx.world);
 
+    // Beachhead: a won cross-water war seizes the loser's coastal ANCHOR first —
+    // an explicit BorderChange creating an exclave on the far landmass that
+    // borders the loser's land. Without it the (overseas) winner shares no border
+    // with the loser, so transfer_border_cells below would move zero cells (the
+    // 0-cell trap); the beachhead gives it a frontier to grow from. This is the
+    // ONLY way a polity comes to hold land on a second landmass — inter-
+    // continental reach, earned over a sea lane. (Land wars: `crossing` is Land,
+    // so this is skipped and everything below is byte-identical.)
+    let beachhead = if let Crossing::Sea { a_anchor, b_anchor } = crossing {
+        let loser_anchor = if w_pid == a { b_anchor } else { a_anchor };
+        let cell_i = loser_anchor as usize;
+        if ctx.world.society.control.get(cell_i).copied().flatten() == Some(l_pid as u32) {
+            ctx.state
+                .border_changes
+                .push(mapgen_core::history::BorderChange {
+                    year,
+                    cell: loser_anchor,
+                    from: Some(l_pid as u32),
+                    to: Some(w_pid as u32),
+                });
+            ctx.world.society.control[cell_i] = Some(w_pid as u32);
+            1
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
     // A more decisive victory seizes more land (4..=8 border holdings, vs. the
     // old fixed 6); `moved` is the real count, capped by the loser's frontier.
+    // The beachhead (if any) seeds that frontier on the far shore.
     let take = 4 + (4.0 * dec).round() as usize;
     let moved = transfer_border_cells(
         ctx.world,
@@ -325,11 +426,12 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32) {
         year,
         &mut ctx.state.border_changes,
     );
-    if moved > 0 {
+    let seized = moved + beachhead;
+    if seized > 0 {
         let siege_line = match ctx.rng.next_u32() % 3 {
-            0 => format!("{w_name} wrested {moved} settlements from {l_name}."),
-            1 => format!("{w_name} seized {moved} towns along the frontier of {l_name}."),
-            _ => format!("{w_name} overran {moved} holdings of {l_name}."),
+            0 => format!("{w_name} wrested {seized} settlements from {l_name}."),
+            1 => format!("{w_name} seized {seized} towns along the frontier of {l_name}."),
+            _ => format!("{w_name} overran {seized} holdings of {l_name}."),
         };
         let siege_ev = Emit::new(
             year,

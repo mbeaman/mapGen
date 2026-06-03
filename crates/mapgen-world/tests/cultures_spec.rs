@@ -33,6 +33,7 @@ use mapgen_world::{
     cultures::{self, CulturesParams},
     generate_full,
     naming::connected_bodies,
+    pipeline::{Pipeline, PipelineStage},
     GenerateParams,
 };
 
@@ -376,13 +377,24 @@ fn cultures_are_instanced_per_landmass() {
 
 #[test]
 fn polities_are_confined_to_one_landmass_yet_the_planet_is_populated() {
-    // THE load-bearing guard the premise failure named: no polity controls cells
-    // on more than one sizable landmass (probe measured 3 such polities BEFORE
-    // the rework → this asserts 0). Paired with a population floor so the test
-    // can't pass on a GUTTED planet (an over-aggressive instancing that leaves
-    // most land uncontrolled would also trivially "confine").
+    // THE load-bearing guard the premise failure named: AT GEN TIME no polity
+    // controls cells on more than one sizable landmass (probe measured 3 such
+    // polities BEFORE the rework → this asserts 0). Checked at the Polities stage,
+    // BEFORE history — the cross-water carrier (Mearsheimer) legitimately creates
+    // earned overseas holdings later (see history_spec), so this must read the
+    // gen-time partition, not the post-history world. Paired with a population
+    // floor so it can't pass on a GUTTED planet (over-aggressive instancing that
+    // left most land uncontrolled would also trivially "confine").
     for seed in [11u64, 19] {
-        let world = generate_full(GenerateParams::planet(seed));
+        let mut p = Pipeline::new(GenerateParams::planet(seed));
+        loop {
+            match p.step() {
+                Some(PipelineStage::Polities) => break,
+                Some(_) => continue,
+                None => panic!("pipeline finished before the Polities stage"),
+            }
+        }
+        let world = p.into_world();
         let (n_bodies, body_of) = sizable_body_labels(&world);
         assert!(
             n_bodies >= 2,

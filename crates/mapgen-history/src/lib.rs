@@ -76,6 +76,12 @@ pub struct SimState {
     /// Polity adjacency (who borders whom), computed once from the initial
     /// borders. Wars ignite between neighbors; the 4e loop reads this.
     pub adjacency: Vec<Vec<usize>>,
+    /// Per-polity naval reach: the max `tech.naval` over the polity's controlled
+    /// COASTAL cultures, frozen at sim start (naval is gen-time-immutable). A
+    /// polity can sail a sea lane iff `naval[pid] >= lane.min_naval` — the
+    /// dual-filter that gates cross-water war ("The Sundered Lanes" carriers).
+    /// 0 for a landlocked polity (no coastal culture).
+    pub naval: Vec<u8>,
     /// Active dynastic claims as `(claimant_polity, target_polity, asserted_year,
     /// claim_event)` — a claim supplies a `DynasticClaim` casus belli until it
     /// expires, and the war it justifies cites `claim_event` as its cause.
@@ -189,6 +195,45 @@ impl SimState {
         }
         let adjacency = adj.into_iter().map(|s| s.into_iter().collect()).collect();
 
+        // Per-polity naval reach: the max naval skill among the polity's COASTAL
+        // cultures (a controlled cell with a sea neighbour), frozen at sim start.
+        // Drives the cross-water adjacency fold + beachhead; a polity reaches a
+        // lane iff its naval >= the lane's min_naval.
+        let mut naval = vec![0u8; n_pol];
+        for cell in 0..n_cells {
+            let Some(pid) = world.society.control.get(cell).copied().flatten() else {
+                continue;
+            };
+            let pid = pid as usize;
+            if pid >= n_pol {
+                continue;
+            }
+            let coastal = world
+                .mesh
+                .neighbors
+                .get(cell)
+                .map(|nbrs| {
+                    nbrs.iter().any(|&nb| {
+                        world
+                            .terrain
+                            .elevation
+                            .get(nb as usize)
+                            .copied()
+                            .unwrap_or(0.0)
+                            <= 0.0
+                    })
+                })
+                .unwrap_or(false);
+            if !coastal {
+                continue;
+            }
+            if let Some(cid) = world.cultures.culture_id.get(cell).copied().flatten() {
+                if let Some(c) = world.cultures.cultures.get(cid as usize) {
+                    naval[pid] = naval[pid].max(c.tech.naval);
+                }
+            }
+        }
+
         Self {
             polity_count: n_pol,
             population,
@@ -202,6 +247,7 @@ impl SimState {
             asabiyyah: vec![1.0; n_pol],
             last_dynasty: vec![None; n_pol],
             adjacency,
+            naval,
             claims: Vec::new(),
             last_war: vec![i32::MIN; n_pol],
             religion_entities: vec![None; world.religions.religions.len()],

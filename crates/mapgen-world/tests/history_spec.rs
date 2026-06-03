@@ -8,7 +8,9 @@
 //! hash in `pipeline_spec.rs`.
 
 use mapgen_core::{Entity, EntityId, EventKind, RelationKind};
-use mapgen_world::{generate_full, GenerateParams, Pipeline, PipelineStage};
+use mapgen_world::{
+    generate_full, naming::connected_bodies, GenerateParams, Pipeline, PipelineStage,
+};
 use std::collections::BTreeMap;
 
 fn fixed(seed: u64) -> GenerateParams {
@@ -871,4 +873,52 @@ fn generate_full_is_deterministic_with_history_wired() {
     assert_eq!(a.events.len(), b.events.len());
     assert_eq!(a.entities.by_id.len(), b.entities.by_id.len());
     assert_eq!(a.society.nations.len(), b.society.nations.len());
+}
+
+#[test]
+fn cross_water_conquest_produces_earned_overseas_holdings() {
+    // "The Sundered Lanes" payoff. With landmass-distinct society (cultures
+    // instanced per continent) plus the beachhead carrier, a polity can come to
+    // hold land on a SECOND landmass — reachable only across a passable sea lane,
+    // since land wars never cross water. This is the signal ONLY the cross-water
+    // carrier produces: it was 0 before the carrier (history confined to each
+    // landmass). Pinned on the canonical both-directions seeds (probe: seed 11 →
+    // 4 such polities, seed 19 → 3). Zero on a *sundered* seed (e.g. 23/42) is
+    // legitimate and earned, so those are deliberately not asserted.
+    for seed in [11u64, 19] {
+        let world = generate_full(GenerateParams::planet(seed));
+        let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0);
+        let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+        let mut n_bodies = 0usize;
+        for b in &bodies {
+            if b.len() < 24 {
+                continue; // islet — not a sizable continent
+            }
+            for &c in b {
+                body_of[c] = n_bodies;
+            }
+            n_bodies += 1;
+        }
+        assert!(
+            n_bodies >= 2,
+            "planet seed {seed} must have multiple landmasses"
+        );
+
+        let n_pol = world.society.nations.len();
+        let mut spans: Vec<std::collections::BTreeSet<usize>> = vec![Default::default(); n_pol];
+        for (c, &bi) in body_of.iter().enumerate() {
+            if bi == usize::MAX {
+                continue;
+            }
+            if let Some(p) = world.society.control[c] {
+                spans[p as usize].insert(bi);
+            }
+        }
+        let overseas = spans.iter().filter(|s| s.len() >= 2).count();
+        assert!(
+            overseas >= 1,
+            "seed {seed}: no polity holds land on a second landmass — the cross-water \
+             carrier never fired (reach must be EARNED, but this canonical seed has it)",
+        );
+    }
 }
