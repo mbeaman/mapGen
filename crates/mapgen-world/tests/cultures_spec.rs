@@ -440,17 +440,15 @@ fn polities_are_confined_to_one_landmass_yet_the_planet_is_populated() {
 #[test]
 fn no_culture_instance_spans_a_sea_lanes_body() {
     // The arc's premise is "the sea lanes are the ONLY inter-body link", which
-    // requires cultures and sea_lanes to agree on what a landmass IS. They use
-    // different land predicates: cultures instances over `elev >= 0.0`, sea_lanes
-    // flood-fills land with `elev > 0.0` (cells at exactly sea level are sea
-    // there). Today no cell sits at exactly 0.0 so the two agree — but a future
-    // zero-elevation cell bridging two `>0.0` components would merge them into ONE
-    // culture instance while sea_lanes still builds a lane between them, putting a
-    // single polity on both sides of a lane (the spanning bug RELATIVE to the lane
-    // graph, invisible to the >=0.0-based confinement test). This pins the
-    // invariant independently of the cultures predicate, so it fails loudly if
-    // that divergence ever becomes real. (Passes trivially today; that's the
-    // point — it's the tripwire.)
+    // requires cultures and sea_lanes to agree on what a landmass IS. They now
+    // share the one canonical land predicate `elev > 0.0` (cells at exactly sea
+    // level are sea), so a culture cannot span two sea_lanes bodies by
+    // construction. This is the regression guard against re-introducing a
+    // divergence (cultures once instanced over `>= 0.0`): if anyone changes one
+    // predicate and not the other, a zero-elevation bridge cell could merge two
+    // `>0.0` components into ONE culture while sea_lanes still builds a lane
+    // between them — putting a single polity on both sides of a lane. This pins
+    // the invariant independently, so it fails loudly if that ever returns.
     let world = generate_full(GenerateParams::planet(11));
     let sea_bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0);
     let mut sea_body_of = vec![usize::MAX; world.mesh.cell_count()];

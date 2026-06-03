@@ -74,14 +74,14 @@ pub fn planet_params(seed: u64) -> GenerateParams {
     GenerateParams::planet(seed)
 }
 
-/// The connected land bodies (`elevation >= 0.0`) of at least [`SIZABLE_BODY_MIN`]
+/// The connected land bodies (`elevation > 0.0`) of at least [`SIZABLE_BODY_MIN`]
 /// cells — the "real continents", with islets dropped. Deterministic order
 /// (`connected_bodies` walks cells in id order). This is the body primitive the
-/// data-layer claim tests partition the world by; consolidating it here keeps
-/// the `>= 0.0` predicate in exactly one place (see the `no_culture_instance_…`
-/// tripwire in `docs/CLAIMS.md` for why the predicate matters).
+/// data-layer claim tests partition the world by; it uses the one canonical land
+/// predicate `> 0.0` (sea is `<= 0.0`) shared across cultures / naming /
+/// hydrology / sea_lanes — see `docs/CLAIMS.md`.
 pub fn sizable_landmasses(world: &WorldData) -> Vec<Vec<usize>> {
-    connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0)
+    connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0)
         .into_iter()
         .filter(|b| b.len() >= SIZABLE_BODY_MIN)
         .collect()

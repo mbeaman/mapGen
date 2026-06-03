@@ -59,7 +59,7 @@ with its red-mutation recorded here and verified once by hand.
 | Each culture is instanced per landmass (same archetype on 2 continents → 2 ids) | Data | planet | `cultures_spec.rs::cultures_are_instanced_per_landmass` | revert `populate` to the global roster build |
 | Polities are confined to one landmass **at gen-time** (0 spanning) | Data | planet | `cultures_spec.rs::polities_are_confined_to_one_landmass_yet_the_planet_is_populated` (stepped to `PipelineStage::Polities`) | stamp control by global culture id again |
 | The planet stays earned-sparse (land controlled, not gutted) | Data | planet | same test (≥80% sizable-body land) | confine cultures to a single cell each |
-| No culture instance spans a sea-lanes body (predicate tripwire) | Data | planet | `cultures_spec.rs::no_culture_instance_spans_a_sea_lanes_body` | change the body predicate `>=0.0` ↔ `>0.0` so a cell at exactly 0.0 splits |
+| No culture instance spans a sea-lanes body (predicate regression guard) | Data | planet | `cultures_spec.rs::no_culture_instance_spans_a_sea_lanes_body` — cultures & sea_lanes now share the one canonical land predicate `> 0.0`, so this holds by construction; the test guards against re-diverging | re-introduce `>= 0.0` in `cultures::populate` so a 0.0 cell could bridge two `>0.0` bodies |
 | seed 42 (single landmass) is a byte-identical no-op under v19 | Determinism | 42 | the goldens above (re-anchored for the version byte only) | make instancing fire on a single-body world |
 
 ## Sea-lane substrate (Phase 1 Step 3a)

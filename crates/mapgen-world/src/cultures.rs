@@ -497,11 +497,13 @@ pub fn populate(world: &mut WorldData, params: CulturesParams, _rng: &mut ChaCha
     //
     //    Determinism: landmasses come from `connected_bodies` (largest-first,
     //    stable), instance ids are minted body-major / survivor-minor, no RNG.
-    //    Land predicate `>= 0.0` is exactly the set cultures assigns over.
+    //    Land predicate `> 0.0` (sea is `<= 0.0`) — the one canonical predicate
+    //    shared with naming / hydrology / sea_lanes (see docs/CLAIMS.md). No cell
+    //    ever sits at exactly 0.0, so this is byte-identical to the old `>= 0.0`.
     //    Single-landmass worlds (e.g. the seed42 golden) are the IDENTITY of the
     //    old survivor numbering, so they stay byte-identical.
     let survivor_archetype: Vec<usize> = (0..archetypes.len()).filter(|&i| survives[i]).collect();
-    let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] >= 0.0);
+    let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0);
     let mut body_of = vec![usize::MAX; n];
     for (bi, body) in bodies.iter().enumerate() {
         for &c in body {
@@ -643,7 +645,7 @@ fn voronoi_fill(
     // global argmax across all archetypes. Guarantees every land cell ends
     // up assigned per the contract.
     for cell in 0..n {
-        if assignment[cell].is_none() && world.terrain.elevation[cell] >= 0.0 {
+        if assignment[cell].is_none() && world.terrain.elevation[cell] > 0.0 {
             let mut best_idx = 0u16;
             let mut best_fit = f32::NEG_INFINITY;
             for (i, archetype) in archetypes.iter().enumerate() {
