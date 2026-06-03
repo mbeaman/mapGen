@@ -20,6 +20,8 @@ use mapgen_core::entities::{Alignment, Culture, MagicStyle, PantheonPattern, Rel
 use mapgen_core::WorldData;
 use rand_chacha::ChaCha8Rng;
 
+use crate::naming::connected_bodies;
+
 /// Tunables for the religions stage. Calibrated values land in
 /// `docs/tuning_log.md` once the implementation greens up.
 #[derive(Clone, Debug)]
@@ -99,22 +101,52 @@ pub fn found(world: &mut WorldData, params: ReligionsParams, _rng: &mut ChaCha8R
         })
         .collect();
 
-    // 4. Spread by alignment compatibility. Each cell with a culture
-    //    adopts the religion whose founder culture's alignment is
-    //    closest in 2D law/chaos × good/evil space. The
-    //    `alignment_spread_radius` is a soft cap — beyond it, the
-    //    closest religion wins anyway so no land cell stays
-    //    unconverted (the per-cell `religion_id` mirrors `culture_id`
-    //    coverage exactly).
+    // 3b. Confine each religion to its FOUNDING landmass. A founder culture is
+    //     landmass-instanced (v19), so a religion has one home body; cross-body
+    //     reach is EARNED over history by the Diffusion loop, not granted free at
+    //     gen-time (the residue Phase 2 fixes — faith no longer pre-crosses
+    //     oceans). Single-landmass worlds (the seed42 golden) have one body, so
+    //     every religion's home body IS every cell's body — a byte-identical
+    //     no-op there.
+    let bodies = connected_bodies(&world.mesh, |i| world.terrain.elevation[i] > 0.0);
+    let mut body_of = vec![usize::MAX; n_cells];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+    let home_body: Vec<usize> = religions
+        .iter()
+        .map(|r| {
+            world
+                .cultures
+                .culture_id
+                .iter()
+                .position(|&id| id == Some(r.founder_culture_id))
+                .map(|c| body_of[c])
+                .unwrap_or(usize::MAX)
+        })
+        .collect();
+
+    // 4. Spread by alignment compatibility, WITHIN the founding landmass. Each
+    //    cell adopts the alignment-closest religion FOUNDED ON ITS OWN BODY (the
+    //    `alignment_spread_radius` is a soft cap — within the body the closest
+    //    religion wins anyway). A cell on a body with no native religion stays
+    //    `None` (faithless) until the Diffusion loop carries a faith across a sea
+    //    lane to it.
     let mut religion_id: Vec<Option<u16>> = vec![None; n_cells];
     for (cell, slot) in religion_id.iter_mut().enumerate() {
         let Some(culture_idx) = world.cultures.culture_id.get(cell).copied().flatten() else {
             continue;
         };
+        let cell_body = body_of[cell];
         let culture = &world.cultures.cultures[culture_idx as usize];
         let mut best: (u16, f32) = (0, f32::MAX);
         let mut best_within_radius: Option<(u16, f32)> = None;
         for (r_idx, religion) in religions.iter().enumerate() {
+            if home_body[r_idx] != cell_body {
+                continue; // religion not founded on this landmass
+            }
             let dist = alignment_distance(culture.alignment, religion.alignment);
             if dist < best.1 {
                 best = (r_idx as u16, dist);
@@ -125,7 +157,9 @@ pub fn found(world: &mut WorldData, params: ReligionsParams, _rng: &mut ChaCha8R
                 best_within_radius = Some((r_idx as u16, dist));
             }
         }
-        *slot = Some(best_within_radius.unwrap_or(best).0);
+        if best.1 < f32::MAX {
+            *slot = Some(best_within_radius.unwrap_or(best).0);
+        }
     }
 
     // 5. Salvage: if any religion ended up with zero adherents (could

@@ -18,11 +18,15 @@
 > **Polity/culture spanning — the carrier blocker — is dead.** So 3a's sea lanes
 > are now load-bearing, and the arc can proceed to the carriers.
 >
-> **Honest residue (deferred, not a bug):** RELIGION still spreads globally at gen
-> time (`religions::found` is a global spreader) — instancing confines polities,
-> not faith. "A religion provably crosses water" is the Phase-2 Diffusion
-> milestone, NOT this change; the later religion increment must reconcile gen-time
-> confinement vs Diffusion's global-then-spread.
+> **~~Honest residue~~ RESOLVED (Phase 2 Diffusion, 2026-06-03):** religion no
+> longer spreads globally at gen time. `religions::found` now confines each faith
+> to its founder culture's landmass (a body filter — no-op on seed42's single
+> landmass, so goldens hold), and a new `LoopId::Diffusion` loop carries a faith
+> across crossable sea lanes + inland over history. "A religion provably crosses
+> water" is pinned both-directions (`diffusion_claims.rs`): a faith spans ≥2
+> landmasses on crossing seeds, none on sundered. The reconcile (gen-time
+> confinement → history diffusion) is done. Residual: faith isn't rendered
+> per-cell yet (the crossing is data-level; a faith overlay is the surfacing pass).
 >
 > ## ✅ CARRIER SHIPPED (2026-06-02) — earned cross-water conquest works.
 >

@@ -225,6 +225,36 @@ pub fn overseas_colonizations(world: &WorldData) -> Vec<(u32, u32, i32)> {
     out
 }
 
+/// Religion ids present on **≥2 sizable landmasses**. After the founding-landmass
+/// confinement, this is empty at gen-time (each faith is confined to its founding
+/// body). Post-history, a non-empty result means a faith crossed water — the
+/// Diffusion carrier is the only mechanism that puts a religion onto a body where
+/// it was not founded (schism sects stay founder-confined, like land wars).
+pub fn religions_spanning_multiple_landmasses(world: &WorldData) -> Vec<u16> {
+    let bodies = sizable_landmasses(world);
+    let mut body_of = vec![usize::MAX; world.mesh.cell_count()];
+    for (bi, body) in bodies.iter().enumerate() {
+        for &c in body {
+            body_of[c] = bi;
+        }
+    }
+    let n_rel = world.religions.religions.len();
+    let mut spans: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n_rel];
+    for (cell, &bi) in body_of.iter().enumerate() {
+        if bi == usize::MAX {
+            continue;
+        }
+        if let Some(rid) = world.religions.religion_id.get(cell).copied().flatten() {
+            if (rid as usize) < n_rel {
+                spans[rid as usize].insert(bi);
+            }
+        }
+    }
+    (0..n_rel as u16)
+        .filter(|&r| spans[r as usize].len() >= 2)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

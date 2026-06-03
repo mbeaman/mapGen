@@ -88,6 +88,13 @@ with its red-mutation recorded here and verified once by hand.
 | Bordering realms (incl. the overseas exclave) render in distinct colors | Observable | 11, 19, 7, 4 | `political_legibility.rs::{bordering_realms_render_in_distinct_colours, the_overseas_exclave_is_colour_distinct_from_the_realms_it_borders, the_political_wash_renders_exactly_the_realms_legible_colours}` (mutation-verified: disabling `recolor_political` reverts the adjacency test to red). FIXED by post-history greedy graph-coloring (`polities::recolor_political`) replacing mod-5 `polity_color` | disable `recolor_political` |
 | Every territorial change visibly flips a cell's color in the slider | Replay+Observable | 4@2k, 11, 19, 7 | `political_legibility.rs::every_territorial_change_flips_the_rendered_colour` (mutation-verified: dropping the from↔to edges reverts it to red). A conqueror that retreats is no longer present-adjacent to its victim, so present-adjacency alone froze the slider — caught by the seed-4 e2e; fixed by also joining `from`↔`to` of every `border_change` in the coloring graph | drop the `border_change` from↔to edges in `recolor_political` |
 
+## Diffusion — a faith crosses water (Phase 2)
+
+| Religions are confined to one landmass at gen-time (no faith pre-crosses oceans) | Data | 11, 19, 7, 4, 23, 42 | `diffusion_claims.rs::religions_are_confined_to_one_landmass_at_gen_time` (stepped to `PipelineStage::Religions`; mutation-verified: dropping the body filter makes a faith span). `religions::found` confines alignment-spread to the founder's body | drop the `home_body[r] != cell_body` filter in `religions::found` |
+| A faith crosses water EARNED over a crossable lane — and only there | Data | 11, 19, 7, 4 (fires); 23, 42 (absent) | `diffusion_claims.rs::diffusion_carries_a_faith_across_water_only_over_a_crossable_lane` (mutation-verified both ways: disable the loop → fires red; drop the naval gate → sundered seed 23 spans `[0,1]` → absent red). `loops/diffusion.rs` (`LoopId::Diffusion`) crosses crossable lanes + spreads inland over history | disable the Diffusion loop / drop the `min_naval` gate |
+
+> **Not yet surfaced (honest residual):** faith is not rendered per-cell — the crossing is pinned at the data layer (`religion_id`), not shown on the map. A faith overlay is the surfacing pass (analogous to exclave legibility for political control), deferred.
+
 ## Planet & globe presentation
 
 | Claim | Layer | Seed | Test | Red-mutation |
