@@ -578,7 +578,7 @@ fn render_trade_routes(world: &WorldData, proj: &Proj, out: &mut String) {
         r##"<g class="planet-trade" display="none" fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
     );
     for lane in &world.sea_lanes.lanes {
-        if lane.min_naval > MAX_CROSSABLE_NAVAL {
+        if lane.min_naval > super::MAX_CROSSABLE_NAVAL {
             continue; // an abyss no seafarer of this world reaches — not "crossable"
         }
         let (a, b) = (lane.a as usize, lane.b as usize);
@@ -595,11 +595,6 @@ fn render_trade_routes(world: &WorldData, proj: &Proj, out: &mut String) {
     }
     out.push_str("</g>");
 }
-
-/// The naval-skill gate below which a sea lane is "crossable" for the Trade lens
-/// — a seafaring polity can use it. Lanes above this are impassable abysses we
-/// don't draw. Pinned by `trade_overlay.rs` (the render test reuses this literal).
-const MAX_CROSSABLE_NAVAL: u8 = 40;
 
 /// Faiths legend (SW corner, the same slot as the realms legend — mutually
 /// exclusive via the lens CSS, so they may share it). `display="none"` until the

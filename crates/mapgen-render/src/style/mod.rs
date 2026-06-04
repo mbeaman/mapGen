@@ -44,6 +44,14 @@ pub(crate) fn faith_color(religion_id: u16) -> [u8; 3] {
     FAITH_PALETTE[religion_id as usize % FAITH_PALETTE.len()]
 }
 
+/// The naval gate at or below which a sea lane is "crossable" — what the Trade
+/// lens draws (planet + ornate). MUST stay equal to the data carriers' reach
+/// (`mapgen_history` `TRADE_NAVAL` / `DIFFUSION_NAVAL` = 40) so the lens shows
+/// exactly the lanes that actually carry trade/faith; render can't import
+/// `mapgen_history`, so the value is mirrored here (and `trade_overlay.rs` keeps a
+/// matching test mirror whose `==` line-count would trip on any drift).
+pub(crate) const MAX_CROSSABLE_NAVAL: u8 = 40;
+
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Style {
     /// Flat heightmap visualization for development.

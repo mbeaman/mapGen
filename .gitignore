@@ -26,3 +26,6 @@ Cargo.lock.bak
 # `AGENTS.md`, `CONTRIBUTING.md`); this directory is reserved for
 # ad-hoc throwaways (debug renders, local notes, throwaway scripts).
 /.local/
+
+# Agent worktrees (transient, created by the Agent/Workflow tool)
+.claude/worktrees/

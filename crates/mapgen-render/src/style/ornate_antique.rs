@@ -324,7 +324,7 @@ fn render_trade_routes(world: &WorldData, out: &mut String) {
         r##"<g fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
     );
     for lane in &world.sea_lanes.lanes {
-        if lane.min_naval > 40 {
+        if lane.min_naval > super::MAX_CROSSABLE_NAVAL {
             continue; // not crossable — an abyss no seafarer of this world reaches
         }
         let (a, b) = (lane.a as usize, lane.b as usize);

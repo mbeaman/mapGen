@@ -3,12 +3,13 @@
 //! `Nation::prosperity`, normalized to [0,1] by the world's max final population —
 //! the data channel the prosperity overlay tints by.
 //!
-//! The discriminating signature is the NORMALIZATION, not "all in [0,1]": after a
-//! divide-by-max, the top polity is `x / x == 1.0` — bit-exact in IEEE f32. A test
-//! that only asserted "all in [0,1]" would stay GREEN on all-zeros (the skip-the-
-//! write-back mutation), so it would be worthless; asserting an exact 1.0 maximum
-//! (plus that the channel is populated, i.e. some prosperity > 0) is a signal ONLY
-//! the normalized write-back can produce.
+//! The discriminating signature is the NORMALIZATION + SPREAD, not "all in [0,1]":
+//! after a divide-by-max, the top polity is `x / x == 1.0` (bit-exact in IEEE f32)
+//! AND the rest sit strictly below it. "All in [0,1]" alone stays GREEN on all-zeros
+//! (skip-the-write-back); even `max == 1.0` alone stays GREEN on a constant `1.0`
+//! write-back (every realm = 1.0 → max is still 1.0). So we pin BOTH: an exact 1.0
+//! maximum (populated + normalized) AND that some realm is below 1.0 (real spread) —
+//! together a signal only the normalized relative-population write-back produces.
 
 use mapgen_testsupport::{planet_params, CROSSING_SEEDS};
 use mapgen_world::generate_full;
@@ -55,6 +56,17 @@ fn final_population_is_carried_into_prosperity_and_normalized() {
             max, 1.0,
             "seed {seed}: max prosperity is {max}, not 1.0 — the population was not \
              normalized by the world's maximum (the heatmap would have no full-scale anchor)"
+        );
+
+        // SPREAD: max==1.0 alone is also satisfied by a CONSTANT 1.0 write-back, so
+        // pin that prosperity actually VARIES — at least one realm sits below the
+        // full-scale anchor. Real worlds have exactly one realm at the max and the
+        // rest strictly below. (Mutation: a constant `1.0` write-back → nothing
+        // below 1.0 → this trips, where max==1.0 alone would not.)
+        assert!(
+            world.society.nations.iter().any(|n| n.prosperity < 1.0),
+            "seed {seed}: every realm's prosperity is 1.0 — a constant, not normalized \
+             relative population (no spread for the heatmap to grade)"
         );
 
         // And the whole field stays within the renderable [0,1] heatmap domain.

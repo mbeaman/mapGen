@@ -5,11 +5,13 @@
 //! lens CSS that swaps it in under `on-trade` — so toggling Trade makes the lanes
 //! that bind the continents visible.
 //!
-//! sea_lanes is a PLANET-scale product (continental / refined-sector worlds carry
-//! none), so the line-count claim is asserted only against `Style::Planet`. There
-//! is deliberately no ornate non-emptiness test (the ornate `layer-trade` group is
-//! legitimately empty at continental scale — group existence is pinned by
-//! `mapgen-cli/tests/atlas.rs`, and the display swap by the web e2e).
+//! BOTH renders draw one `<line>` per crossable lane in the world they're handed —
+//! the planet wash (`planet-trade`, Mollweide-projected) and the ornate continental
+//! layer (`layer-trade`, world coords). The ornate group is only empty for a world
+//! with no lanes (e.g. a single-landmass continent); handed a lane-bearing world it
+//! draws them, so the count claim is asserted against BOTH styles below.
+//! (`mapgen-cli/tests/atlas.rs` pins the ornate group's existence; the web e2e pins
+//! its display swap.)
 
 use mapgen_render::{render, style::Style};
 use mapgen_testsupport::{planet_params, CROSSING_SEEDS};
@@ -94,4 +96,34 @@ fn the_planet_trade_group_draws_a_line_per_crossable_lane() {
         drawn > 0,
         "no crossable lane was drawn on any crossing seed — the lens never drew anything"
     );
+}
+
+#[test]
+fn the_ornate_trade_layer_draws_a_line_per_crossable_lane() {
+    // The ornate continental `layer-trade` group is NOT empty for a lane-bearing
+    // world — it draws each crossable lane in world coords. The atlas test only
+    // checks the GROUP exists, so an empty/broken ornate render would ship silently;
+    // this pins one `<line>` per crossable lane (`==`, catching an over-inclusive
+    // filter), the ornate counterpart of the planet claim above.
+    let mut drawn = 0usize;
+    for &seed in CROSSING_SEEDS {
+        let world = generate_full(planet_params(seed));
+        let crossable = world
+            .sea_lanes
+            .lanes
+            .iter()
+            .filter(|l| l.min_naval <= MAX_CROSSABLE_NAVAL)
+            .count();
+        assert!(crossable > 0, "seed {seed}: no crossable lane to draw");
+
+        let svg = render(&world, Style::OrnateAntique).expect("ornate render");
+        let trade = group(&svg, "layer-trade");
+        let lines = trade.matches("<line").count();
+        assert_eq!(
+            lines, crossable,
+            "seed {seed}: ornate layer-trade drew {lines} lines for {crossable} crossable lanes"
+        );
+        drawn += lines;
+    }
+    assert!(drawn > 0, "the ornate trade layer never drew a lane");
 }

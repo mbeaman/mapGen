@@ -167,21 +167,35 @@ fn equal_prosperity_paints_one_fill_but_unequal_paints_two() {
 }
 
 #[test]
-fn ornate_prosperity_layer_colours_cells_by_realm_prosperity() {
-    // The ornate counterpart of the planet two-fill test: the continental
-    // layer-prosperity wash must also KEY its colour on Nation::prosperity, not a
-    // constant. Two realms at 1.0 vs 0.1 must paint two distinct fills in the
-    // layer-prosperity group. (Mutation-verified: keying the ornate ramp on a
-    // constant collapses both to one fill → this trips.)
-    let world = world_with_two_realms([1.0, 0.1]);
-    let svg = render(&world, Style::OrnateAntique).expect("ornate render");
-    let layer = group(&svg, "layer-prosperity");
-    let fills = distinct_fills(layer);
-    assert!(
-        fills.len() >= 2,
-        "ornate layer-prosperity used {} distinct fill(s) for two realms of different \
-         prosperity — the ramp isn't keyed on Nation::prosperity: {fills:?}",
-        fills.len()
+fn ornate_equal_prosperity_paints_one_fill_but_unequal_paints_two() {
+    // The ornate counterpart of the planet equal/unequal test — and the EQUAL half
+    // is load-bearing. A `>= 2`-only check (two realms at differing prosperity →
+    // two fills) is survived by a ramp keyed on polity/cell id, since pid 0 and pid
+    // 1 paint two fills regardless. The equal case (both 0.5 → ONE fill) demands the
+    // colour be a pure function of `Nation::prosperity`, killing a pid-keyed ramp.
+    // (Mutation-verified: keying the ornate ramp on `pid` leaves the equal case
+    // painting two fills → this trips.)
+    let equal = group(
+        &render(&world_with_two_realms([0.5, 0.5]), Style::OrnateAntique).expect("render"),
+        "layer-prosperity",
+    )
+    .to_string();
+    let unequal = group(
+        &render(&world_with_two_realms([1.0, 0.0]), Style::OrnateAntique).expect("render"),
+        "layer-prosperity",
+    )
+    .to_string();
+    assert_eq!(
+        distinct_fills(&equal).len(),
+        1,
+        "ornate: equal prosperity should paint a single fill, got {:?}",
+        distinct_fills(&equal)
+    );
+    assert_eq!(
+        distinct_fills(&unequal).len(),
+        2,
+        "ornate: unequal prosperity should paint two fills, got {:?}",
+        distinct_fills(&unequal)
     );
 }
 
