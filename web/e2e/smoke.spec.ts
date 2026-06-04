@@ -192,6 +192,51 @@ test("planet time-slider animates political control", async ({ page }) => {
   await expect.poll(async () => wash.innerHTML(), { timeout: 15_000 }).not.toBe(present);
 });
 
+// The Faith time-slider (Phase 2 Diffusion, replayed): with the Faith lens ON,
+// scrubbing animates a faith SPREADING over history — the render-time mirror of
+// the data-level `religion_at_year`. Seed 9 @ 2000 diffuses faith across water at
+// this resolution (~200 recorded conversions, two faiths reaching a second
+// continent), so its `.planet-faith` wash at the founding year holds fewer cells
+// than at the present; scrubbing min→present changes the wash. (Seed independent
+// of the native crossing-seed set, which runs at a finer planet resolution — same
+// reason the exclave test below uses seed 15.) Scoped to `.planet-faith` (not the
+// whole SVG) so a broken/empty wash can't pass on the legend's coattails. This is
+// the live counterpart to the Rust render test (which pins the wash tracks
+// religion_id); here we pin that wasm `renderAtYear` swaps the reconstructed faith
+// in while scrubbing.
+test("planet Faith slider animates a faith spreading over water", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  const status = page.locator("#status");
+  const generate = page.locator("#generate");
+
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+  await expect(generate).toBeEnabled({ timeout: 30_000 });
+  await page.locator("#seed").fill("9");
+  await page.locator("#cells").fill("2000");
+  await page.locator("#scale").selectOption("planet");
+  await expect(status).toContainText("Generating planet");
+  await expect(status).toContainText("Generated in", { timeout: 30_000 });
+
+  // Turn on the Faith lens, then confirm the slider is available (a crossing seed
+  // has a replay timeline — conquest and/or faith — so it's shown).
+  await page.locator("#layers-panel summary").click();
+  await page.getByRole("button", { name: "Faith", exact: true }).click();
+  await expect(svg).toHaveClass(/on-faith/, { timeout: 10_000 });
+  await expect(page.locator("#timeslider")).not.toHaveClass(/hidden/);
+
+  // The present faith wash drew cells; scrubbing to the founding year reconstructs
+  // a smaller (pre-diffusion) wash, so the group's contents differ.
+  const wash = page.locator("#map-content .planet-faith");
+  const present = await wash.innerHTML();
+  expect(present).not.toBe(""); // the faith wash drew something to animate
+  await page.locator("#timescrub").evaluate((el: HTMLInputElement) => {
+    el.value = el.min; // founding year
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect.poll(async () => wash.innerHTML(), { timeout: 15_000 }).not.toBe(present);
+});
+
 // The Sundered Lanes payoff, surfaced in the DOM: the planet wash groups each
 // realm as <g class="realm" data-polity="N">, and an overseas exclave (a realm
 // holding land on a SECOND landmass, earned by the cross-water carrier) as

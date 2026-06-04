@@ -192,6 +192,38 @@ impl WorldData {
         let last = self.history.border_changes.iter().map(|c| c.year).max()?;
         Some((first, last))
     }
+
+    /// Reconstruct the per-cell religion as it stood at the end of `year` (the
+    /// Faith time-slider). `religions.religion_id` holds the *present* faith; this
+    /// walks it backward by undoing every recorded `faith_change` with a later
+    /// year — in reverse insertion order, so a cell converted several times is
+    /// restored correctly. The faith mirror of [`Self::control_at_year`]. With no
+    /// recorded diffusion it returns the present faith unchanged.
+    pub fn religion_at_year(&self, year: i32) -> Vec<Option<u16>> {
+        let mut faith = self.religions.religion_id.clone();
+        for ch in self.history.faith_changes.iter().rev() {
+            if ch.year > year {
+                if let Some(slot) = faith.get_mut(ch.cell as usize) {
+                    *slot = ch.from;
+                }
+            }
+        }
+        faith
+    }
+
+    /// Inclusive `(first, last)` year span of ANY replayable change — territorial
+    /// or faith — or `None` if nothing ever changed. Drives the time-slider's
+    /// extent so faith diffusion that outlasts the last conquest is still
+    /// scrubbable (a world with only one of the two timelines still gets a slider).
+    pub fn replay_year_span(&self) -> Option<(i32, i32)> {
+        let years = || {
+            (self.history.border_changes.iter().map(|c| c.year))
+                .chain(self.history.faith_changes.iter().map(|c| c.year))
+        };
+        let first = years().min()?;
+        let last = years().max()?;
+        Some((first, last))
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

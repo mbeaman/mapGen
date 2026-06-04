@@ -142,3 +142,51 @@ fn the_diffusion_timeline_records_every_conversion_faithfully() {
     );
     assert!(total > 0, "no diffusion was recorded on any crossing seed");
 }
+
+#[test]
+fn religion_at_year_replays_a_growing_partial_spread() {
+    // Substage-2 (replay): `religion_at_year` reconstructs the faith map at any
+    // past year from the timeline. Two things it must get right, per crossing seed:
+    //   1. PER-YEAR animation — founding < mid < present in converted-cell count, so
+    //      the slider shows a *growing* spread (a hardcoded/ignored year would make
+    //      every frame equal the present → no animation).
+    //   2. The reconstructed founding is the CONFINED pre-diffusion map — no faith
+    //      spans ≥2 landmasses there, so every present crossing was EARNED over
+    //      history and is genuinely replayable, not baked in.
+    for &seed in CROSSING_SEEDS {
+        let world = generate_full(planet_params(seed));
+        assert!(
+            !religions_spanning_multiple_landmasses(&world).is_empty(),
+            "crossing seed {seed}: nothing crossed water to replay"
+        );
+
+        let years: Vec<i32> = world.history.faith_changes.iter().map(|c| c.year).collect();
+        let (first, last) = (*years.iter().min().unwrap(), *years.iter().max().unwrap());
+        assert!(
+            first < last,
+            "seed {seed}: diffusion finished within one year — not a gradual spread to replay"
+        );
+
+        let converted = |ids: &[Option<u16>]| ids.iter().filter(|r| r.is_some()).count();
+        let founding = world.religion_at_year(first - 1); // before any conversion
+        let mid = world.religion_at_year((first + last) / 2); // partway through
+        let (f_n, m_n, p_n) = (
+            converted(&founding),
+            converted(&mid),
+            converted(&world.religions.religion_id),
+        );
+        assert!(
+            f_n < m_n && m_n < p_n,
+            "seed {seed}: faith coverage not strictly growing founding({f_n}) < mid({m_n}) < \
+             present({p_n}) — religion_at_year isn't replaying per-year"
+        );
+
+        let mut founding_world = world.clone();
+        founding_world.religions.religion_id = founding;
+        assert!(
+            religions_spanning_multiple_landmasses(&founding_world).is_empty(),
+            "seed {seed}: a faith already spanned water before diffusion — religion_at_year \
+             didn't reconstruct the confined founding"
+        );
+    }
+}

@@ -119,26 +119,32 @@ impl WorldHandle {
         serde_json::to_string(&self.inner).map_err(|e| JsError::new(&e.to_string()))
     }
 
-    /// Render the map as its borders stood at the end of `year` (the
-    /// time-slider). Polity territory is reconstructed from the recorded
-    /// territorial timeline; everything else (terrain, settlements, labels) is
-    /// the present state. Cheap — call repeatedly while scrubbing.
+    /// Render the map as it stood at the end of `year` (the time-slider). Polity
+    /// territory is reconstructed from the recorded territorial timeline AND the
+    /// per-cell faith from the diffusion timeline — so scrubbing animates the
+    /// political wash AND the Faith lens. Everything else (terrain, settlements,
+    /// labels) is the present state. Cheap — call repeatedly while scrubbing.
     #[wasm_bindgen(js_name = renderAtYear)]
     pub fn render_at_year(&mut self, style: &str, year: i32) -> Result<String, JsError> {
         let style = Style::from_str(style).map_err(|e| JsError::new(&e))?;
-        let past = self.inner.control_at_year(year);
-        let saved = std::mem::replace(&mut self.inner.society.control, past);
+        let past_control = self.inner.control_at_year(year);
+        let past_faith = self.inner.religion_at_year(year);
+        let saved_control = std::mem::replace(&mut self.inner.society.control, past_control);
+        let saved_faith = std::mem::replace(&mut self.inner.religions.religion_id, past_faith);
         let svg = mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e));
-        self.inner.society.control = saved; // restore the present
+        self.inner.society.control = saved_control; // restore the present
+        self.inner.religions.religion_id = saved_faith;
         svg
     }
 
     /// `[start, end]` years for the time-slider — `start` at the founding map,
-    /// `end` at the present — or an empty array if borders never moved (so the
-    /// frontend can hide the slider).
+    /// `end` at the present — or an empty array if nothing ever changed (so the
+    /// frontend can hide the slider). Spans BOTH timelines (conquest + faith
+    /// diffusion), so a faith that keeps spreading after the last war still
+    /// extends the scrubbable range.
     #[wasm_bindgen(js_name = historyYears)]
     pub fn history_years(&self) -> Vec<i32> {
-        match self.inner.border_change_year_span() {
+        match self.inner.replay_year_span() {
             Some((_, last)) => vec![0, last],
             None => Vec::new(),
         }
