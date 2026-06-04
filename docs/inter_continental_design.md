@@ -134,8 +134,10 @@ web a curious player can trace — without breaking determinism or the time-slid
    derivation — the gyre value is a scalar sense, not a 2D vector; reconstructing a
    tangential direction is real but small work). `fmath::atan2` exists, but
    dot-products are cheaper and avoid the transcendental.
-4. **`TradeRouteOpened` + `EmbargoImposed` EventKinds already exist but are
-   unused** (event.rs:44-45).
+4. **`TradeRouteOpened` is now LIVE** (shipped 2026-06-03, `loops/trade.rs`): the
+   `Trade` loop opens an inter-continental route when two distinct realms hold a
+   crossable lane, lifting both partners' Turchin capacity. **`EmbargoImposed`
+   remains unused** (event.rs:45) — the lone remaining Phase-2 item.
 5. **The payoff has no surface today.** The narrator's `select_focal` is
    *war-first categorical* (narrates a contact event only if zero wars exist — i.e.
    never); the time-slider renders **control only**, no event markers; the

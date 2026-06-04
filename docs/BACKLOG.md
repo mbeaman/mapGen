@@ -129,11 +129,19 @@ scale (zoom out)" below), in priority order:
   swaps it in alongside control, and `replay_year_span` widens the slider to cover
   faith. Scrubbing with the Faith lens on now animates the spread (data + replay +
   render tests, all mutation-verified; e2e `planet Faith slider …` on seed 9 @ 2000).
-- **Next:** the remaining deferred-within-arc polish (see `docs/CLAIMS.md`): trade
-  diffusion (`TradeRouteOpened` → Turchin capacity); embargoes. Phase 1 Step 3b
-  (wind-aware anisotropic lane cost) was never built — the carriers ride the
-  isotropic 3a substrate; revive only if lanes look too symmetric to read as
-  wind-driven. Or move to Phase 3 (`inter_continental_design.md`).
+- ~~Phase 2 trade diffusion~~ DONE 2026-06-03 (`82d924d`) — a `Trade` loop
+  (`LoopId::Trade`, last in ORDER) opens an inter-continental route the first year
+  two distinct realms hold a crossable lane, emitting `TradeRouteOpened` and
+  lifting BOTH partners' Turchin capacity (`effective_capacity` = territory +
+  `trade_bonus`, re-composed at every conquest/colonization recompute so a border
+  change can't erase it). No schema bump — SimState-only state, byte-identical
+  no-op on seed42. Data + loop-targeting + composition tests, all mutation-verified
+  (`trade_claims.rs` + `loops/trade.rs`). Surfacing deferred to Phase 3.
+- **Next:** the lone remaining Phase-2 item is **embargoes** (`EmbargoImposed` on
+  hostiles — the dual of trade). Then Phase 3 (`inter_continental_design.md`): the
+  trade/faith *surfacing* (a prosperity overlay + narrator/arc weaving). Phase 1
+  Step 3b (wind-aware anisotropic lane cost) was never built — the carriers ride
+  the isotropic 3a substrate; revive only if lanes look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
