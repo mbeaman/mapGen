@@ -144,12 +144,21 @@ scale (zoom out)" below), in priority order:
   beachhead-monopolized lane is still caught; `trade_routes` is now a map → exact
   reversal. Data (`EmbargoImposed` on every crossing seed, `embargo ≤ trade`) +
   loop targeting test, mutation-verified. No schema bump.
-- **Phase 2 mechanics COMPLETE** — Diffusion, Faith replay, trade, embargo all
-  shipped. **Next: Phase 3** (`inter_continental_design.md`) — the *surfacing* of
-  the Phase-2 society sim: a prosperity/trade overlay (capacity/population would
-  need a `WorldData` channel — a small schema add) and narrator/arc weaving of the
-  `TradeRouteOpened`/`EmbargoImposed`/diffusion threads. Aside still open: Phase 1
-  Step 3b (wind-aware anisotropic lane cost) was never built — revive only if lanes
+- **Phase 2 mechanics COMPLETE** — Diffusion, Faith replay, trade, embargo.
+- ~~Phase 3 surfacing — increment 1~~ DONE 2026-06-03 (`73659b4`+`b38f7ef`+`e892a49`
+  feats, `28638bf` review fixes) — built in PARALLEL by 3 worktree-isolated agents
+  (a `Workflow` fan-out), then integrated (cherry-pick + conflict resolution) and
+  adversarially reviewed (a second Workflow: 4 finders + per-finding verify → 4
+  confirmed findings, all fixed + mutation-verified). Shipped: **prosperity heatmap**
+  (`Nation::prosperity` channel, schema v21 + goldens re-anchored; per-realm
+  choropleth on planet + ornate), **trade-route lens** (crossable lanes drawn on the
+  planisphere + ornate), **chronicle weaving** (`auto-contact` focal selector). See
+  the "Phase 3 surfacing" section in `docs/CLAIMS.md`.
+- **Next: Phase 3 continued** — the deeper narrative surfacing the focal selector
+  only opened the door to: narrator/arc WEAVING of the `TradeRouteOpened`/
+  `EmbargoImposed`/diffusion threads into multi-event arcs (not just a single focal
+  pick), and first-contact beats (plague/contact events on a crossing). Aside still
+  open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only if lanes
   look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
