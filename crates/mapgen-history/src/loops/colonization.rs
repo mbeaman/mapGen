@@ -96,11 +96,11 @@ impl CausalLoop for Colonization {
                 ctx.world.society.control[cell_i] = Some(a as u32);
                 // The colony added a coastal cell to `a` — Turchin's carrying
                 // capacity must track the new territory (the sibling beachhead
-                // does the same after a conquest). Colonization is last in ORDER,
-                // so this year's other loops already ran, but every SUBSEQUENT
-                // year's Turchin reads this capacity, and Turchin never recomputes
-                // it itself.
-                ctx.state.capacity[a] = crate::polity_capacity(ctx.world, a);
+                // does the same after a conquest), re-composing `a`'s trade bonus
+                // so the colony doesn't erase it. Every SUBSEQUENT year's Turchin
+                // reads this capacity, and Turchin never recomputes it itself.
+                let cap = crate::effective_capacity(ctx.world, ctx.state, a);
+                ctx.state.capacity[a] = cap;
 
                 // Record the colony for the chronicle (CityFounded), attributed
                 // to the founding realm's ruler if it has one.

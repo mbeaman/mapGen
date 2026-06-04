@@ -116,6 +116,16 @@ pub struct SimState {
     /// spreads a religion (the Faith time-slider). Moved into
     /// `world.history.faith_changes` after the sim.
     pub faith_changes: Vec<mapgen_core::history::FaithChange>,
+    /// Inter-continental trade routes that have opened — each an ordered polity
+    /// pair `(a < b)` connected by a crossable sea lane. Tracked so a route's
+    /// `TradeRouteOpened` milestone + capacity bonus fire exactly ONCE (the Trade
+    /// loop). Scratch only; the events persist, this set does not.
+    pub trade_routes: std::collections::BTreeSet<(u32, u32)>,
+    /// Per-polity accumulated trade capacity bonus (economic reach of its open
+    /// routes, on top of the territorial [`capacity`]). Re-added at every capacity
+    /// recompute (conquest / colonization) so a border change can't wipe a realm's
+    /// trade prosperity. [`capacity`]: Self::capacity
+    pub trade_bonus: Vec<f32>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -261,6 +271,8 @@ impl SimState {
             schism_parent: Vec::new(),
             border_changes: Vec::new(),
             faith_changes: Vec::new(),
+            trade_routes: std::collections::BTreeSet::new(),
+            trade_bonus: vec![0.0; n_pol],
         }
     }
 }
@@ -324,6 +336,14 @@ pub(crate) fn polity_capacity(world: &WorldData, pid: usize) -> f32 {
         .map(|c| cell_capacity(world.climate.biome.get(c).copied().unwrap_or(0)))
         .sum();
     raw * agriculture_factor(world, pid)
+}
+
+/// A polity's full carrying capacity: its territorial [`polity_capacity`] plus the
+/// trade bonus its open routes carry. THE single recompute used wherever territory
+/// changes (conquest, colonization) — composing the trade bonus back in here is
+/// what keeps a border change from silently erasing a realm's trade prosperity.
+pub(crate) fn effective_capacity(world: &WorldData, state: &SimState, pid: usize) -> f32 {
+    polity_capacity(world, pid) + state.trade_bonus.get(pid).copied().unwrap_or(0.0)
 }
 
 /// The founding culture's military skill (0..100; 40 if unknown) — the martial

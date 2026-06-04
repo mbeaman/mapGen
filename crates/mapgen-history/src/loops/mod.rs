@@ -18,6 +18,7 @@ pub mod khaldun;
 pub mod mearsheimer;
 pub mod schism;
 pub mod succession;
+pub mod trade;
 pub mod turchin;
 
 /// Stable identifier for each causal loop. Like [`mapgen_core::Stage`], the
@@ -36,11 +37,12 @@ pub enum LoopId {
     Hero = 6,
     Colonization = 7,
     Diffusion = 8,
+    Trade = 9,
 }
 
 /// The fixed per-year execution order. Determinism depends on this order being
 /// stable; append new loops at the end. Must match [`default_loops`].
-pub const ORDER: [LoopId; 8] = [
+pub const ORDER: [LoopId; 9] = [
     LoopId::Turchin,
     LoopId::Khaldun,
     LoopId::Mearsheimer,
@@ -49,6 +51,7 @@ pub const ORDER: [LoopId; 8] = [
     LoopId::Hero,
     LoopId::Colonization,
     LoopId::Diffusion,
+    LoopId::Trade,
 ];
 
 /// Everything a loop may touch during one yearly tick. The driver builds a
@@ -86,6 +89,7 @@ pub fn default_loops() -> Vec<Box<dyn CausalLoop>> {
         Box::new(hero::Hero),
         Box::new(colonization::Colonization),
         Box::new(diffusion::Diffusion),
+        Box::new(trade::Trade),
     ];
     loops
 }

@@ -17,7 +17,7 @@ use rand_chacha::rand_core::RngCore;
 
 use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
-use crate::{polity_capacity, polity_cell_count, polity_military, unit_f32, SimState};
+use crate::{effective_capacity, polity_cell_count, polity_military, unit_f32, SimState};
 
 /// Per-polity yearly chance to press a dynastic claim on a neighbour.
 const CLAIM_PROB: f32 = 0.012;
@@ -444,9 +444,12 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Cross
         .patients(&[l_ruler])
         .causes(&[battle_ev])
         .push(ctx.world);
-        // Borders moved — Turchin's capacity must track the new territory.
-        ctx.state.capacity[w_pid] = polity_capacity(ctx.world, w_pid);
-        ctx.state.capacity[l_pid] = polity_capacity(ctx.world, l_pid);
+        // Borders moved — Turchin's capacity must track the new territory (and
+        // re-compose each realm's trade bonus, so conquest can't erase it).
+        let w_cap = effective_capacity(ctx.world, ctx.state, w_pid);
+        let l_cap = effective_capacity(ctx.world, ctx.state, l_pid);
+        ctx.state.capacity[w_pid] = w_cap;
+        ctx.state.capacity[l_pid] = l_cap;
 
         // If that conquest took the loser's last land, the realm is no more.
         if !ctx.state.dissolved[l_pid] && polity_cell_count(ctx.world, l_pid) == 0 {
