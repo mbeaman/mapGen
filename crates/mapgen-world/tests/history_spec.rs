@@ -43,6 +43,7 @@ fn is_known_kind(k: &EventKind) -> bool {
             | EventKind::Siege
             | EventKind::TreatySigned
             | EventKind::TradeRouteOpened
+            | EventKind::EmbargoImposed
             | EventKind::ClaimAsserted
             | EventKind::Succession
             | EventKind::Schism

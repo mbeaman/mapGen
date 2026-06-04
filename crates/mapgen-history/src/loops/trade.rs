@@ -1,22 +1,32 @@
-//! Trade carrier (The Sundered Lanes, Phase 2). When two DIFFERENT realms come to
-//! hold the two ends of a crossable sea lane, an inter-continental trade route
-//! opens between them: a one-time `TradeRouteOpened` milestone, and a permanent
-//! capacity bonus to BOTH partners (the wealth of the sea trade), so the realms
-//! grow larger through the existing Turchin loop — "trade makes realms grow".
+//! Trade carrier + embargo (The Sundered Lanes, Phase 2). This loop runs the full
+//! lifecycle of an inter-continental sea-trade route:
+//!
+//! - **Open** — when two DIFFERENT, non-belligerent realms come to hold the two
+//!   ends of a crossable lane, a route opens: a one-time `TradeRouteOpened` and a
+//!   capacity bonus to BOTH partners (the wealth of sea trade), so the realms grow
+//!   through the existing Turchin loop ("trade makes realms grow").
+//! - **Embargo** — when a trade pair later goes to war (`SimState::belligerents`,
+//!   set by `mearsheimer::resolve_war`), their route is SEVERED: the exact bonus is
+//!   reversed and an `EmbargoImposed` fires. The severed route never re-opens (the
+//!   belligerent gate), so war permanently poisons that trade tie.
 //!
 //! The economic twin of the other lane carriers (`mearsheimer` seizes the far
 //! shore, `colonization` settles it, `diffusion` converts it); trade instead
-//! *enriches* two realms that merely face each other across the water. It rides
-//! the same trader's-reach gate as faith (`TRADE_NAVAL`, the cheap straits, not
-//! the open-ocean walls).
+//! *enriches* (or, on war, *impoverishes*) two realms that face each other across
+//! the water. It rides the same trader's-reach gate as faith (`TRADE_NAVAL`).
+//!
+//! Severs are iterated over the OPEN routes, not re-scanned from lanes — a won
+//! cross-water war is the beachhead carrier, after which one realm owns both
+//! anchors, so a lane re-scan would hit the exclave guard and miss exactly the
+//! canonical trade-pair war.
 //!
 //! Own loop (`LoopId::Trade`) — appended LAST in `ORDER`, so it can't perturb any
 //! other loop's stream — and a byte-identical no-op on a laneless world (seed42):
-//! no lanes → no routes → no capacity writes and no events. Route opening is
-//! DETERMINISTIC (the first year two distinct owners hold a crossable lane), so
-//! the loop draws no RNG at all.
+//! no lanes → no routes → no capacity writes and no events (the belligerents set
+//! is populated there but never read). Open/sever are DETERMINISTIC, so the loop
+//! draws no RNG at all.
 
-use mapgen_core::EventKind;
+use mapgen_core::{EventKind, WorldData};
 
 use crate::emit::Emit;
 use crate::loops::{CausalLoop, LoopId, TickCtx};
@@ -28,6 +38,15 @@ const TRADE_NAVAL: u8 = 40;
 /// moment it opens — the carrying-capacity lift of sea-trade wealth.
 const TRADE_GAIN: f32 = 0.15;
 
+fn nation_name(world: &WorldData, p: u32) -> String {
+    world
+        .society
+        .nations
+        .get(p as usize)
+        .map(|n| n.name.clone())
+        .unwrap_or_default()
+}
+
 pub struct Trade;
 
 impl CausalLoop for Trade {
@@ -36,9 +55,27 @@ impl CausalLoop for Trade {
     }
 
     fn tick(&mut self, ctx: &mut TickCtx) {
-        // Phase 1 — scan (immutable borrow of `world`): collect routes that are
-        // newly two-owner this year. `(polity_a < polity_b, anchor_cell)`.
-        let mut opened: Vec<(u32, u32, u32)> = Vec::new();
+        // Phase 1 — collect (no event emission yet, to keep `world` borrows clean).
+        //
+        // SEVER: every OPEN route whose pair has gone to war (an embargo). Iterated
+        // over the open routes — NOT re-scanned from lanes — on purpose: a WON
+        // cross-water war is the beachhead carrier, after which one realm owns BOTH
+        // anchors, so a lane re-scan would hit the `pa == pb` exclave guard and miss
+        // exactly the canonical trade-pair war. The route key is control-independent.
+        let to_sever: Vec<((u32, u32), [f32; 2])> = {
+            let belligerents = &ctx.state.belligerents;
+            ctx.state
+                .trade_routes
+                .iter()
+                .filter(|(key, _)| belligerents.contains(*key))
+                .map(|(&k, &bonus)| (k, bonus))
+                .collect()
+        };
+
+        // OPEN: a crossable lane whose two anchors are held by two DISTINCT,
+        // NON-belligerent realms not already trading. The belligerent gate is what
+        // keeps a severed route from re-opening next year ("peaceful" = not at war).
+        let mut to_open: Vec<(u32, u32, u32)> = Vec::new();
         for lane in &ctx.world.sea_lanes.lanes {
             if lane.min_naval > TRADE_NAVAL {
                 continue; // a wall, not a trader's strait
@@ -54,33 +91,53 @@ impl CausalLoop for Trade {
                 continue; // one realm owns both ends (an exclave) — nobody to trade with
             }
             let key = (pa.min(pb), pa.max(pb));
-            if ctx.state.trade_routes.contains(&key)
-                || opened.iter().any(|&(x, y, _)| (x, y) == key)
+            if ctx.state.belligerents.contains(&key) {
+                continue; // enemies don't trade (and a severed route never re-opens)
+            }
+            if ctx.state.trade_routes.contains_key(&key)
+                || to_open.iter().any(|&(x, y, _)| (x, y) == key)
             {
                 continue; // already open (or the same pair on a second lane this scan)
             }
-            opened.push((key.0, key.1, lane.a));
+            to_open.push((key.0, key.1, lane.a));
         }
 
-        // Phase 2 — apply (mutable borrow of `world`): record the route, lift both
-        // partners' capacity, and emit the milestone.
+        // Phase 2 — apply.
         let year = ctx.year;
-        for (pa, pb, cell) in opened {
-            ctx.state.trade_routes.insert((pa, pb));
-            for &p in &[pa, pb] {
-                let pi = p as usize;
-                let bonus = TRADE_GAIN * ctx.state.capacity[pi];
-                ctx.state.trade_bonus[pi] += bonus;
-                ctx.state.capacity[pi] += bonus;
-            }
-            let name = |p: u32| {
-                ctx.world
-                    .society
-                    .nations
-                    .get(p as usize)
-                    .map(|n| n.name.clone())
-                    .unwrap_or_default()
-            };
+        for ((pa, pb), [ba, bb]) in to_sever {
+            ctx.state.trade_routes.remove(&(pa, pb));
+            ctx.state.trade_bonus[pa as usize] -= ba;
+            ctx.state.capacity[pa as usize] -= ba;
+            ctx.state.trade_bonus[pb as usize] -= bb;
+            ctx.state.capacity[pb as usize] -= bb;
+            let cell = ctx
+                .world
+                .society
+                .nations
+                .get(pa as usize)
+                .map(|n| n.capital_cell)
+                .unwrap_or(0);
+            Emit::new(
+                year,
+                EventKind::EmbargoImposed,
+                cell,
+                0.45,
+                format!(
+                    "War severed the sea-trade route between {} and {}.",
+                    nation_name(ctx.world, pa),
+                    nation_name(ctx.world, pb)
+                ),
+            )
+            .push(ctx.world);
+        }
+        for (pa, pb, cell) in to_open {
+            let bonus_a = TRADE_GAIN * ctx.state.capacity[pa as usize];
+            let bonus_b = TRADE_GAIN * ctx.state.capacity[pb as usize];
+            ctx.state.trade_bonus[pa as usize] += bonus_a;
+            ctx.state.capacity[pa as usize] += bonus_a;
+            ctx.state.trade_bonus[pb as usize] += bonus_b;
+            ctx.state.capacity[pb as usize] += bonus_b;
+            ctx.state.trade_routes.insert((pa, pb), [bonus_a, bonus_b]);
             Emit::new(
                 year,
                 EventKind::TradeRouteOpened,
@@ -88,8 +145,8 @@ impl CausalLoop for Trade {
                 0.40,
                 format!(
                     "A sea-trade route opened between {} and {}.",
-                    name(pa),
-                    name(pb)
+                    nation_name(ctx.world, pa),
+                    nation_name(ctx.world, pb)
                 ),
             )
             .push(ctx.world);
@@ -139,6 +196,14 @@ mod tests {
             .count()
     }
 
+    fn embargo_events(w: &WorldData) -> usize {
+        w.events
+            .events
+            .iter()
+            .filter(|e| matches!(e.kind, EventKind::EmbargoImposed))
+            .count()
+    }
+
     fn tick(trade: &mut Trade, w: &mut WorldData, st: &mut SimState, year: i32) {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
         let mut ctx = TickCtx {
@@ -171,7 +236,7 @@ mod tests {
         assert_eq!(st.trade_bonus[1], TRADE_GAIN * before[1]);
         assert_eq!(st.trade_bonus[2], 0.0);
         assert_eq!(
-            st.trade_routes.iter().copied().collect::<Vec<_>>(),
+            st.trade_routes.keys().copied().collect::<Vec<_>>(),
             vec![(0, 1)]
         );
         assert_eq!(trade_events(&w), 1);
@@ -232,5 +297,63 @@ mod tests {
             eff, territorial,
             "the bonus must lift capacity above territory"
         );
+    }
+
+    #[test]
+    fn war_embargoes_only_the_belligerents_route() {
+        // Embargo (the dual of trade): when a trade pair goes to war, THEIR route is
+        // severed — its exact bonus reversed, an `EmbargoImposed` emitted — while a
+        // peaceful route between other realms is left untouched. The discriminator is
+        // TARGETING (a broken sever-condition would cut the wrong route or all of
+        // them) — the vacuous sundered-seed guard can't catch that.
+        let mut w = WorldData::default();
+        w.society.nations = vec![Nation::default(); 4];
+        w.society.control = (0..4u32).map(Some).collect();
+        w.sea_lanes.lanes = vec![
+            SeaLane {
+                a: 0,
+                b: 1,
+                cost: 1.0,
+                min_naval: 30,
+            },
+            SeaLane {
+                a: 2,
+                b: 3,
+                cost: 1.0,
+                min_naval: 30,
+            },
+        ];
+        let mut st = state(vec![100.0, 200.0, 50.0, 80.0]);
+
+        // Both routes open in peace.
+        tick(&mut Trade, &mut w, &mut st, 5);
+        assert_eq!(trade_events(&w), 2);
+        let open_cap = st.capacity.clone();
+        let open_bonus = st.trade_bonus.clone();
+
+        // War breaks out between 0 and 1 → embargo severs their route only.
+        st.belligerents.insert((0, 1));
+        tick(&mut Trade, &mut w, &mut st, 6);
+        assert_eq!(st.capacity[0], open_cap[0] - open_bonus[0]); // exact reversal
+        assert_eq!(st.capacity[1], open_cap[1] - open_bonus[1]);
+        assert_eq!(st.capacity[2], open_cap[2], "peaceful route untouched");
+        assert_eq!(st.capacity[3], open_cap[3], "peaceful route untouched");
+        assert_eq!(st.trade_bonus[0], 0.0);
+        assert_eq!(st.trade_bonus[1], 0.0);
+        assert_eq!(
+            st.trade_routes.keys().copied().collect::<Vec<_>>(),
+            vec![(2, 3)],
+            "only the belligerents' route is severed"
+        );
+        assert_eq!(embargo_events(&w), 1);
+
+        // A severed route does NOT re-open while the pair remains at war.
+        tick(&mut Trade, &mut w, &mut st, 7);
+        assert_eq!(
+            st.trade_routes.keys().copied().collect::<Vec<_>>(),
+            vec![(2, 3)]
+        );
+        assert_eq!(trade_events(&w), 2, "severed route must not re-open");
+        assert_eq!(embargo_events(&w), 1, "must not re-embargo a gone route");
     }
 }

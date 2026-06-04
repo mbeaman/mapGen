@@ -116,16 +116,21 @@ pub struct SimState {
     /// spreads a religion (the Faith time-slider). Moved into
     /// `world.history.faith_changes` after the sim.
     pub faith_changes: Vec<mapgen_core::history::FaithChange>,
-    /// Inter-continental trade routes that have opened — each an ordered polity
-    /// pair `(a < b)` connected by a crossable sea lane. Tracked so a route's
-    /// `TradeRouteOpened` milestone + capacity bonus fire exactly ONCE (the Trade
-    /// loop). Scratch only; the events persist, this set does not.
-    pub trade_routes: std::collections::BTreeSet<(u32, u32)>,
+    /// Open inter-continental trade routes, keyed by ordered polity pair `(a < b)`,
+    /// valued by the capacity bonus each end was granted (`[bonus_a, bonus_b]`) so
+    /// an embargo can reverse EXACTLY what the route added. A route opens once (its
+    /// `TradeRouteOpened` + bonus) and is removed when embargoed. Scratch only; the
+    /// events persist, this map does not. (The Trade loop.)
+    pub trade_routes: std::collections::BTreeMap<(u32, u32), [f32; 2]>,
     /// Per-polity accumulated trade capacity bonus (economic reach of its open
     /// routes, on top of the territorial [`capacity`]). Re-added at every capacity
     /// recompute (conquest / colonization) so a border change can't wipe a realm's
     /// trade prosperity. [`capacity`]: Self::capacity
     pub trade_bonus: Vec<f32>,
+    /// Ordered polity pairs `(a < b)` that have gone to war — the embargo signal.
+    /// A sea-trade route between belligerents is severed (and never re-opens); set
+    /// by `mearsheimer::resolve_war`, read by the Trade loop. Scratch only.
+    pub belligerents: std::collections::BTreeSet<(u32, u32)>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -271,8 +276,9 @@ impl SimState {
             schism_parent: Vec::new(),
             border_changes: Vec::new(),
             faith_changes: Vec::new(),
-            trade_routes: std::collections::BTreeSet::new(),
+            trade_routes: std::collections::BTreeMap::new(),
             trade_bonus: vec![0.0; n_pol],
+            belligerents: std::collections::BTreeSet::new(),
         }
     }
 }

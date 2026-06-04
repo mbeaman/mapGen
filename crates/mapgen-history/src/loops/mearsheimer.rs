@@ -292,6 +292,12 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Cross
     else {
         return;
     };
+    // Record the belligerent pair so the Trade loop can embargo any sea-trade route
+    // between them (war poisons trade). A pure SimState write — no RNG, no event —
+    // so it can't shift the seed42 golden (which has wars but no lanes to embargo).
+    ctx.state
+        .belligerents
+        .insert((a.min(b) as u32, a.max(b) as u32));
     let pa = war_power(ctx.world, ctx.state, a);
     let pb = war_power(ctx.world, ctx.state, b);
     let cell = ctx.world.society.nations[a].capital_cell;
