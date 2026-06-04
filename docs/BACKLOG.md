@@ -137,11 +137,20 @@ scale (zoom out)" below), in priority order:
   change can't erase it). No schema bump — SimState-only state, byte-identical
   no-op on seed42. Data + loop-targeting + composition tests, all mutation-verified
   (`trade_claims.rs` + `loops/trade.rs`). Surfacing deferred to Phase 3.
-- **Next:** the lone remaining Phase-2 item is **embargoes** (`EmbargoImposed` on
-  hostiles — the dual of trade). Then Phase 3 (`inter_continental_design.md`): the
-  trade/faith *surfacing* (a prosperity overlay + narrator/arc weaving). Phase 1
-  Step 3b (wind-aware anisotropic lane cost) was never built — the carriers ride
-  the isotropic 3a substrate; revive only if lanes look too symmetric.
+- ~~Phase 2 embargoes~~ DONE 2026-06-03 (`5a8f2f3`) — the dual of trade: when a
+  trade pair goes to war (`mearsheimer::resolve_war` → `SimState::belligerents`),
+  the Trade loop SEVERS their route, reversing the exact bonus and emitting
+  `EmbargoImposed`. Severs iterate the open routes (not a lane re-scan), so a
+  beachhead-monopolized lane is still caught; `trade_routes` is now a map → exact
+  reversal. Data (`EmbargoImposed` on every crossing seed, `embargo ≤ trade`) +
+  loop targeting test, mutation-verified. No schema bump.
+- **Phase 2 mechanics COMPLETE** — Diffusion, Faith replay, trade, embargo all
+  shipped. **Next: Phase 3** (`inter_continental_design.md`) — the *surfacing* of
+  the Phase-2 society sim: a prosperity/trade overlay (capacity/population would
+  need a `WorldData` channel — a small schema add) and narrator/arc weaving of the
+  `TradeRouteOpened`/`EmbargoImposed`/diffusion threads. Aside still open: Phase 1
+  Step 3b (wind-aware anisotropic lane cost) was never built — revive only if lanes
+  look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
