@@ -28,9 +28,11 @@
 > confinement → history diffusion) is done, AND surfaced: a **Faith lens** (the
 > "faith" overlay/preset) renders the per-religion `planet-faith` wash, swapping
 > the political wash out under `on-faith` — so a faith spanning continents is
-> visible on the map (`faith_overlay.rs` + the lens e2e). Minor residual: the
-> faith wash is the present distribution, not animated over years (no faith
-> replay channel — the slider replays political control only).
+> visible on the map (`faith_overlay.rs` + the lens e2e). AND it now REPLAYS over
+> years (2026-06-03): the Diffusion loop records a `faith_changes` timeline (v20),
+> `WorldData::religion_at_year` reconstructs the past faith map, and wasm
+> `renderAtYear` swaps it in alongside control so scrubbing the slider animates the
+> spread (`diffusion_claims.rs` replay test + the `planet Faith slider` e2e).
 >
 > ## ✅ CARRIER SHIPPED (2026-06-02) — earned cross-water conquest works.
 >

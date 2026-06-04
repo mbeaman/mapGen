@@ -122,12 +122,18 @@ scale (zoom out)" below), in priority order:
   `layer-faith`), a `faith` overlay + preset, swapped in under `on-faith`. Render
   test pins the planet wash surfaces every faith that crossed water; e2e pins the
   continental display swap. Both mutation-verified.
-- **Next:** the deferred-within-arc polish (see `docs/CLAIMS.md` deferred list):
-  a faith-*replay* channel (animate the wash over years, not just the present
-  distribution); trade diffusion (`TradeRouteOpened` → Turchin capacity);
-  embargoes. Phase 1 Step 3b (wind-aware anisotropic lane cost) was never built —
-  the carriers ride the isotropic 3a substrate; revive only if lanes look too
-  symmetric to read as wind-driven.
+- ~~Phase 2 replay — the Faith time-slider~~ DONE 2026-06-03 (`639f7ae`+`424a73b`)
+  — the Diffusion loop records a `faith_changes` timeline (schema v20, byte-
+  invisible on seed42 so the goldens held as a non-perturbation proof);
+  `WorldData::religion_at_year` reconstructs the past faith map; wasm `renderAtYear`
+  swaps it in alongside control, and `replay_year_span` widens the slider to cover
+  faith. Scrubbing with the Faith lens on now animates the spread (data + replay +
+  render tests, all mutation-verified; e2e `planet Faith slider …` on seed 9 @ 2000).
+- **Next:** the remaining deferred-within-arc polish (see `docs/CLAIMS.md`): trade
+  diffusion (`TradeRouteOpened` → Turchin capacity); embargoes. Phase 1 Step 3b
+  (wind-aware anisotropic lane cost) was never built — the carriers ride the
+  isotropic 3a substrate; revive only if lanes look too symmetric to read as
+  wind-driven. Or move to Phase 3 (`inter_continental_design.md`).
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
