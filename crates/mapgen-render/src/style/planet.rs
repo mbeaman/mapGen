@@ -35,6 +35,7 @@ pub fn render(world: &WorldData) -> String {
     out.push_str(&FONT_FACE_BLOCK);
     out.push_str(FAITH_LENS_STYLE);
     out.push_str(PROSPERITY_LENS_STYLE);
+    out.push_str(TRADE_LENS_STYLE);
     out.push_str(
         r##"<radialGradient id="parchment" cx="50%" cy="50%" r="75%">
 <stop offset="0%" stop-color="#f0e3bf"/>
@@ -70,6 +71,10 @@ pub fn render(world: &WorldData) -> String {
     // population — the trade/embargo growth payoff made visible. See
     // PROSPERITY_LENS_STYLE.
     render_prosperity(world, &proj, &mut out);
+    // The Trade lens (off by default). Toggling "trade" swaps the political wash
+    // out and the crossable sea lanes in — see TRADE_LENS_STYLE. Drawn over the
+    // fill (so the lanes sit on the sea), under the linework.
+    render_trade_routes(world, &proj, &mut out);
     render_coast(world, &proj, &mut out);
     render_graticule(&proj, &mut out);
     render_major_rivers(world, &proj, &mut out);
@@ -131,6 +136,15 @@ fn prosperity_color(t: f32) -> [u8; 3] {
     let mix = |a: f32, b: f32| (a + (b - a) * f).round().clamp(0.0, 255.0) as u8;
     [mix(c0[0], c1[0]), mix(c0[1], c1[1]), mix(c0[2], c1[2])]
 }
+
+/// CSS for the Trade lens — the render-only counterpart of the Faith lens, but
+/// drawing the inter-continental sea lanes (the "Sundered Lanes") rather than a
+/// per-cell wash. Mirrors [`FAITH_LENS_STYLE`]: under the root `on-trade` class
+/// (set by the frontend layer toggle) the political wash + realms legend hide and
+/// the `planet-trade` lane group appears. `planet-trade` carries `display="none"`
+/// so a class-less rasterize (resvg, which ignores selectors) keeps the political
+/// baseline by default. No companion legend — the lanes carry their own meaning.
+const TRADE_LENS_STYLE: &str = r##"<style>svg.on-trade .planet-political,svg.on-trade .nation-legend{display:none}svg.on-trade .planet-trade{display:inline}</style>"##;
 
 /// Per-cell fill: land in its biome colour (matching the ornate detailed view),
 /// sea shaded by depth so basins and shelves read.
@@ -547,6 +561,45 @@ fn render_faith(world: &WorldData, proj: &Proj, out: &mut String) {
     }
     out.push_str("</g>");
 }
+
+/// The Trade lens: every *crossable* inter-continental sea lane drawn as a line
+/// between the projected positions of its two coastal anchor cells (`lane.a`,
+/// `lane.b`). "Crossable" = a lane whose `min_naval` gate is within reach of a
+/// seafaring polity (`<= MAX_CROSSABLE_NAVAL`), so the wash shows the lanes that
+/// actually bind the continents, not the impassable abysses. `display="none"` by
+/// default; the `on-trade` lens reveals it (and hides the political wash —
+/// TRADE_LENS_STYLE). Uses the SAME `Proj` the political wash uses to place cells,
+/// so the lane endpoints land exactly on their anchor coasts.
+fn render_trade_routes(world: &WorldData, proj: &Proj, out: &mut String) {
+    let mesh = &world.mesh;
+    // Stroke + width live on the parent group so each <line> stays terse; a warm
+    // carmine that reads over both the sea shading and the biome continents.
+    out.push_str(
+        r##"<g class="planet-trade" display="none" fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
+    );
+    for lane in &world.sea_lanes.lanes {
+        if lane.min_naval > MAX_CROSSABLE_NAVAL {
+            continue; // an abyss no seafarer of this world reaches — not "crossable"
+        }
+        let (a, b) = (lane.a as usize, lane.b as usize);
+        let (Some(&pa), Some(&pb)) = (mesh.sites.get(a), mesh.sites.get(b)) else {
+            continue;
+        };
+        let (x1, y1) = proj.project(pa[0], pa[1]);
+        let (x2, y2) = proj.project(pb[0], pb[1]);
+        write!(
+            out,
+            r##"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}"/>"##
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
+}
+
+/// The naval-skill gate below which a sea lane is "crossable" for the Trade lens
+/// — a seafaring polity can use it. Lanes above this are impassable abysses we
+/// don't draw. Pinned by `trade_overlay.rs` (the render test reuses this literal).
+const MAX_CROSSABLE_NAVAL: u8 = 40;
 
 /// Faiths legend (SW corner, the same slot as the realms legend — mutually
 /// exclusive via the lens CSS, so they may share it). `display="none"` until the

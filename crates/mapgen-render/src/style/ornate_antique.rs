@@ -128,6 +128,7 @@ pub fn render(world: &WorldData) -> String {
     layer(&mut out, "prosperity", true, |o| {
         render_prosperity(world, o)
     });
+    layer(&mut out, "trade", true, |o| render_trade_routes(world, o));
     layer(&mut out, "climate", true, |o| render_climate(world, o));
     layer(&mut out, "relief", true, |o| render_relief(world, o));
     layer(&mut out, "precip", true, |o| render_precip(world, o));
@@ -222,6 +223,7 @@ svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coa
 svg.on-political .layer-political{display:inline !important}
 svg.on-faith .layer-faith{display:inline !important}
 svg.on-prosperity .layer-prosperity,svg.on-prosperity .legend-prosperity{display:inline !important}
+svg.on-trade .layer-trade{display:inline !important}
 svg.on-climate .layer-climate,svg.on-climate .legend-climate{display:inline !important}
 svg.on-relief .layer-relief,svg.on-relief .legend-relief{display:inline !important}
 svg.on-precip .layer-precip,svg.on-precip .legend-precip{display:inline !important}
@@ -306,6 +308,37 @@ fn render_faith(world: &WorldData, out: &mut String) {
         )
         .unwrap();
     }
+}
+
+/// Trade-routes overlay (a data layer, off by default): every crossable
+/// inter-continental sea lane drawn as a line between its two coastal anchor
+/// cells, in this view's raw world coordinates. The maritime substrate
+/// (`sea_lanes`) is a planet-scale product — a continental / refined-sector world
+/// carries none, so this group is typically empty here (the planet view is where
+/// the Sundered Lanes read). The `layer()` wrapper still emits the group, which
+/// `atlas.rs` requires and the `on-trade` lens reveals; it simply draws whatever
+/// lanes fall in range. Mirrors the planet `render_trade_routes`.
+fn render_trade_routes(world: &WorldData, out: &mut String) {
+    let mesh = &world.mesh;
+    out.push_str(
+        r##"<g fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
+    );
+    for lane in &world.sea_lanes.lanes {
+        if lane.min_naval > 40 {
+            continue; // not crossable — an abyss no seafarer of this world reaches
+        }
+        let (a, b) = (lane.a as usize, lane.b as usize);
+        let (Some(&pa), Some(&pb)) = (mesh.sites.get(a), mesh.sites.get(b)) else {
+            continue;
+        };
+        write!(
+            out,
+            r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+            pa[0], pa[1], pb[0], pb[1]
+        )
+        .unwrap();
+    }
+    out.push_str("</g>");
 }
 
 // ---- Data overlays (off by default; revealed by `on-<name>` root classes) ----

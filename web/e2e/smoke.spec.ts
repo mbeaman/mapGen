@@ -84,6 +84,33 @@ test("the Prosperity lens swaps in the prosperity wash", async ({ page }) => {
   await expect(prosperityLayer).toHaveCSS("display", "inline", { timeout: 10_000 });
 });
 
+// The Trade lens (the "Sundered Lanes" surfaced): the "Trade" overlay comes from
+// the shared layer manifest, and toggling it (via the "Trade" preset button) sets
+// the root `on-trade` class. Like the Faith test, this runs at the DEFAULT scale
+// (continental) + style (ornate), so the gate it exercises is the ornate
+// LAYER_STYLE rule `svg.on-trade .layer-trade{display:inline}` — NOT the
+// planet-scale TRADE_LENS_STYLE (.planet-political→.planet-trade), which the Rust
+// render test trade_overlay.rs pins. We assert the actual reveal: the
+// off-by-default `.layer-trade` group flips computed display none→inline.
+// Asserting only the `on-trade` class would pass green even if the CSS gate were
+// mistyped and revealed nothing — so we pin the swap, not just the wiring.
+test("the Trade lens swaps in the sea lanes", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+
+  // Off by default: the ornate trade layer ships `display="none"`.
+  const tradeLayer = svg.locator(".layer-trade");
+  await expect(tradeLayer).toHaveCSS("display", "none");
+
+  await page.locator("#layers-panel summary").click();
+  await page.getByRole("button", { name: "Trade", exact: true }).click();
+
+  // The toggle fired (root class) AND the gate revealed the layer (display swap).
+  await expect(svg).toHaveClass(/on-trade/, { timeout: 10_000 });
+  await expect(tradeLayer).toHaveCSS("display", "inline", { timeout: 10_000 });
+});
+
 // width/height of the live SVG's viewBox. The planet preset is a 2:1 globe
 // (2048×1024 → aspect 2.0); a continent is 2048×1280 → 1.6. So aspect > 1.8 is
 // a render signal that the planet preset actually produced this map — not just

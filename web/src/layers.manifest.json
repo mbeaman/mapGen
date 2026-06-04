@@ -19,6 +19,12 @@
       "legend": true
     },
     {
+      "name": "trade",
+      "label": "Trade routes",
+      "overlay": true,
+      "legend": false
+    },
+    {
       "name": "climate",
       "label": "Temperature",
       "overlay": true,
@@ -170,6 +176,23 @@
         "settlements",
         "labels",
         "prosperity"
+      ]
+    },
+    {
+      "name": "trade",
+      "label": "Trade",
+      "caption": "The Sundered Lanes — the crossable sea routes that bind the continents.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "roads",
+        "borders",
+        "settlements",
+        "sacred",
+        "labels",
+        "trade"
       ]
     },
     {
