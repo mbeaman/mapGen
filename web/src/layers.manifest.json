@@ -13,6 +13,12 @@
       "legend": false
     },
     {
+      "name": "prosperity",
+      "label": "Prosperity",
+      "overlay": true,
+      "legend": true
+    },
+    {
       "name": "climate",
       "label": "Temperature",
       "overlay": true,
@@ -148,6 +154,22 @@
         "sacred",
         "labels",
         "faith"
+      ]
+    },
+    {
+      "name": "prosperity",
+      "label": "Prosperity",
+      "caption": "Realms graded by final relative population — trade's growth, war's stagnation.",
+      "enabled": [
+        "land",
+        "ocean",
+        "coastline",
+        "rivers",
+        "roads",
+        "borders",
+        "settlements",
+        "labels",
+        "prosperity"
       ]
     },
     {

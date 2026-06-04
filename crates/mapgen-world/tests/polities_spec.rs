@@ -241,6 +241,7 @@ fn synthetic_world_with_one_polity() -> WorldData {
         name: "TestRealm".into(),
         capital_cell: 0,
         color: [200, 100, 100],
+        ..Default::default()
     }];
     world.society.settlements = vec![
         Settlement {

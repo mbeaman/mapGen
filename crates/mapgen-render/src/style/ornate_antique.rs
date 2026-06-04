@@ -104,6 +104,7 @@ pub fn render(world: &WorldData) -> String {
     write_legend_gradient(&mut out, "thermal", &THERMAL);
     write_legend_gradient(&mut out, "hypso", &HYPSO);
     write_legend_gradient(&mut out, "precip", &PRECIP);
+    write_legend_gradient(&mut out, "prosperity", &PROSPERITY);
     out.push_str("</defs>");
     out.push_str(LAYER_STYLE);
     write!(
@@ -124,6 +125,9 @@ pub fn render(world: &WorldData) -> String {
     layer(&mut out, "land", false, |o| render_land_fill(world, o));
     layer(&mut out, "political", true, |o| render_political(world, o));
     layer(&mut out, "faith", true, |o| render_faith(world, o));
+    layer(&mut out, "prosperity", true, |o| {
+        render_prosperity(world, o)
+    });
     layer(&mut out, "climate", true, |o| render_climate(world, o));
     layer(&mut out, "relief", true, |o| render_relief(world, o));
     layer(&mut out, "precip", true, |o| render_precip(world, o));
@@ -185,6 +189,13 @@ pub fn render(world: &WorldData) -> String {
             lo: "Arid",
             hi: "Humid",
         },
+        LegendSpec {
+            class: "prosperity",
+            title: "PROSPERITY",
+            grad_id: "prosperity",
+            lo: "Poor",
+            hi: "Rich",
+        },
     ] {
         render_overlay_legend(&mut out, vx, vy, w, h, spec);
     }
@@ -210,6 +221,7 @@ const LAYER_STYLE: &str = r##"<style>
 svg.off-land .layer-land,svg.off-ocean .layer-ocean,svg.off-coastline .layer-coastline,svg.off-rivers .layer-rivers,svg.off-mountains .layer-mountains,svg.off-forests .layer-forests,svg.off-roads .layer-roads,svg.off-borders .layer-borders,svg.off-settlements .layer-settlements,svg.off-sacred .layer-sacred,svg.off-labels .layer-labels{display:none}
 svg.on-political .layer-political{display:inline !important}
 svg.on-faith .layer-faith{display:inline !important}
+svg.on-prosperity .layer-prosperity,svg.on-prosperity .legend-prosperity{display:inline !important}
 svg.on-climate .layer-climate,svg.on-climate .legend-climate{display:inline !important}
 svg.on-relief .layer-relief,svg.on-relief .legend-relief{display:inline !important}
 svg.on-precip .layer-precip,svg.on-precip .legend-precip{display:inline !important}
@@ -338,6 +350,17 @@ const PRECIP: [(f32, [f32; 3]); 4] = [
     (0.7, [106.0, 168.0, 106.0]),
     (1.0, [42.0, 122.0, 106.0]),
 ];
+/// Poor→rich: pale parchment-gold → amber → ember → oxblood. The prosperity ramp
+/// (v21) — a per-realm heatmap of final relative population, so trade's "realms
+/// grow" / embargo's "impoverish" reads at a glance. Already normalized to [0,1]
+/// upstream, so unlike the climate/precip overlays it is sampled directly (no
+/// per-world `field_range` re-normalization).
+const PROSPERITY: [(f32, [f32; 3]); 4] = [
+    (0.0, [238.0, 222.0, 180.0]),
+    (0.4, [222.0, 178.0, 110.0]),
+    (0.7, [196.0, 120.0, 60.0]),
+    (1.0, [140.0, 56.0, 36.0]),
+];
 
 /// Temperature overlay — a cold→hot wash normalized to the world's own min/max,
 /// surfacing the latitude bands + orographic cooling the base map only implies.
@@ -367,6 +390,29 @@ fn render_precip(world: &WorldData, out: &mut String) {
     let span = (hi - lo).max(1e-3);
     fill_cells(world, out, 0.6, |i| {
         precip.get(i).map(|&p| ramp(&PRECIP, (p - lo) / span))
+    });
+}
+
+/// Prosperity overlay (v21) — each controlled land cell tinted by its realm's
+/// final relative prosperity (`nations[control[cell]].prosperity`, already in
+/// [0,1]) through the [`PROSPERITY`] ramp. Unlike the climate/relief/precip
+/// overlays this is keyed by the controlling polity (cell → control → nation), not
+/// a per-cell scalar field, and is sampled DIRECTLY (no `field_range` — the value
+/// is already normalized upstream). Unclaimed land / sea cells get no fill.
+fn render_prosperity(world: &WorldData, out: &mut String) {
+    let control = &world.society.control;
+    if control.is_empty() {
+        return;
+    }
+    let elev = &world.terrain.elevation;
+    let nations = &world.society.nations;
+    fill_cells(world, out, 0.7, |i| {
+        if elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            return None; // land only
+        }
+        let pid = control.get(i).copied().flatten()?;
+        let nation = nations.get(pid as usize)?;
+        Some(ramp(&PROSPERITY, nation.prosperity))
     });
 }
 

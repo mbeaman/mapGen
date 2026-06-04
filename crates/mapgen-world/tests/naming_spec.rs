@@ -221,6 +221,7 @@ fn synthetic_named_world() -> WorldData {
         name: "Kalena".into(), // non-template
         capital_cell: 0,
         color: [128, 128, 128],
+        ..Default::default()
     }];
     world.society.settlements = vec![Settlement {
         name: "Sileka".into(), // non-template

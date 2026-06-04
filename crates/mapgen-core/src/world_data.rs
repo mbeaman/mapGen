@@ -104,7 +104,17 @@ use crate::{
 ///   three goldens hold (a non-perturbation proof), THEN bumping. The three
 ///   goldens re-anchor for the `schema_version` byte alone; the diffusion timeline
 ///   itself is pinned on crossing seeds (which no golden covers).
-pub const SCHEMA_VERSION: u32 = 20;
+/// * v21 — Prosperity heatmap: `Nation::prosperity` — each polity's FINAL relative
+///   population (from the history sim's `SimState::population`, previously discarded
+///   at sim end), normalized to `[0, 1]` by dividing by the world's max final
+///   population (0 if max is 0). It surfaces trade's "realms grow" / embargo's
+///   "impoverish" effect as a per-realm heatmap. Unlike v20 this is NOT a no-op on
+///   seed42: that world has polities with population, so the field is POPULATED and
+///   the goldens genuinely change — there is no non-perturbation proof, the three
+///   goldens are simply RE-ANCHORED (`seed42_full` carries the populated values;
+///   `seed42_phase2`/`seed42_sector` are pre-history snapshots, so their nations
+///   carry the 0.0 default — they re-anchor for the `schema_version` byte alone).
+pub const SCHEMA_VERSION: u32 = 21;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -497,6 +507,12 @@ pub struct Nation {
     pub name: String,
     pub capital_cell: u32,
     pub color: [u8; 3],
+    /// Final relative prosperity in `[0, 1]` (v21) — the polity's last-year
+    /// `SimState::population` normalized by the world's max final population
+    /// (0 if max is 0). Written by the history sim after the year loop; 0.0 on
+    /// pre-history snapshots (phase2/sector) and worlds with no society. Drives
+    /// the prosperity heatmap, surfacing trade's growth / embargo's stagnation.
+    pub prosperity: f32,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

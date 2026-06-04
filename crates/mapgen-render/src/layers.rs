@@ -54,6 +54,7 @@ const fn overlay(name: &'static str, label: &'static str, legend: bool) -> Layer
 pub const LAYERS: &[LayerInfo] = &[
     overlay("political", "Political territory", false),
     overlay("faith", "Faith", false),
+    overlay("prosperity", "Prosperity", true),
     overlay("climate", "Temperature", true),
     overlay("relief", "Elevation", true),
     overlay("precip", "Rainfall", true),
@@ -132,6 +133,22 @@ pub const PRESETS: &[Preset] = &[
             "sacred",
             "labels",
             "faith",
+        ],
+    },
+    Preset {
+        name: "prosperity",
+        label: "Prosperity",
+        caption: "Realms graded by final relative population — trade's growth, war's stagnation.",
+        enabled: &[
+            "land",
+            "ocean",
+            "coastline",
+            "rivers",
+            "roads",
+            "borders",
+            "settlements",
+            "labels",
+            "prosperity",
         ],
     },
     Preset {

@@ -105,6 +105,8 @@ pub fn lay_out(world: &mut WorldData, params: PolitiesParams, _rng: &mut ChaCha8
             name: format!("{} Realm", culture.name),
             capital_cell: capital_cell as u32,
             color: polity_color(polity_id),
+            // Populated by the history sim after its year loop (v21); 0 at gen time.
+            prosperity: 0.0,
         });
         settlements.push(Settlement {
             name: format!("{} Capital", culture.name),

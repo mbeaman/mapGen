@@ -545,11 +545,13 @@ mod tests {
                 name: "A".into(),
                 capital_cell: 0,
                 color: [0, 0, 0],
+                ..Default::default()
             },
             Nation {
                 name: "B".into(),
                 capital_cell: 2,
                 color: [0, 0, 0],
+                ..Default::default()
             },
         ];
         w.society.control = vec![Some(0), Some(0), Some(1), Some(1)];

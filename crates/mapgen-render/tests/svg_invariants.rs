@@ -594,6 +594,7 @@ fn synthetic_world_for_glyph_matrix() -> mapgen_core::WorldData {
                     50 + (polity_idx as u8 * 3),
                     40 + (polity_idx as u8 * 2),
                 ],
+                ..Default::default()
             });
             for (tier_idx, &tier) in TIERS.iter().enumerate() {
                 let cell = (polity_idx * TIERS.len() + tier_idx) as u32;
@@ -812,11 +813,13 @@ fn world_with_two_adjacent_polities() -> mapgen_core::WorldData {
             name: "A".into(),
             capital_cell: 0,
             color: [100, 80, 60],
+            ..Default::default()
         },
         Nation {
             name: "B".into(),
             capital_cell: 1,
             color: [60, 80, 100],
+            ..Default::default()
         },
     ];
     world
@@ -924,11 +927,13 @@ fn world_with_two_crowded_capitals() -> mapgen_core::WorldData {
             name: "A".into(),
             capital_cell: 0,
             color: [100, 80, 60],
+            ..Default::default()
         },
         Nation {
             name: "B".into(),
             capital_cell: 1,
             color: [60, 80, 100],
+            ..Default::default()
         },
     ];
     world.society.settlements = vec![

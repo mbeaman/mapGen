@@ -34,6 +34,7 @@ pub fn render(world: &WorldData) -> String {
     out.push_str("<defs>");
     out.push_str(&FONT_FACE_BLOCK);
     out.push_str(FAITH_LENS_STYLE);
+    out.push_str(PROSPERITY_LENS_STYLE);
     out.push_str(
         r##"<radialGradient id="parchment" cx="50%" cy="50%" r="75%">
 <stop offset="0%" stop-color="#f0e3bf"/>
@@ -65,6 +66,10 @@ pub fn render(world: &WorldData) -> String {
     // The Faith lens (off by default). Toggling "faith" on the frontend swaps the
     // political wash + its legend out and this in — see FAITH_LENS_STYLE.
     render_faith(world, &proj, &mut out);
+    // The Prosperity lens (off by default): each realm tinted by its final relative
+    // population — the trade/embargo growth payoff made visible. See
+    // PROSPERITY_LENS_STYLE.
+    render_prosperity(world, &proj, &mut out);
     render_coast(world, &proj, &mut out);
     render_graticule(&proj, &mut out);
     render_major_rivers(world, &proj, &mut out);
@@ -82,6 +87,7 @@ pub fn render(world: &WorldData) -> String {
     render_cartouche(w, h, "ORBIS TERRARUM", &mut out);
     render_nation_legend(world, w, h, &mut out);
     render_faith_legend(world, w, h, &mut out);
+    render_prosperity_legend(w, h, &mut out);
     out.push_str("</svg>");
     out
 }
@@ -92,6 +98,39 @@ pub fn render(world: &WorldData) -> String {
 /// `faith-legend` carry `display="none"` so a class-less rasterize (the CLI /
 /// resvg, which ignores selectors) shows the political baseline by default.
 const FAITH_LENS_STYLE: &str = r##"<style>svg.on-faith .planet-political,svg.on-faith .nation-legend{display:none}svg.on-faith .planet-faith,svg.on-faith .faith-legend{display:inline}</style>"##;
+
+/// CSS for the Prosperity lens — the exact mirror of [`FAITH_LENS_STYLE`]. Under
+/// the root `on-prosperity` class the political wash + realms legend hide and the
+/// graded prosperity wash + its gradient legend appear. `planet-prosperity` /
+/// `prosperity-legend` carry `display="none"` so a class-less rasterize shows the
+/// political baseline by default.
+const PROSPERITY_LENS_STYLE: &str = r##"<style>svg.on-prosperity .planet-political,svg.on-prosperity .nation-legend{display:none}svg.on-prosperity .planet-prosperity,svg.on-prosperity .prosperity-legend{display:inline}</style>"##;
+
+/// Sequential prosperity ramp stops `(t, [r,g,b])`, ascending over [0,1]: a pale
+/// parchment-gold (low) deepening to a rich oxblood-amber (high). Sampled by
+/// [`prosperity_color`] and mirrored by the legend gradient — one source of colour.
+const PROSPERITY_STOPS: [(f32, [f32; 3]); 4] = [
+    (0.0, [238.0, 222.0, 180.0]),
+    (0.4, [222.0, 178.0, 110.0]),
+    (0.7, [196.0, 120.0, 60.0]),
+    (1.0, [140.0, 56.0, 36.0]),
+];
+
+/// Sample [`PROSPERITY_STOPS`] at `t` in [0,1] — pale (low) → deep (high). Linear,
+/// no transcendentals, matching the legend gradient bit-for-bit.
+fn prosperity_color(t: f32) -> [u8; 3] {
+    let t = t.clamp(0.0, 1.0);
+    let stops = &PROSPERITY_STOPS;
+    let mut k = 0;
+    while k + 1 < stops.len() && t > stops[k + 1].0 {
+        k += 1;
+    }
+    let (t0, c0) = stops[k];
+    let (t1, c1) = stops[(k + 1).min(stops.len() - 1)];
+    let f = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
+    let mix = |a: f32, b: f32| (a + (b - a) * f).round().clamp(0.0, 255.0) as u8;
+    [mix(c0[0], c1[0]), mix(c0[1], c1[1]), mix(c0[2], c1[2])]
+}
 
 /// Per-cell fill: land in its biome colour (matching the ornate detailed view),
 /// sea shaded by depth so basins and shelves read.
@@ -569,6 +608,117 @@ fn render_faith_legend(world: &WorldData, _w: f32, h: f32, out: &mut String) {
         )
         .unwrap();
     }
+    out.push_str("</g>");
+}
+
+/// The Prosperity wash: each controlled land cell tinted by its realm's final
+/// relative prosperity (`nations[control[cell]].prosperity`, already in [0,1])
+/// through the sequential [`prosperity_color`] ramp — pale (poor) → deep (rich).
+/// The mirror of [`render_faith`]: `display="none"` by default, revealed under the
+/// `on-prosperity` lens (which also hides the political wash — PROSPERITY_LENS_STYLE).
+/// Per-realm `<g data-polity>` groups so a realm is identifiable.
+fn render_prosperity(world: &WorldData, proj: &Proj, out: &mut String) {
+    let control = &world.society.control;
+    if control.is_empty() {
+        return;
+    }
+    let mesh = &world.mesh;
+    let elev = &world.terrain.elevation;
+    let mut groups: std::collections::BTreeMap<u32, Vec<usize>> = std::collections::BTreeMap::new();
+    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
+        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+            continue; // land only
+        }
+        if let Some(pid) = control.get(i).copied().flatten() {
+            groups.entry(pid).or_default().push(i);
+        }
+    }
+    out.push_str(r##"<g class="planet-prosperity" display="none">"##);
+    for (&pid, cells) in &groups {
+        let Some(nation) = world.society.nations.get(pid as usize) else {
+            continue;
+        };
+        let [r, g, b] = prosperity_color(nation.prosperity);
+        let fill = format!("#{r:02x}{g:02x}{b:02x}");
+        write!(out, r##"<g class="realm" data-polity="{pid}">"##).unwrap();
+        for &c in cells {
+            write_polygon(mesh, &mesh.cell_vertices[c], &fill, 0.62, proj, out);
+        }
+        out.push_str("</g>");
+    }
+    out.push_str("</g>");
+}
+
+/// Prosperity legend (SW corner, same slot as the realms/faiths legends —
+/// mutually exclusive via the lens CSS). A gradient bar matching the
+/// [`PROSPERITY_STOPS`] ramp with qualitative "Poor…Rich" ends (the scale is
+/// per-world relative, not absolute). `display="none"` until the prosperity lens
+/// is on.
+fn render_prosperity_legend(_w: f32, h: f32, out: &mut String) {
+    let scale = (h / 1024.0).clamp(0.7, 1.4);
+    let row_h = 22.0 * scale;
+    let pad = 12.0 * scale;
+    let fs = 13.0 * scale;
+    let box_w = 200.0 * scale;
+    let bar_w = box_w - pad * 2.0;
+    let bar_h = 14.0 * scale;
+    let box_h = pad * 2.0 + row_h + bar_h + 16.0 * scale;
+    let x0 = 50.0 * scale;
+    let y0 = h - box_h - 50.0 * scale;
+    let tx = x0 + pad;
+
+    write!(out, r##"<g class="prosperity-legend" display="none">"##).unwrap();
+    write!(
+        out,
+        r##"<rect x="{x0:.1}" y="{y0:.1}" width="{box_w:.1}" height="{box_h:.1}" rx="6" fill="#f0e3bf" fill-opacity="0.82" stroke="#5a3a25" stroke-width="1.2"/>"##
+    )
+    .unwrap();
+    let ty = y0 + pad + row_h * 0.7;
+    write!(
+        out,
+        r##"<text x="{tx:.1}" y="{ty:.1}" font-family='"Cinzel", Georgia, serif' font-size="{fs:.1}" font-weight="bold" letter-spacing="2" fill="#2a2418">PROSPERITY</text>"##
+    )
+    .unwrap();
+    // The gradient bar, painted from the SAME ramp the wash samples (one stop per
+    // PROSPERITY_STOPS entry) so legend and map can't drift. Inlined here (rather
+    // than a shared <defs> gradient) to keep the planet legend self-contained.
+    let bx = tx;
+    let by = ty + 8.0 * scale;
+    write!(
+        out,
+        r##"<defs><linearGradient id="planet-prosperity-grad" x1="0%" y1="0%" x2="100%" y2="0%">"##
+    )
+    .unwrap();
+    for &(t, [r, g, b]) in &PROSPERITY_STOPS {
+        write!(
+            out,
+            r##"<stop offset="{:.0}%" stop-color="#{:02x}{:02x}{:02x}"/>"##,
+            t * 100.0,
+            r as u8,
+            g as u8,
+            b as u8,
+        )
+        .unwrap();
+    }
+    out.push_str("</linearGradient></defs>");
+    write!(
+        out,
+        r##"<rect x="{bx:.1}" y="{by:.1}" width="{bar_w:.1}" height="{bar_h:.1}" fill="url(#planet-prosperity-grad)" stroke="#2a2418" stroke-width="0.6"/>"##
+    )
+    .unwrap();
+    let ly = by + bar_h + 11.0 * scale;
+    let lfs = 11.0 * scale;
+    write!(
+        out,
+        r##"<text x="{bx:.1}" y="{ly:.1}" font-family='"EB Garamond", Georgia, serif' font-size="{lfs:.1}" fill="#2a2418">Poor</text>"##
+    )
+    .unwrap();
+    let rx = bx + bar_w;
+    write!(
+        out,
+        r##"<text x="{rx:.1}" y="{ly:.1}" text-anchor="end" font-family='"EB Garamond", Georgia, serif' font-size="{lfs:.1}" fill="#2a2418">Rich</text>"##
+    )
+    .unwrap();
     out.push_str("</g>");
 }
 

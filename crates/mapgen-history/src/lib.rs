@@ -414,6 +414,22 @@ pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
         }
     }
 
+    // Carry each polity's FINAL population (otherwise discarded with `state`) into
+    // `Nation::prosperity` (v21), normalized to [0,1] by the world's max final
+    // population so it renders as a clean heatmap. Trade lifts a realm's capacity →
+    // Turchin grows its population → higher prosperity; an embargo / collapse stalls
+    // it → lower. Deterministic arithmetic only: a divide by the max (no
+    // transcendental), 0.0 when the max is 0 (no polity ever grew).
+    let max_pop = state
+        .population
+        .iter()
+        .copied()
+        .fold(0.0f32, |m, p| if p > m { p } else { m });
+    for (pid, nation) in world.society.nations.iter_mut().enumerate() {
+        let pop = state.population.get(pid).copied().unwrap_or(0.0);
+        nation.prosperity = if max_pop > 0.0 { pop / max_pop } else { 0.0 };
+    }
+
     // Post-sim: a beat repeated verbatim is less newsworthy each time, so the
     // major-event reel isn't dominated by one rivalry's serial battles.
     refine_salience(world);
@@ -601,6 +617,7 @@ mod tests {
             name: "Testria".to_string(),
             capital_cell: 0,
             color: [0, 0, 0],
+            ..Default::default()
         }];
         w.society.control = vec![Some(0u32); n_cells];
         w

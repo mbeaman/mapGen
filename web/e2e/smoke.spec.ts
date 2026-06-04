@@ -58,6 +58,32 @@ test("the Faith lens swaps in the faith wash", async ({ page }) => {
   await expect(faithLayer).toHaveCSS("display", "inline", { timeout: 10_000 });
 });
 
+// The Prosperity lens (v21 heatmap surfaced): the "Prosperity" overlay comes from the
+// shared layer manifest, and toggling it sets the root `on-prosperity` class. As with
+// Faith this runs at the DEFAULT scale (continental) + style (ornate), so it exercises
+// the ornate LAYER_STYLE rule `svg.on-prosperity .layer-prosperity{display:inline}` —
+// NOT the planet-scale PROSPERITY_LENS_STYLE, which the Rust render test
+// prosperity_overlay.rs pins. We assert the actual reveal: the off-by-default
+// `.layer-prosperity` group flips computed display none→inline. Asserting only the
+// `on-prosperity` class would pass green even if the CSS gate were mistyped and
+// revealed nothing — so we pin the swap, not just the wiring.
+test("the Prosperity lens swaps in the prosperity wash", async ({ page }) => {
+  await page.goto("/");
+  const svg = page.locator("#map-content svg");
+  await expect(svg).toBeVisible({ timeout: 30_000 });
+
+  // Off by default: the ornate prosperity layer ships `display="none"`.
+  const prosperityLayer = svg.locator(".layer-prosperity");
+  await expect(prosperityLayer).toHaveCSS("display", "none");
+
+  await page.locator("#layers-panel summary").click();
+  await page.getByRole("button", { name: "Prosperity", exact: true }).click();
+
+  // The toggle fired (root class) AND the gate revealed the layer (display swap).
+  await expect(svg).toHaveClass(/on-prosperity/, { timeout: 10_000 });
+  await expect(prosperityLayer).toHaveCSS("display", "inline", { timeout: 10_000 });
+});
+
 // width/height of the live SVG's viewBox. The planet preset is a 2:1 globe
 // (2048×1024 → aspect 2.0); a continent is 2048×1280 → 1.6. So aspect > 1.8 is
 // a render signal that the planet preset actually produced this map — not just
