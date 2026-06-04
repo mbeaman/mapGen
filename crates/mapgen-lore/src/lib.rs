@@ -38,20 +38,42 @@ use std::cmp::Ordering;
 use mapgen_core::{Event, EventId, EventKind, Work, WorldData};
 
 /// Resolve a `--event` selector to a concrete event id. Accepts a numeric id or
-/// `auto-major-war` / `auto` (the most salient war event, else the most salient
-/// event overall; ties broken to the earliest).
+/// one of three `auto-*` modes, each of which prefers a class of event but falls
+/// back to the most salient event overall when that class is empty (ties broken
+/// to the earliest):
+///   - `auto-major-war` / `auto`: the most salient war event
+///     (`WarDeclared` | `BattleFought` | `Siege`);
+///   - `auto-contact`: the most salient inter-continental *contact* event
+///     (`TradeRouteOpened` | `EmbargoImposed`) — the clearest cross-water markers,
+///     so the narrator can weave the Sundered Lanes story instead of only wars.
 pub fn select_focal(world: &WorldData, spec: &str) -> anyhow::Result<EventId> {
     if let Ok(id) = spec.parse::<u32>() {
         return Ok(EventId(id));
     }
-    if !matches!(spec, "auto-major-war" | "auto") {
-        anyhow::bail!("unknown event selector '{spec}' (use a numeric id or 'auto-major-war')");
+    if !matches!(spec, "auto-major-war" | "auto" | "auto-contact") {
+        anyhow::bail!(
+            "unknown event selector '{spec}' \
+             (use a numeric id or 'auto-major-war' / 'auto-contact')"
+        );
     }
     let is_war = |e: &&Event| {
         matches!(
             e.kind,
             EventKind::WarDeclared | EventKind::BattleFought | EventKind::Siege
         )
+    };
+    // Inter-continental contact: a sea-trade route opening or its severance by
+    // embargo — the two events that provably cross water.
+    let is_contact = |e: &&Event| {
+        matches!(
+            e.kind,
+            EventKind::TradeRouteOpened | EventKind::EmbargoImposed
+        )
+    };
+    let preferred: &dyn Fn(&&Event) -> bool = if spec == "auto-contact" {
+        &is_contact
+    } else {
+        &is_war
     };
     let most_salient = |a: &Event, b: &Event| match a
         .salience
@@ -65,7 +87,7 @@ pub fn select_focal(world: &WorldData, spec: &str) -> anyhow::Result<EventId> {
         .events
         .events
         .iter()
-        .filter(is_war)
+        .filter(preferred)
         .max_by(|a, b| most_salient(a, b))
         .or_else(|| world.events.events.iter().max_by(|a, b| most_salient(a, b)));
     pick.map(|e| e.id)

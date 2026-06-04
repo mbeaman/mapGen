@@ -32,3 +32,4 @@ ureq = { version = "2", optional = true, features = ["json"] }
 # Generate real worlds in tests (no cycle: mapgen-world doesn't depend on lore).
 [dev-dependencies]
 mapgen-world = { path = "../mapgen-world" }
+mapgen-testsupport = { path = "../mapgen-testsupport" }
