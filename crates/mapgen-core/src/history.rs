@@ -20,6 +20,16 @@ pub struct HistoryData {
     /// occurred or on pre-time-slider worlds.
     #[serde(default)]
     pub border_changes: Vec<BorderChange>,
+    /// Chronological faith conversions — each cell a religion diffused into (the
+    /// Faith time-slider). Lets `religions.religion_id` be reconstructed at any
+    /// past year via [`crate::WorldData::religion_at_year`]. Empty on a world with
+    /// no diffusion (e.g. a laneless, fully-converted seed); `skip_serializing_if`
+    /// then omits it, so adding this field left the no-op seed42 golden
+    /// byte-identical (a non-perturbation *proof*, not a re-anchor) — diffusion is
+    /// pinned on crossing seeds instead. Deliberately unlike [`border_changes`]
+    /// (which re-anchored); see the schema-history comment on `WorldData`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub faith_changes: Vec<FaithChange>,
 }
 
 /// One territorial change recorded during the history sim: in `year`, `cell`
@@ -30,6 +40,19 @@ pub struct BorderChange {
     pub cell: u32,
     pub from: Option<u32>,
     pub to: Option<u32>,
+}
+
+/// One faith conversion recorded during the history sim: in `year`, `cell`'s
+/// religion passed from `from` to `to`. Appended chronologically by the Diffusion
+/// carrier. Diffusion only fills *unconverted* cells, so `from` is `None` today;
+/// it's kept (mirroring [`BorderChange`]) for a future faith that displaces
+/// another.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct FaithChange {
+    pub year: i32,
+    pub cell: u32,
+    pub from: Option<u16>,
+    pub to: Option<u16>,
 }
 
 impl HistoryData {

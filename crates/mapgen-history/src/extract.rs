@@ -28,8 +28,9 @@ pub fn build(world: &WorldData) -> HistoryData {
     HistoryData {
         ages: frame_ages(world),
         arcs: extract_arcs(world),
-        // Filled by `run` after this builds the narrative tables.
+        // Both timelines are filled by `run` after this builds the narrative tables.
         border_changes: Vec::new(),
+        faith_changes: Vec::new(),
     }
 }
 

@@ -95,7 +95,16 @@ use crate::{
 ///   before bumping; the three goldens re-anchor for the version byte alone.
 ///   (Religion still spreads globally at gen time — that crossing is deferred to
 ///   the Phase-2 Diffusion loop, not this change.)
-pub const SCHEMA_VERSION: u32 = 19;
+/// * v20 — Faith time-slider: `HistoryData::faith_changes` records each cell the
+///   Diffusion carrier converts, so `religion_at_year` can reconstruct the faith
+///   map at any past year (the mirror of v16's `border_changes`). `skip`-elided
+///   when empty, and seed42's diffusion is a no-op (no crossable lane, no
+///   faithless land), so the field is byte-invisible there — verified by holding
+///   the constant at 19 with all faith_changes code in place and confirming the
+///   three goldens hold (a non-perturbation proof), THEN bumping. The three
+///   goldens re-anchor for the `schema_version` byte alone; the diffusion timeline
+///   itself is pinned on crossing seeds (which no golden covers).
+pub const SCHEMA_VERSION: u32 = 20;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {

@@ -10,6 +10,8 @@
 //!    where a crossable lane exists. Sundered seeds keep every faith confined. The
 //!    sundered half is the anti-false-green guard, mirroring the carrier.
 
+use std::collections::BTreeSet;
+
 use mapgen_testsupport::{
     planet_params, religions_spanning_multiple_landmasses, CROSSING_SEEDS, SUNDERED_SEEDS,
 };
@@ -70,4 +72,73 @@ fn diffusion_carries_a_faith_across_water_only_over_a_crossable_lane() {
              crossable — diffusion crossed water where it must not"
         );
     }
+}
+
+#[test]
+fn the_diffusion_timeline_records_every_conversion_faithfully() {
+    // Substage-1 (data) for the Faith time-slider: the Diffusion loop doesn't only
+    // mutate `religion_id`, it RECORDS each conversion in `history.faith_changes` —
+    // chronologically, and faithfully (the present faith map is exactly the
+    // timeline applied). That faithful timeline is what lets `religion_at_year`
+    // replay the spread. (The recorded YEAR's correctness — that rewinding the
+    // timeline yields the pre-diffusion founding — is pinned at the replay layer.)
+    let mut distinct_years = BTreeSet::new();
+    let mut total = 0usize;
+    for &seed in CROSSING_SEEDS {
+        let world = generate_full(planet_params(seed));
+        let fc = &world.history.faith_changes;
+        assert!(
+            !fc.is_empty(),
+            "crossing seed {seed}: Diffusion converted faiths but recorded no timeline \
+             (faith_changes empty) — the Faith slider would have nothing to replay"
+        );
+        // Chronological: appended per sim-year, so years never decrease.
+        assert!(
+            fc.windows(2).all(|w| w[0].year <= w[1].year),
+            "seed {seed}: faith_changes out of chronological order"
+        );
+        // Faithful: the present faith of every recorded cell is exactly that cell's
+        // LAST recorded conversion (the timeline reconstructs the present map). And
+        // diffusion only fills unconverted cells, so every change is None→Some.
+        let n = world.mesh.cell_count();
+        let mut last: Vec<Option<u16>> = vec![None; n];
+        for ch in fc {
+            assert_eq!(
+                ch.from, None,
+                "seed {seed}: a diffusion change had a non-None `from`"
+            );
+            let to = ch.to.expect("a diffusion change recorded to=None");
+            last[ch.cell as usize] = Some(to);
+            distinct_years.insert(ch.year);
+        }
+        for (cell, &rec) in last.iter().enumerate() {
+            if let Some(to) = rec {
+                assert_eq!(
+                    world.religions.religion_id[cell],
+                    Some(to),
+                    "seed {seed}: cell {cell}'s present faith ≠ its last recorded conversion \
+                     — the timeline doesn't reconstruct the map"
+                );
+            }
+        }
+        // Every faith that ended up spanning ≥2 landmasses got onto its second body
+        // through a RECORDED conversion — the crossing is in the timeline, not only
+        // in the final map.
+        for rid in religions_spanning_multiple_landmasses(&world) {
+            assert!(
+                fc.iter().any(|ch| ch.to == Some(rid)),
+                "seed {seed}: faith {rid} spans water at present but no conversion to it was \
+                 recorded — its crossing is missing from the timeline"
+            );
+        }
+        total += fc.len();
+    }
+    // The spread is genuinely temporal (many sim-years), not one dump — a hardcoded
+    // or wrong year would collapse this.
+    assert!(
+        distinct_years.len() > 1,
+        "faith_changes share a single year across every crossing seed — the recorded year \
+         isn't the conversion year"
+    );
+    assert!(total > 0, "no diffusion was recorded on any crossing seed");
 }

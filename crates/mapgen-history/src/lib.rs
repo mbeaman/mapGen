@@ -112,6 +112,10 @@ pub struct SimState {
     /// Territorial changes recorded chronologically as wars are won (the
     /// time-slider). Moved into `world.history.border_changes` after the sim.
     pub border_changes: Vec<mapgen_core::history::BorderChange>,
+    /// Faith conversions recorded chronologically as the Diffusion carrier
+    /// spreads a religion (the Faith time-slider). Moved into
+    /// `world.history.faith_changes` after the sim.
+    pub faith_changes: Vec<mapgen_core::history::FaithChange>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -256,6 +260,7 @@ impl SimState {
             dissolved: vec![false; n_pol],
             schism_parent: Vec::new(),
             border_changes: Vec::new(),
+            faith_changes: Vec::new(),
         }
     }
 }
@@ -392,6 +397,7 @@ pub fn run(world: &mut WorldData, params: HistoryParams, rng: &mut ChaCha8Rng) {
     // sim accumulated so the map can be reconstructed at any past year.
     world.history = extract::build(world);
     world.history.border_changes = std::mem::take(&mut state.border_changes);
+    world.history.faith_changes = std::mem::take(&mut state.faith_changes);
 }
 
 /// Salience multiplier applied per *prior* verbatim recurrence of an event's

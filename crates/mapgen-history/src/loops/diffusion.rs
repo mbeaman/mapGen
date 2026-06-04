@@ -64,6 +64,13 @@ impl CausalLoop for Diffusion {
                     && unit_f32(ctx.rng) < SEA_DIFFUSE_PROB
                 {
                     next[dst] = Some(faith);
+                    record_conversion(
+                        &mut ctx.state.faith_changes,
+                        ctx.year,
+                        dst,
+                        prev[dst],
+                        faith,
+                    );
                 }
             }
         }
@@ -92,10 +99,38 @@ impl CausalLoop for Diffusion {
             if let Some(faith) = adopt {
                 if unit_f32(ctx.rng) < LAND_DIFFUSE_PROB {
                     next[cell] = Some(faith);
+                    record_conversion(
+                        &mut ctx.state.faith_changes,
+                        ctx.year,
+                        cell,
+                        prev[cell],
+                        faith,
+                    );
                 }
             }
         }
 
         ctx.world.religions.religion_id = next;
     }
+}
+
+/// Append a conversion to the Faith timeline (`SimState::faith_changes`) so the
+/// time-slider can reconstruct `religion_id` at any past year — the faith mirror
+/// of the `border_changes` a won war records. Order follows the loop's lane- then
+/// cell-iteration, so the timeline is deterministic (native↔wasm byte-identical).
+/// Takes the timeline field directly (not `ctx`) so it can be called while the
+/// lane loop holds an immutable borrow of `ctx.world`.
+fn record_conversion(
+    changes: &mut Vec<mapgen_core::history::FaithChange>,
+    year: i32,
+    cell: usize,
+    from: Option<u16>,
+    to: u16,
+) {
+    changes.push(mapgen_core::history::FaithChange {
+        year,
+        cell: cell as u32,
+        from,
+        to: Some(to),
+    });
 }
