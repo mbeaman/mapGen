@@ -8,10 +8,24 @@
 //! connective prose containing no proper nouns. Because it is trusted, the
 //! engine does not re-run NER validation on a template draft.
 
-use mapgen_core::Event;
+use mapgen_core::{Event, EventKind};
 
 use crate::schema::ChronicleDraft;
 use crate::voice::{Register, VoiceCard};
+
+/// The first-contact beat, prepended when a chronicle's arc is a Sundered-Lane
+/// arc (it contains a `TradeRouteOpened`). Fixed prose, no proper nouns, so the
+/// body stays NER-clean. Uses "sundered" — a word that appears in no event
+/// summary ("opened"/"severed") nor any register frame — so a test can pin that
+/// the weave, not the data, added the framing.
+const FIRST_CONTACT_BEAT: &str =
+    "Across the deep that long held the shores sundered, a way was opened, \
+     and two peoples met who never had before.";
+/// The severance beat, appended when that same arc also carries the route's death
+/// by war (an `EmbargoImposed`) — so the lane is narrated born AND killed.
+const SEVERANCE_BEAT: &str =
+    "But the way did not hold: war fell between them, and the shores were \
+     sundered once more.";
 
 /// Weave a chronicle from a focal event and its supporting slice (focal + the
 /// transitive causes that explain it), in the given voice.
@@ -32,6 +46,23 @@ pub fn template_draft(focal: &Event, slice: &[&Event], voice: &VoiceCard) -> Chr
 }
 
 fn title_for(reg: Register, focal: &Event) -> String {
+    // A contact focal (a sea-trade route's birth or death) is titled on the arc's
+    // theme — the Sundered Lane — not its subject noun, which for an embargo is
+    // the literal word "War". The label is framing, not a lexicon entity (the
+    // template draft is trusted, never NER-validated).
+    if matches!(
+        focal.kind,
+        EventKind::TradeRouteOpened | EventKind::EmbargoImposed
+    ) {
+        return match reg {
+            Register::Saga => "A Lay of the Sundered Lane",
+            Register::MonasticChronicle => "The Annal of the Sundered Lane",
+            Register::Hymn => "A Hymn of the Sundered Lane",
+            Register::CourtlyLetter => "Concerning the Sundered Lane",
+            Register::PeasantRumor => "What They Say of the Sundered Lane",
+        }
+        .to_string();
+    }
     // Title on the event's *subject* (its first proper noun) rather than the
     // whole summary sentence — "A Lay of Uedihi", not "A Lay of Uedihi crushed
     // Dav in the field". The subject is a lexicon name, so the title stays
@@ -64,7 +95,23 @@ fn subject_of(summary: &str) -> Option<String> {
 }
 
 fn render_body(reg: Register, evs: &[&Event]) -> String {
+    // A Sundered-Lane (first-contact) arc is framed: the birth beat opens the
+    // body, the events weave between, and — if the lane was later severed — the
+    // death beat closes it. The anchor is the BIRTH (`TradeRouteOpened`); the
+    // severance beat is narrated only as the end of a story whose beginning we
+    // told, so a stray embargo with no opening in the slice reads plainly.
+    let first_contact = evs
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::TradeRouteOpened));
+    let severed = evs
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::EmbargoImposed));
+
     let mut s = String::from(opening(reg));
+    if first_contact {
+        s.push(' ');
+        s.push_str(FIRST_CONTACT_BEAT);
+    }
     for e in evs {
         s.push(' ');
         if matches!(reg, Register::MonasticChronicle) {
@@ -72,6 +119,10 @@ fn render_body(reg: Register, evs: &[&Event]) -> String {
         } else {
             s.push_str(&e.summary_canonical);
         }
+    }
+    if first_contact && severed {
+        s.push(' ');
+        s.push_str(SEVERANCE_BEAT);
     }
     s.push(' ');
     s.push_str(closing(reg));
@@ -143,5 +194,81 @@ mod tests {
         let voice = VoiceCard::for_register(Register::Saga);
         let draft = template_draft(&focal, &[], &voice);
         assert_eq!(draft.references, vec![9]);
+    }
+
+    fn ev_kind(id: u32, year: i32, kind: EventKind, summary: &str) -> Event {
+        Event {
+            kind,
+            ..ev(id, year, summary)
+        }
+    }
+
+    #[test]
+    fn an_open_only_arc_gets_the_birth_beat_but_not_the_severance() {
+        // A trade route that opened and was NEVER severed (no embargo in the
+        // slice) is a first-contact arc with only its BIRTH beat. `auto-contact`
+        // never reaches this on a crossing seed (an embargo, salience 0.45,
+        // always outranks an opening's 0.40), so it is pinned synthetically here.
+        // The AND-condition is the discriminator: the birth beat appears, the
+        // severance beat does NOT — a route that still stands is not "sundered
+        // once more". (Mutation: weaken `first_contact && severed` to `severed`
+        // alone, or drop the `&& severed` guard → the severance beat leaks onto
+        // an unsevered route → this trips.)
+        let open = ev_kind(
+            3,
+            10,
+            EventKind::TradeRouteOpened,
+            "A sea-trade route opened between Avi and Bel.",
+        );
+        let voice = VoiceCard::for_register(Register::MonasticChronicle);
+        let draft = template_draft(&open, &[&open], &voice);
+
+        assert!(
+            draft.title.contains("Sundered Lane"),
+            "an opening focal is titled on the arc's theme; got: {}",
+            draft.title
+        );
+        assert!(
+            draft.body.contains("two peoples met"),
+            "the birth beat must frame a first contact; got: {}",
+            draft.body
+        );
+        assert!(
+            !draft.body.contains("sundered once more"),
+            "an unsevered route must NOT get the severance beat; got: {}",
+            draft.body
+        );
+    }
+
+    #[test]
+    fn a_born_and_died_arc_gets_both_beats() {
+        // The full lane life in one slice: birth (`TradeRouteOpened`) + death
+        // (`EmbargoImposed`). BOTH framing beats must appear — the synthetic twin
+        // of the seed-11 integration test, isolating the weave from the pipeline.
+        let open = ev_kind(
+            3,
+            10,
+            EventKind::TradeRouteOpened,
+            "A sea-trade route opened between Avi and Bel.",
+        );
+        let embargo = ev_kind(
+            4,
+            42,
+            EventKind::EmbargoImposed,
+            "War severed the sea-trade route between Avi and Bel.",
+        );
+        let voice = VoiceCard::for_register(Register::MonasticChronicle);
+        let draft = template_draft(&embargo, &[&open, &embargo], &voice);
+
+        assert!(draft.body.contains("two peoples met"), "missing birth beat");
+        assert!(
+            draft.body.contains("sundered once more"),
+            "missing severance beat; got: {}",
+            draft.body
+        );
+        // Chronological: the birth is narrated before the death.
+        let birth = draft.body.find("opened between").unwrap();
+        let death = draft.body.find("severed the sea-trade").unwrap();
+        assert!(birth < death, "the route must be born before it dies");
     }
 }

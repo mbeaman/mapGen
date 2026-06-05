@@ -118,10 +118,14 @@ pub struct SimState {
     pub faith_changes: Vec<mapgen_core::history::FaithChange>,
     /// Open inter-continental trade routes, keyed by ordered polity pair `(a < b)`,
     /// valued by the capacity bonus each end was granted (`[bonus_a, bonus_b]`) so
-    /// an embargo can reverse EXACTLY what the route added. A route opens once (its
-    /// `TradeRouteOpened` + bonus) and is removed when embargoed. Scratch only; the
-    /// events persist, this map does not. (The Trade loop.)
-    pub trade_routes: std::collections::BTreeMap<(u32, u32), [f32; 2]>,
+    /// an embargo can reverse EXACTLY what the route added, plus the `EventId` of
+    /// the `TradeRouteOpened` that opened it — so the `EmbargoImposed` that severs
+    /// the route can cite it as a cause, weaving the lane's whole life (born of
+    /// trade, killed by war) into one first-contact arc the lore engine can tell.
+    /// A route opens once (its `TradeRouteOpened` + bonus) and is removed when
+    /// embargoed. Scratch only; the events (and their cause links) persist, this
+    /// map does not. (The Trade loop.)
+    pub trade_routes: std::collections::BTreeMap<(u32, u32), ([f32; 2], EventId)>,
     /// Per-polity accumulated trade capacity bonus (economic reach of its open
     /// routes, on top of the territorial [`capacity`]). Re-added at every capacity
     /// recompute (conquest / colonization) so a border change can't wipe a realm's

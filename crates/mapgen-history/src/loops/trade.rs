@@ -62,13 +62,13 @@ impl CausalLoop for Trade {
         // cross-water war is the beachhead carrier, after which one realm owns BOTH
         // anchors, so a lane re-scan would hit the `pa == pb` exclave guard and miss
         // exactly the canonical trade-pair war. The route key is control-independent.
-        let to_sever: Vec<((u32, u32), [f32; 2])> = {
+        let to_sever: Vec<((u32, u32), [f32; 2], mapgen_core::EventId)> = {
             let belligerents = &ctx.state.belligerents;
             ctx.state
                 .trade_routes
                 .iter()
                 .filter(|(key, _)| belligerents.contains(*key))
-                .map(|(&k, &bonus)| (k, bonus))
+                .map(|(&k, &(bonus, open_id))| (k, bonus, open_id))
                 .collect()
         };
 
@@ -104,7 +104,7 @@ impl CausalLoop for Trade {
 
         // Phase 2 — apply.
         let year = ctx.year;
-        for ((pa, pb), [ba, bb]) in to_sever {
+        for ((pa, pb), [ba, bb], open_id) in to_sever {
             ctx.state.trade_routes.remove(&(pa, pb));
             ctx.state.trade_bonus[pa as usize] -= ba;
             ctx.state.capacity[pa as usize] -= ba;
@@ -117,6 +117,15 @@ impl CausalLoop for Trade {
                 .get(pa as usize)
                 .map(|n| n.capital_cell)
                 .unwrap_or(0);
+            // Cite the route's OPENING as the embargo's cause, so the lore
+            // engine's causal closure pulls the whole first-contact arc — the
+            // lane is born (`TradeRouteOpened`) and dies (`EmbargoImposed`) in one
+            // chronicle. The war that set `belligerents` is the deeper cause, but
+            // threading its `WarDeclared` id here is deferred: the opening link
+            // alone gives the chronicle its two-beat arc, and citing the war would
+            // mean widening `belligerents` to carry an EventId (touching
+            // mearsheimer's contract) for no extra narrative the embargo's own
+            // "War severed …" summary doesn't already carry.
             Emit::new(
                 year,
                 EventKind::EmbargoImposed,
@@ -128,6 +137,7 @@ impl CausalLoop for Trade {
                     nation_name(ctx.world, pb)
                 ),
             )
+            .causes(&[open_id])
             .push(ctx.world);
         }
         for (pa, pb, cell) in to_open {
@@ -137,8 +147,7 @@ impl CausalLoop for Trade {
             ctx.state.capacity[pa as usize] += bonus_a;
             ctx.state.trade_bonus[pb as usize] += bonus_b;
             ctx.state.capacity[pb as usize] += bonus_b;
-            ctx.state.trade_routes.insert((pa, pb), [bonus_a, bonus_b]);
-            Emit::new(
+            let open_id = Emit::new(
                 year,
                 EventKind::TradeRouteOpened,
                 cell,
@@ -150,6 +159,11 @@ impl CausalLoop for Trade {
                 ),
             )
             .push(ctx.world);
+            // Remember which event opened this route, so a later embargo can cite
+            // it (the first-contact arc's birth beat).
+            ctx.state
+                .trade_routes
+                .insert((pa, pb), ([bonus_a, bonus_b], open_id));
         }
     }
 }
@@ -355,5 +369,44 @@ mod tests {
         );
         assert_eq!(trade_events(&w), 2, "severed route must not re-open");
         assert_eq!(embargo_events(&w), 1, "must not re-embargo a gone route");
+    }
+
+    #[test]
+    fn an_embargo_cites_the_route_opening_it_severs() {
+        // The first-contact arc's causal spine: the `EmbargoImposed` that kills a
+        // route names the `TradeRouteOpened` that bore it, so the lore engine's
+        // causal closure pulls the lane's two beats (born of trade, killed by war)
+        // into one chronicle. Without the link the embargo stands alone and the
+        // arc has nothing to weave. (Mutation: drop `.causes(&[open_id])` in the
+        // sever loop → the embargo carries no cause → this trips.)
+        let mut w = world(2, 0, 1, 30);
+        let mut st = state(vec![100.0, 100.0]);
+
+        tick(&mut Trade, &mut w, &mut st, 5); // route opens
+        let open_id = w
+            .events
+            .events
+            .iter()
+            .find(|e| matches!(e.kind, EventKind::TradeRouteOpened))
+            .expect("a route opened")
+            .id;
+
+        st.belligerents.insert((0, 1));
+        tick(&mut Trade, &mut w, &mut st, 6); // war severs it
+        let embargo = w
+            .events
+            .events
+            .iter()
+            .find(|e| matches!(e.kind, EventKind::EmbargoImposed))
+            .expect("an embargo fired");
+
+        // Exactly one cause — the opening — so the first-contact arc's closure is
+        // the clean two-beat {opening, embargo}, the invariant the lore weave's
+        // "two peoples met" prose relies on (a single route per embargo).
+        assert_eq!(
+            embargo.cause_ids.as_slice(),
+            &[open_id],
+            "the embargo must cite ONLY the route opening it severs"
+        );
     }
 }
