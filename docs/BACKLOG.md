@@ -154,12 +154,32 @@ scale (zoom out)" below), in priority order:
   choropleth on planet + ornate), **trade-route lens** (crossable lanes drawn on the
   planisphere + ornate), **chronicle weaving** (`auto-contact` focal selector). See
   the "Phase 3 surfacing" section in `docs/CLAIMS.md`.
-- **Next: Phase 3 continued** — the deeper narrative surfacing the focal selector
-  only opened the door to: narrator/arc WEAVING of the `TradeRouteOpened`/
-  `EmbargoImposed`/diffusion threads into multi-event arcs (not just a single focal
-  pick), and first-contact beats (plague/contact events on a crossing). Aside still
-  open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only if lanes
-  look too symmetric.
+- ~~Phase 3 surfacing — increment 2 (first-contact arc)~~ DONE 2026-06-04
+  (`feat(history,lore)` + `docs(backlog)`) — the narrator now weaves a sea route's
+  whole life into ONE Sundered-Lane chronicle. **History:** the `EmbargoImposed`
+  that severs a route cites the exact `TradeRouteOpened` that bore it (opening
+  `EventId` threaded through scratch `SimState::trade_routes` — no schema bump, no
+  re-anchor; seed42 laneless → byte-identical), so the lore causal closure is a
+  clean two-beat `{opening, embargo}`. **Lore:** `template.rs` frames the arc — a
+  birth beat ("two peoples met who never had before"), a severance beat ("sundered
+  once more", only if the route was actually severed), and a "Sundered Lane" title;
+  a war chronicle stays plain. Advisor-reviewed (caught + dropped a faith-strand
+  false-green: the diffusion faith-crossing is gated on religion-unconverted, NOT
+  realm control, so it crosses a *different* pair than any trade route — stapling it
+  in would assert presence, not same-pair) + a 4-dimension adversarial Workflow
+  (16 findings, 7 no-fix confirmations + 4 actionable fixes: CLI help, comment, an
+  open-only-branch test, cause-link exclusivity). 6 mutations verified. See the
+  "Phase 3 surfacing" rows in `docs/CLAIMS.md`.
+- **Next: Phase 3 continued** — the citable threads left to weave: (a) **temporal
+  surfacing** — faith/prosperity are end-state only; the diffusion timeline
+  (`SimState::faith_changes`, already reconstructable per year) wants a scrubber or
+  per-era snapshots. (b) **a landmass-centric arc** — "the first time this far shore
+  was reached, by trade, by faith, by sword" — the proper home for the deferred
+  faith-crossing beat, but it needs body/realm tagging on the diffusion + conquest
+  events that does not exist yet (a bigger increment). (c) **cross-lens correlation**
+  — tint trade lines by the prosperity they carry, making the causal loop legible.
+  Aside still open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only
+  if lanes look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
