@@ -114,7 +114,18 @@ use crate::{
 ///   goldens are simply RE-ANCHORED (`seed42_full` carries the populated values;
 ///   `seed42_phase2`/`seed42_sector` are pre-history snapshots, so their nations
 ///   carry the 0.0 default — they re-anchor for the `schema_version` byte alone).
-pub const SCHEMA_VERSION: u32 = 21;
+/// * v22 — Landmass-arc place tag: `Event::far_shore` (the index into
+///   `world.continents` of the far shore an inter-continental event reached) +
+///   `EventKind::FaithCrossed` (a faith's first water-crossing milestone, which the
+///   narrator names from `far_shore`). Like v20, a no-op on laneless seed42: no
+///   crossing fires, so `far_shore` stays `None` (`skip_serializing_if`-elided) and
+///   no `FaithCrossed` event exists — byte-invisible, verified by holding the
+///   constant at 21 with all v22 code in place and confirming the three goldens hold
+///   (a non-perturbation proof), THEN bumping. The `SeaLane` continent tags are
+///   `#[serde(skip)]` build-time scratch (off the hashed path entirely). The three
+///   goldens re-anchor for the `schema_version` byte alone; the place tags are
+///   pinned on crossing seeds (which no golden covers) by `faith_crossing_claims.rs`.
+pub const SCHEMA_VERSION: u32 = 22;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorldData {
@@ -431,6 +442,17 @@ pub struct SeaLane {
     pub cost: f32,
     /// Naval skill required to use the lane (the dual-filter gate).
     pub min_naval: u8,
+    /// Index into `world.continents` for anchor `a` (and `b`), or `None` when the
+    /// anchor's landmass is a sub-threshold speck (not a named continent). Like
+    /// [`cost`](Self::cost), these are `#[serde(skip)]` build-time scratch: the
+    /// Naming stage fills them (it knows both the lanes and the freshly-indexed
+    /// continents), the history carriers read them to tag a far-shore event's
+    /// [`Event::far_shore`](crate::Event::far_shore), and they are never
+    /// round-tripped — so they stay entirely off the hashed, golden-checked path.
+    #[serde(skip)]
+    pub continent_a: Option<u16>,
+    #[serde(skip)]
+    pub continent_b: Option<u16>,
 }
 
 /// The maritime-connectivity substrate: the set of inter-continental sea lanes.

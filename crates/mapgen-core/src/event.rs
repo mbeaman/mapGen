@@ -23,6 +23,15 @@ pub struct Event {
     pub salience: f32,
     pub casus_belli: Option<CasusBelli>,
     pub summary_canonical: String,
+    /// For an inter-continental "far shore" event — today a faith crossing
+    /// ([`EventKind::FaithCrossed`]); in the full landmass arc also a colony or a
+    /// conquest — the index into `world.continents` of the shore that was reached.
+    /// Lets the narrator NAME that shore and group everything that happened to it,
+    /// structurally (not by string-matching the summary). `None` for every other
+    /// event. Byte-invisible on a laneless world (seed42): no crossing fires, so it
+    /// stays `None` and `skip_serializing_if` omits it from the hashed bytes. (v22)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub far_shore: Option<u16>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +70,11 @@ pub enum EventKind {
     Ascension,
     Exile,
     Return,
+    /// (v22) A faith first crossed a sea lane to a far shore — the water-crossing
+    /// milestone of religious diffusion. Emitted once per (faith, far continent)
+    /// pair, on the first conversion of that continent's anchor; the inland spread
+    /// that follows is silent. Carries `far_shore` (the reached continent).
+    FaithCrossed,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

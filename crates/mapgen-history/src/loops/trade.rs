@@ -188,6 +188,7 @@ mod tests {
             b,
             cost: 1.0,
             min_naval,
+            ..Default::default()
         }];
         w
     }
@@ -329,12 +330,14 @@ mod tests {
                 b: 1,
                 cost: 1.0,
                 min_naval: 30,
+                ..Default::default()
             },
             SeaLane {
                 a: 2,
                 b: 3,
                 cost: 1.0,
                 min_naval: 30,
+                ..Default::default()
             },
         ];
         let mut st = state(vec![100.0, 200.0, 50.0, 80.0]);

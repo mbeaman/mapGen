@@ -135,6 +135,12 @@ pub struct SimState {
     /// A sea-trade route between belligerents is severed (and never re-opens); set
     /// by `mearsheimer::resolve_war`, read by the Trade loop. Scratch only.
     pub belligerents: std::collections::BTreeSet<(u32, u32)>,
+    /// `(religion_id, continent_id)` pairs a faith has ALREADY first-reached over
+    /// water — so the Diffusion loop fires exactly ONE `FaithCrossed` milestone per
+    /// faith per far continent (the first crossing), and the inland cascade that
+    /// follows stays silent. Scratch only (not serialized). Read+written by the
+    /// Diffusion loop.
+    pub crossed_faiths: std::collections::BTreeSet<(u16, u16)>,
 }
 
 /// Initial population as a fraction of carrying capacity — low enough that the
@@ -283,6 +289,7 @@ impl SimState {
             trade_routes: std::collections::BTreeMap::new(),
             trade_bonus: vec![0.0; n_pol],
             belligerents: std::collections::BTreeSet::new(),
+            crossed_faiths: std::collections::BTreeSet::new(),
         }
     }
 }

@@ -40,7 +40,7 @@ fn template_draft_renders_contact_into_prose_mentioning_the_route() {
 
     // Empty slice → template injects the focal event itself (see
     // template::tests::includes_the_focal_event_even_if_omitted_from_the_slice).
-    let draft = template_draft(focal, &[], &voice);
+    let draft = template_draft(focal, &[], &voice, None);
 
     assert!(!draft.body.is_empty(), "contact prose must be non-empty");
     assert!(!draft.title.is_empty(), "contact title must be non-empty");
@@ -165,6 +165,53 @@ fn a_non_contact_chronicle_gets_no_sundered_lane_framing() {
     assert!(
         !work.title.contains("Sundered Lane"),
         "a war chronicle must not get the Sundered-Lane title; got: {}",
+        work.title
+    );
+}
+
+#[test]
+fn the_faith_crossing_chronicle_names_the_continent_it_reached() {
+    // End-to-end consumer of the place tag (`Event::far_shore`). `auto-faith` picks
+    // a `FaithCrossed`; `narrate` resolves its `far_shore` to the continent NAME and
+    // the template weaves it in. The discriminator that this is REAL (not plumbing):
+    // the continent name is in the chronicle but NOT in the focal's summary — the
+    // summary says only "a far shore". So the name reached the page ONLY because the
+    // narrator read the structured tag and `world.continents` resolved it. (Mutation:
+    // stop resolving far_shore in narrate, OR drop the template far-shore beat → the
+    // continent name vanishes from the body → trips. seed 11 emits 4 FaithCrossed.)
+    let mut w = crossing_world();
+    let id = select_focal(&w, "auto-faith").unwrap();
+    let focal = w.events.events[id.0 as usize].clone();
+    assert!(
+        matches!(focal.kind, EventKind::FaithCrossed),
+        "auto-faith must pick a faith crossing; got {:?}",
+        focal.kind
+    );
+    let shore_idx = focal
+        .far_shore
+        .expect("a faith crossing must carry a far_shore");
+    let shore = w.continents[shore_idx as usize].name.clone();
+    assert!(!shore.is_empty(), "the reached continent must be named");
+
+    // The summary itself does NOT name the shore (it says "a far shore") — so a
+    // name in the chronicle can only have come from the narrator reading far_shore.
+    assert!(
+        !focal.summary_canonical.contains(&shore),
+        "precondition: the bare summary must not already name the shore (got: {})",
+        focal.summary_canonical
+    );
+
+    let voice = VoiceCard::for_register(Register::MonasticChronicle);
+    let work = narrate(&mut w, id, &voice, None).unwrap();
+
+    assert!(
+        work.body.contains(&shore),
+        "the chronicle body must name the reached continent '{shore}'; got: {}",
+        work.body
+    );
+    assert!(
+        work.title.contains(&shore),
+        "the chronicle title must name the reached continent '{shore}'; got: {}",
         work.title
     );
 }

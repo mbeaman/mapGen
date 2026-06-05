@@ -29,7 +29,17 @@ const SEVERANCE_BEAT: &str =
 
 /// Weave a chronicle from a focal event and its supporting slice (focal + the
 /// transitive causes that explain it), in the given voice.
-pub fn template_draft(focal: &Event, slice: &[&Event], voice: &VoiceCard) -> ChronicleDraft {
+///
+/// `far_shore` is the NAME of the continent an inter-continental event reached
+/// (resolved by the caller from `Event::far_shore` → `world.continents`), or
+/// `None`. A [`EventKind::FaithCrossed`] focal weaves it in — naming the shore the
+/// faith first touched, which the bare summary deliberately omits.
+pub fn template_draft(
+    focal: &Event,
+    slice: &[&Event],
+    voice: &VoiceCard,
+    far_shore: Option<&str>,
+) -> ChronicleDraft {
     let mut evs: Vec<&Event> = slice.to_vec();
     if !evs.iter().any(|e| e.id == focal.id) {
         evs.push(focal);
@@ -38,14 +48,23 @@ pub fn template_draft(focal: &Event, slice: &[&Event], voice: &VoiceCard) -> Chr
     evs.dedup_by_key(|e| e.id.0);
 
     ChronicleDraft {
-        title: title_for(voice.register, focal),
-        body: render_body(voice.register, &evs),
+        title: title_for(voice.register, focal, far_shore),
+        body: render_body(voice.register, &evs, far_shore),
         references: evs.iter().map(|e| e.id.0).collect(),
         lacunae: Vec::new(),
     }
 }
 
-fn title_for(reg: Register, focal: &Event) -> String {
+fn title_for(reg: Register, focal: &Event, far_shore: Option<&str>) -> String {
+    // A faith's first crossing is titled on the SHORE it reached (named from
+    // `far_shore`) — "The Faith Comes to Aethermoor". Falls back to the thematic
+    // Sundered-Lane label if the shore is unnamed.
+    if matches!(focal.kind, EventKind::FaithCrossed) {
+        return match far_shore {
+            Some(shore) => format!("The Faith Comes to {shore}"),
+            None => "The Faith Across the Water".to_string(),
+        };
+    }
     // A contact focal (a sea-trade route's birth or death) is titled on the arc's
     // theme — the Sundered Lane — not its subject noun, which for an embargo is
     // the literal word "War". The label is framing, not a lexicon entity (the
@@ -94,7 +113,7 @@ fn subject_of(summary: &str) -> Option<String> {
     })
 }
 
-fn render_body(reg: Register, evs: &[&Event]) -> String {
+fn render_body(reg: Register, evs: &[&Event], far_shore: Option<&str>) -> String {
     // A Sundered-Lane (first-contact) arc is framed: the birth beat opens the
     // body, the events weave between, and — if the lane was later severed — the
     // death beat closes it. The anchor is the BIRTH (`TradeRouteOpened`); the
@@ -106,6 +125,9 @@ fn render_body(reg: Register, evs: &[&Event]) -> String {
     let severed = evs
         .iter()
         .any(|e| matches!(e.kind, EventKind::EmbargoImposed));
+    let faith_crossing = evs
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::FaithCrossed));
 
     let mut s = String::from(opening(reg));
     if first_contact {
@@ -123,6 +145,18 @@ fn render_body(reg: Register, evs: &[&Event]) -> String {
     if first_contact && severed {
         s.push(' ');
         s.push_str(SEVERANCE_BEAT);
+    }
+    // The faith milestone NAMES the shore it reached, read from the event's
+    // `far_shore` (the bare summary says only "a far shore"). This is the consumer
+    // that makes `far_shore` load-bearing: the continent name is in the chronicle
+    // ONLY because the narrator read the tag — no summary nor frame carries it.
+    if faith_crossing {
+        if let Some(shore) = far_shore {
+            s.push(' ');
+            s.push_str(&format!(
+                "So the faith first took root upon the shore of {shore}."
+            ));
+        }
     }
     s.push(' ');
     s.push_str(closing(reg));
@@ -168,6 +202,7 @@ mod tests {
             salience: 0.9,
             casus_belli: None,
             summary_canonical: summary.to_string(),
+            far_shore: None,
         }
     }
 
@@ -176,7 +211,7 @@ mod tests {
         let focal = ev(5, 200, "Uedihi crushed Dav in the field.");
         let cause = ev(2, 150, "Uedihi declared war upon Dav.");
         let voice = VoiceCard::for_register(Register::MonasticChronicle);
-        let draft = template_draft(&focal, &[&focal, &cause], &voice);
+        let draft = template_draft(&focal, &[&focal, &cause], &voice, None);
 
         // chronological: the year-150 cause precedes the year-200 battle.
         let war_at = draft.body.find("declared war").unwrap();
@@ -192,7 +227,7 @@ mod tests {
     fn includes_the_focal_event_even_if_omitted_from_the_slice() {
         let focal = ev(9, 300, "Dav made peace.");
         let voice = VoiceCard::for_register(Register::Saga);
-        let draft = template_draft(&focal, &[], &voice);
+        let draft = template_draft(&focal, &[], &voice, None);
         assert_eq!(draft.references, vec![9]);
     }
 
@@ -221,7 +256,7 @@ mod tests {
             "A sea-trade route opened between Avi and Bel.",
         );
         let voice = VoiceCard::for_register(Register::MonasticChronicle);
-        let draft = template_draft(&open, &[&open], &voice);
+        let draft = template_draft(&open, &[&open], &voice, None);
 
         assert!(
             draft.title.contains("Sundered Lane"),
@@ -258,7 +293,7 @@ mod tests {
             "War severed the sea-trade route between Avi and Bel.",
         );
         let voice = VoiceCard::for_register(Register::MonasticChronicle);
-        let draft = template_draft(&embargo, &[&open, &embargo], &voice);
+        let draft = template_draft(&embargo, &[&open, &embargo], &voice, None);
 
         assert!(draft.body.contains("two peoples met"), "missing birth beat");
         assert!(
@@ -270,5 +305,59 @@ mod tests {
         let birth = draft.body.find("opened between").unwrap();
         let death = draft.body.find("severed the sea-trade").unwrap();
         assert!(birth < death, "the route must be born before it dies");
+    }
+
+    #[test]
+    fn a_faith_crossing_names_the_far_shore_from_the_tag() {
+        // The consumer of `far_shore`: a FaithCrossed focal whose bare summary says
+        // only "a far shore" gets the SHORE NAMED in both title and body — but the
+        // name is the caller-supplied `far_shore`, NEVER the summary. So the name
+        // appearing proves the narrator read the tag. "Aethermoor" is in no summary
+        // nor frame. (Mutation: drop the far-shore beat / title branch → the name
+        // vanishes → trips.)
+        let faith = ev_kind(
+            7,
+            120,
+            EventKind::FaithCrossed,
+            "The Verdance faith was carried over the open water to a far shore.",
+        );
+        let voice = VoiceCard::for_register(Register::MonasticChronicle);
+
+        let named = template_draft(&faith, &[&faith], &voice, Some("Aethermoor"));
+        assert!(
+            named.title.contains("Aethermoor"),
+            "the title must name the reached shore; got: {}",
+            named.title
+        );
+        assert!(
+            named.body.contains("Aethermoor") && named.body.contains("took root upon the shore"),
+            "the body must name the reached shore (from far_shore, not the summary); got: {}",
+            named.body
+        );
+
+        // No tag (an unnamed speck shore): NO far-shore beat — the narrator does not
+        // invent a name. This is the negative half: the beat is gated on the tag.
+        let unnamed = template_draft(&faith, &[&faith], &voice, None);
+        assert!(
+            !unnamed.body.contains("took root upon the shore"),
+            "an unnamed shore must get no far-shore beat; got: {}",
+            unnamed.body
+        );
+
+        // The tag is consumed ONLY for a FaithCrossed focal: a non-faith event
+        // handed the same `far_shore` gets no faith beat (so the framing can't leak
+        // onto, say, a war chronicle that happened to be tagged).
+        let war = ev_kind(
+            8,
+            120,
+            EventKind::BattleFought,
+            "Avi crushed Bel in the field.",
+        );
+        let mislabelled = template_draft(&war, &[&war], &voice, Some("Aethermoor"));
+        assert!(
+            !mislabelled.body.contains("took root upon the shore"),
+            "a non-faith chronicle must not get the faith beat; got: {}",
+            mislabelled.body
+        );
     }
 }

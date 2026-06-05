@@ -336,6 +336,7 @@ mod tests {
             salience: 0.9,
             casus_belli: None,
             summary_canonical: String::new(),
+            far_shore: None,
         }
     }
 

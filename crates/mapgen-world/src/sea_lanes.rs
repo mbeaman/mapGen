@@ -255,6 +255,9 @@ pub fn chart(world: &mut WorldData, params: SeaLanesParams, _rng: &mut ChaCha8Rn
             b,
             cost,
             min_naval: min_naval_for_cost(cost),
+            // Continent tags are filled later, by the Naming stage (it knows the
+            // freshly-indexed continents); `None` until then.
+            ..Default::default()
         })
         .collect();
     lanes.sort_by_key(|l| (l.a, l.b));

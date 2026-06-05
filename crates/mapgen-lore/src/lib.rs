@@ -46,14 +46,19 @@ use mapgen_core::{Event, EventId, EventKind, Work, WorldData};
 ///   - `auto-contact`: the most salient inter-continental *contact* event
 ///     (`TradeRouteOpened` | `EmbargoImposed`) — the clearest cross-water markers,
 ///     so the narrator can weave the Sundered Lanes story instead of only wars.
+///   - `auto-faith`: the most salient `FaithCrossed` — a faith's first crossing to
+///     a far shore, which the narrator names from the event's `far_shore`.
 pub fn select_focal(world: &WorldData, spec: &str) -> anyhow::Result<EventId> {
     if let Ok(id) = spec.parse::<u32>() {
         return Ok(EventId(id));
     }
-    if !matches!(spec, "auto-major-war" | "auto" | "auto-contact") {
+    if !matches!(
+        spec,
+        "auto-major-war" | "auto" | "auto-contact" | "auto-faith"
+    ) {
         anyhow::bail!(
             "unknown event selector '{spec}' \
-             (use a numeric id or 'auto-major-war' / 'auto-contact')"
+             (use a numeric id or 'auto-major-war' / 'auto-contact' / 'auto-faith')"
         );
     }
     let is_war = |e: &&Event| {
@@ -70,10 +75,12 @@ pub fn select_focal(world: &WorldData, spec: &str) -> anyhow::Result<EventId> {
             EventKind::TradeRouteOpened | EventKind::EmbargoImposed
         )
     };
-    let preferred: &dyn Fn(&&Event) -> bool = if spec == "auto-contact" {
-        &is_contact
-    } else {
-        &is_war
+    // A faith's first water-crossing to a far shore.
+    let is_faith = |e: &&Event| matches!(e.kind, EventKind::FaithCrossed);
+    let preferred: &dyn Fn(&&Event) -> bool = match spec {
+        "auto-contact" => &is_contact,
+        "auto-faith" => &is_faith,
+        _ => &is_war,
     };
     let most_salient = |a: &Event, b: &Event| match a
         .salience
@@ -131,14 +138,23 @@ pub fn narrate(
         .clone();
     let slice = context::event_closure(world, focal);
 
+    // Resolve the focal's far shore (an inter-continental event's reached
+    // continent) to its NAME, so the template can name it. `None` for every event
+    // that carries no `far_shore`.
+    let far_shore_name: Option<String> = focal_event
+        .far_shore
+        .and_then(|idx| world.continents.get(idx as usize))
+        .map(|c| c.name.clone());
+    let far_shore = far_shore_name.as_deref();
+
     let draft = match client {
         Some(c) => draft_with_client(world, focal, voice, &slice, c).unwrap_or_else(|_| {
             let slice_events = resolve(world, &slice);
-            template::template_draft(&focal_event, &slice_events, voice)
+            template::template_draft(&focal_event, &slice_events, voice, far_shore)
         }),
         None => {
             let slice_events = resolve(world, &slice);
-            template::template_draft(&focal_event, &slice_events, voice)
+            template::template_draft(&focal_event, &slice_events, voice, far_shore)
         }
     };
 

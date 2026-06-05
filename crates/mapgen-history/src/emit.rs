@@ -23,6 +23,7 @@ pub(crate) struct Emit {
     causes: SmallVec<[EventId; 4]>,
     casus_belli: Option<CasusBelli>,
     summary: String,
+    far_shore: Option<u16>,
 }
 
 impl Emit {
@@ -37,6 +38,7 @@ impl Emit {
             causes: SmallVec::new(),
             casus_belli: None,
             summary,
+            far_shore: None,
         }
     }
 
@@ -61,6 +63,14 @@ impl Emit {
         self
     }
 
+    /// Tag an inter-continental event with the far shore it reached — the index
+    /// into `world.continents` (resolved from the crossed lane's continent tag).
+    /// The narrator reads this back to name the shore.
+    pub fn far_shore(mut self, continent: Option<u16>) -> Self {
+        self.far_shore = continent;
+        self
+    }
+
     pub fn push(self, world: &mut WorldData) -> EventId {
         world.events.push(Event {
             id: EventId(0), // assigned by EventLog::push
@@ -73,6 +83,7 @@ impl Emit {
             salience: self.salience,
             casus_belli: self.casus_belli,
             summary_canonical: self.summary,
+            far_shore: self.far_shore,
         })
     }
 }

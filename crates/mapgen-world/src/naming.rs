@@ -188,6 +188,40 @@ pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha
     world.continents = continents;
     world.oceans = oceans;
 
+    // 8b. Tag each sea lane's anchors with the continent they sit on, so the
+    //     history carriers (which run next, and cannot reach this crate) can stamp
+    //     the far shore of an inter-continental event without recomputing landmass
+    //     membership. PURELY ADDITIVE: it re-runs the SAME `connected_bodies` +
+    //     `MIN_CONTINENT_DIVISOR` filter `name_geographic_bodies` used above, so the
+    //     index it assigns to a body equals that body's position in
+    //     `world.continents`; it reads only mesh/terrain and writes only the
+    //     (`#[serde(skip)]`, empty-on-seed42) lane tags, so it perturbs no named
+    //     field and no hashed byte. A no-op on a laneless world (seed42).
+    if !world.sea_lanes.lanes.is_empty() {
+        let continent_of: Vec<Option<u16>> = {
+            let n = world.mesh.cell_count();
+            let elev = &world.terrain.elevation;
+            let is_land = |i: usize| elev.get(i).copied().unwrap_or(0.0) > 0.0;
+            let mut map = vec![None; n];
+            let mut idx: u16 = 0;
+            for body in connected_bodies(&world.mesh, is_land) {
+                if body.len() * MIN_CONTINENT_DIVISOR < n {
+                    continue; // a speck, not a named continent — same filter as above
+                }
+                for &c in &body {
+                    map[c] = Some(idx);
+                }
+                idx += 1;
+            }
+            map
+        };
+        let at = |cell: u32| continent_of.get(cell as usize).copied().flatten();
+        for lane in &mut world.sea_lanes.lanes {
+            lane.continent_a = at(lane.a);
+            lane.continent_b = at(lane.b);
+        }
+    }
+
     world.languages = languages;
 }
 

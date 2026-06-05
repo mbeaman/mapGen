@@ -50,6 +50,12 @@ pub fn ner_lexicon(world: &WorldData) -> BTreeSet<String> {
     for m in &world.mountain_ranges {
         set.insert(m.name.clone());
     }
+    // Named continents — the far shores a `FaithCrossed` (and the wider landmass
+    // arc) names. Added so the narrator may write a continent it grounds in
+    // `Event::far_shore` without the closed NER set flagging it a hallucination.
+    for c in &world.continents {
+        set.insert(c.name.clone());
+    }
     for a in &world.history.ages {
         set.insert(a.name.clone());
     }
@@ -113,6 +119,7 @@ mod tests {
             salience: 0.5,
             casus_belli: None,
             summary_canonical: String::new(),
+            far_shore: None,
         }
     }
 
@@ -147,5 +154,20 @@ mod tests {
             name: "Aleb".into(),
         });
         assert!(ner_lexicon(&w).contains("Aleb"));
+    }
+
+    #[test]
+    fn lexicon_includes_named_continents() {
+        // The faith-crossing chronicle (and the wider landmass arc) names the far
+        // continent it reached, so that name must be in the closed NER set — else a
+        // faithful chronicle naming the shore is falsely rejected. (Mutation: drop
+        // the continents loop in `ner_lexicon` → trips.)
+        let mut w = WorldData::default();
+        w.continents.push(mapgen_core::Continent {
+            name: "Aethermoor".into(),
+            centroid: [0.0, 0.0],
+            cell_count: 100,
+        });
+        assert!(ner_lexicon(&w).contains("Aethermoor"));
     }
 }

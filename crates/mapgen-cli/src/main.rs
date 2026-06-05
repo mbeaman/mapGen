@@ -181,8 +181,9 @@ enum Cmd {
         #[arg(long, value_name = "WORLD")]
         r#in: PathBuf,
         /// Event to narrate: a numeric id, "auto-major-war" (the most salient
-        /// war), or "auto-contact" (the most salient sea-trade contact — weaves
-        /// the first-contact / Sundered-Lane arc).
+        /// war), "auto-contact" (the most salient sea-trade contact — weaves the
+        /// first-contact / Sundered-Lane arc), or "auto-faith" (a faith's first
+        /// crossing to a far shore, named from the event's far_shore).
         #[arg(long, default_value = "auto-major-war")]
         event: String,
         /// Register: saga | monastic-chronicle | hymn | courtly-letter | peasant-rumor.
