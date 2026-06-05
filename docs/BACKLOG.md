@@ -170,16 +170,38 @@ scale (zoom out)" below), in priority order:
   (16 findings, 7 no-fix confirmations + 4 actionable fixes: CLI help, comment, an
   open-only-branch test, cause-link exclusivity). 6 mutations verified. See the
   "Phase 3 surfacing" rows in `docs/CLAIMS.md`.
-- **Next: Phase 3 continued** — the citable threads left to weave: (a) **temporal
+- ~~Phase 3 surfacing — increment 3 (landmass place tag + faith beat)~~ DONE
+  2026-06-04 (`feat` + `docs`) — the place half of the landmass-centric arc, plus
+  its first consumer. **Substrate (schema v22):** `Event::far_shore` (the index into
+  `world.continents` an inter-continental event reached; `skip_serializing_if`-elided,
+  byte-invisible on laneless seed42), a new `EventKind::FaithCrossed`, and `SeaLane`
+  continent tags (`serde(skip)` build-time scratch). The far continent is resolved at
+  **Naming** (back-filled onto each lane via the SAME `connected_bodies` +
+  `MIN_CONTINENT_DIVISOR` filter that orders `world.continents`, purely additive — no
+  classifier refactor). **Carrier:** the Diffusion sea-crossing emits `FaithCrossed`
+  on a faith's first crossing to a named continent, deduped per (faith, continent) via
+  a scratch `SimState::crossed_faiths` `BTreeSet`. **Consumer (the point — avoids the
+  consumer-less-substrate trap):** `select_focal("auto-faith")` + the template names
+  the far shore from `far_shore` — "The Faith Comes to Hovelni" — a continent name that
+  reaches the chronicle ONLY because the narrator read the tag (the summary says only
+  "a far shore"). Determinism: non-perturbation proof held (3 goldens byte-identical at
+  v21 with all v22 code in place) → v22 re-anchor for the version byte alone. Design
+  panel (3 approaches → 3 judges) + advisor (caught the consumer-less trap, steered the
+  faith consumer in + the beachhead out) + a 4-dim adversarial Workflow (24 findings, 0
+  defects — index-order correct, NER-safe, no realm/beachhead leak, no RNG perturbation).
+  8 mutations verified; one vacuous dedup test caught + replaced with a synthetic unit
+  test. See the "Landmass place tag (inc. 3)" rows in `docs/CLAIMS.md`.
+- **Next: Phase 3 continued** — the place substrate now exists, so the remaining
+  landmass-arc work is: (a) **the multi-strand weave** — "the first time this far shore
+  was reached, by trade, by faith, by sword" — group ALL events by `far_shore` and weave
+  the strands; this is where the DEFERRED **realm tagging** (`far_realms` on trade /
+  colonization) and the **beachhead "by sword" tag** (a `Siege` over `Crossing::Sea`)
+  land, each with a real consumer (same-shore/same-pair grouping). (b) **temporal
   surfacing** — faith/prosperity are end-state only; the diffusion timeline
   (`SimState::faith_changes`, already reconstructable per year) wants a scrubber or
-  per-era snapshots. (b) **a landmass-centric arc** — "the first time this far shore
-  was reached, by trade, by faith, by sword" — the proper home for the deferred
-  faith-crossing beat, but it needs body/realm tagging on the diffusion + conquest
-  events that does not exist yet (a bigger increment). (c) **cross-lens correlation**
-  — tint trade lines by the prosperity they carry, making the causal loop legible.
-  Aside still open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only
-  if lanes look too symmetric.
+  per-era snapshots. (c) **cross-lens correlation** — tint trade lines by the prosperity
+  they carry, making the causal loop legible. Aside still open: Phase 1 Step 3b
+  (wind-aware anisotropic lane cost) — revive only if lanes look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
