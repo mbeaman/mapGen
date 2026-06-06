@@ -228,6 +228,25 @@ scale (zoom out)" below), in priority order:
   vacuous). Advisor done-checkpoint caught the ornate tint shipping untested-but-claimed →
   parameterized the test over both styles. 3 mutations verified (planet no-tint, planet
   invert, ornate invert). See the "Cross-lens correlation (inc. 5)" row in `docs/CLAIMS.md`.
+- ~~Phase 3 surfacing — hardening (inc. 4 review gaps closed)~~ DONE 2026-06-06
+  (`feat` + `docs`) — the two deferred test gaps from inc. 4's review, both closed; no
+  schema bump, no golden move (the existing three goldens are untouched — a NEW laned
+  golden is added, born-anchored). **Gap (i) — CLI auto-shore integration test:**
+  `mapgen-cli/tests/lore_cli.rs` drives the binary end-to-end — `generate --planet --seed 9`
+  (a NEW `--planet` flag on `generate`, mirroring `refine --planet`; persists
+  `GenerateParams::planet` to json.gz, which the CLI previously could NOT do — `planet`
+  only rendered SVG, `generate` only continental) → gzip → `lore --event auto-shore` →
+  asserts the three-strand weave NAMES the shore ("The Annal of the Reaching of Duv").
+  Non-vacuous: the same seed CONTINENTAL fires only the faith strand, so the colony+sword
+  beats are load-bearing on `--planet` (this also corrected the working assumption that
+  "continental is always laneless" — true for seed 42, not seed 9). **Gap (ii) — laned
+  cross-platform golden:** seed 9 planet (the canonical three-strand shore, so `far_shore`
+  fires from every carrier) added to BOTH the native `pipeline_spec.rs` and the wasm
+  `cross_platform.rs` against one golden `seed9_planet_full.blake3.txt` — the `far_shore`
+  tag-firing native↔wasm byte-identity is now pinned by a real golden (was structural only,
+  every prior golden being seed42-laneless). Verified green under `wasm-pack test --node`
+  HERE, not just CI; `just check` green. See the two "Hardening (inc. 4 review …)" rows in
+  `docs/CLAIMS.md`.
 - **Next: Phase 3 continued** — increments 4 (multi-strand weave) and 5 (cross-lens
   correlation) shipped above, and **temporal surfacing is also DONE** — it shipped via the
   Replay thread (wasm `render_at_year` swaps `control_at_year` + `religion_at_year`, driven
@@ -240,15 +259,17 @@ scale (zoom out)" below), in priority order:
   **prosperity timeline** — the slider animates control + faith, but prosperity is
   end-state only; a per-year prosperity view needs a population-history substrate that hits
   the hashed path (schema bump + golden re-anchor), so it's a larger increment, not a quick
-  follow-on. **Test gaps from inc. 4's review (both deferred, low priority):** (i) a CLI
-  integration test for `--event auto-shore` — the consumer (`narrate_shore`) is tested at
-  library level and the CLI branch is thin glue; a laned planet-world fixture through the
-  CLI is real friction (the same reason inc. 2/3 tested `auto-*` at library level); (ii) a
-  laned **crossing-seed** (e.g. 11 or 19 — NOT a sundered seed like 23, which grows no
-  crossable lane and fires no tag) cross-platform golden to pin the `far_shore` tag-FIRING
-  native↔wasm byte-identity (currently structural — all goldens are seed42-laneless). Aside
-  still open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only if lanes look
-  too symmetric.
+  follow-on. **Test gaps from inc. 4's review — both NOW CLOSED** (the hardening increment
+  above, 2026-06-06): (i) the CLI auto-shore integration test landed (`lore_cli.rs`, enabled
+  by the new `generate --planet`), and (ii) the laned cross-platform golden landed (seed 9
+  planet, native + wasm against `seed9_planet_full.blake3.txt`) — the `far_shore` tag-firing
+  native↔wasm byte-identity is no longer structural-only. **So the Sundered Lanes arc's
+  Phase 3 surfacing is feature-complete AND its review debt is paid.** What still remains is
+  larger or trigger-gated, not a quick follow-on: the **prosperity timeline** (per-year
+  prosperity in the slider — needs a population-history substrate on the hashed path: schema
+  bump + golden re-anchor), and the deferred **realm tagging** (`far_realms`, still no
+  consumer). Aside still open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive
+  only if lanes look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
