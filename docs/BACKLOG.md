@@ -191,17 +191,46 @@ scale (zoom out)" below), in priority order:
   defects — index-order correct, NER-safe, no realm/beachhead leak, no RNG perturbation).
   8 mutations verified; one vacuous dedup test caught + replaced with a synthetic unit
   test. See the "Landmass place tag (inc. 3)" rows in `docs/CLAIMS.md`.
-- **Next: Phase 3 continued** — the place substrate now exists, so the remaining
-  landmass-arc work is: (a) **the multi-strand weave** — "the first time this far shore
-  was reached, by trade, by faith, by sword" — group ALL events by `far_shore` and weave
-  the strands; this is where the DEFERRED **realm tagging** (`far_realms` on trade /
-  colonization) and the **beachhead "by sword" tag** (a `Siege` over `Crossing::Sea`)
-  land, each with a real consumer (same-shore/same-pair grouping). (b) **temporal
-  surfacing** — faith/prosperity are end-state only; the diffusion timeline
+- ~~Phase 3 surfacing — increment 4 (multi-strand far-shore weave)~~ DONE
+  2026-06-04 (`feat` + `docs`) — the strand half of the landmass-centric arc: a far
+  shore reached "by trade, by faith, by sword" woven into ONE chronicle. **Tags (no
+  schema bump — `Event::far_shore` already v22):** the overseas colony (`CityFounded`,
+  `loops/colonization.rs`) carries the colonized far anchor's continent; the beachhead
+  conquest (`Siege`, `loops/mearsheimer.rs`) carries the seized loser-anchor's continent,
+  set ONLY when a beachhead is actually taken — both read off the existing
+  `lane.continent_a/b` (no new RNG, no schema/golden move). **Consumer (the point):**
+  `mapgen-lore` `select_shore` groups tagged events by continent and picks the most
+  strand-diverse shore (max distinct strands, tie→event count→lowest index);
+  `narrate_shore` (`--event auto-shore`) weaves one gated beat per present strand, each
+  NAMING the shore, and degrades gracefully to a single strand. On seed 9 this is "The
+  Annal of the Reaching of Duv" — faith (yr 15), colony (yr 31), two beachheads (yr 72,
+  417) — where "Duv" reaches the page ONLY via the tags (every event summary says just "a
+  far shore"). The `finalize` helper is now shared by `narrate` + `narrate_shore`.
+  Determinism: non-perturbation (seed42 laneless → no tag fires → 3 goldens byte-identical,
+  no re-anchor). A per-kind probe (advisor-required) confirmed seed 9 is the only
+  canonical 3-strand shore and that `auto-shore` never lands on an all-faith shore.
+  Advisor (steered the colony strand IN with its OWN observable assertion, not a generic
+  ≥2-strand count that faith+sword would satisfy vacuously) + a 5-dim adversarial Workflow
+  (0 defects; 3 risk/partial coverage gaps, all deferred — see Next). 3 mutations verified
+  (drop colony tag, drop sword tag, unconditional beat). See the "Multi-strand far-shore
+  weave (inc. 4)" rows in `docs/CLAIMS.md`.
+- **Next: Phase 3 continued** — the multi-strand weave (old item (a)) shipped in inc. 4
+  above (faith+colony+sword). The remaining landmass-arc work: (a) **realm tagging**
+  (`far_realms` on the events) — still DEFERRED for lack of a consumer; the **trade-route
+  strand** is architecturally OUT (the lore engine cannot map a realm to a continent at
+  load time — `connected_bodies` isn't a lore dep and the lane continent tags are
+  `serde(skip)` scratch), so "by trade" is carried by the colony/settlement strand. (b)
+  **temporal surfacing** — faith/prosperity are end-state only; the diffusion timeline
   (`SimState::faith_changes`, already reconstructable per year) wants a scrubber or
   per-era snapshots. (c) **cross-lens correlation** — tint trade lines by the prosperity
-  they carry, making the causal loop legible. Aside still open: Phase 1 Step 3b
-  (wind-aware anisotropic lane cost) — revive only if lanes look too symmetric.
+  they carry, making the causal loop legible. **Test gaps from inc. 4's review (both
+  deferred, low priority):** (i) a CLI integration test for `--event auto-shore` — the
+  consumer (`narrate_shore`) is tested at library level and the CLI branch is thin glue;
+  a laned planet-world fixture through the CLI is real friction (the same reason inc. 2/3
+  tested `auto-*` at library level); (ii) a laned (e.g. seed 23) cross-platform golden to
+  pin the `far_shore` tag-FIRING native↔wasm byte-identity (currently structural — all
+  goldens are seed42-laneless). Aside still open: Phase 1 Step 3b (wind-aware anisotropic
+  lane cost) — revive only if lanes look too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
