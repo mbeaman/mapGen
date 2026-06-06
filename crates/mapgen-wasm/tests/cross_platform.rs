@@ -108,3 +108,26 @@ fn full_pipeline_golden_hash_matches_native_under_wasm() {
          bypasses mapgen_core::fmath)"
     );
 }
+
+/// A LANED planet seed pins the `Event::far_shore` tag byte-identical native↔wasm.
+/// seed 42 above is the laneless continental default — no carrier crosses water, so
+/// every `far_shore` stays `None` and is byte-invisible (`skip_serializing_if`), and
+/// that golden never actually exercises the tag. seed 9 is the canonical THREE-strand
+/// far shore (faith + colony + sword; the `mapgen-lore/tests/shore.rs` fixture), so
+/// its `far_shore` values fire from every gen carrier. Hashing the whole 18k-cell,
+/// divide-heavy planet world pins those tag values identical to the native golden
+/// (`seed9_planet_full.blake3.txt`) — closing the far_shore native↔wasm pin that was
+/// previously only structural.
+#[wasm_bindgen_test]
+fn planet_seed9_far_shore_golden_matches_native_under_wasm() {
+    let world = generate_full(GenerateParams::planet(9));
+    let hash = hash_world(&world);
+    let committed =
+        include_str!("../../mapgen-world/tests/golden/seed9_planet_full.blake3.txt").trim();
+    assert_eq!(
+        hash, committed,
+        "wasm32 planet seed-9 output diverged from the native golden — far_shore tag \
+         native↔wasm byte-identity broken (suspect a transcendental bypassing \
+         mapgen_core::fmath)"
+    );
+}

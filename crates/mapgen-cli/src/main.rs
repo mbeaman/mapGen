@@ -40,6 +40,14 @@ enum Cmd {
         plates: usize,
         #[arg(long, default_value_t = 8)]
         nations: usize,
+        /// Persist the planet-scale, multi-continent root (`GenerateParams::planet`)
+        /// instead of a default continental world. `--cells`/`--plates`/`--nations`
+        /// are ignored — the planet preset sets its own (matching `refine --planet`
+        /// and the `planet` command), so the saved world round-trips identically to
+        /// the globe those commands generate (and grows the inter-continental sea
+        /// lanes a continental world never has).
+        #[arg(long)]
+        planet: bool,
         #[arg(long, default_value = "worlds/world.json.gz")]
         out: PathBuf,
         /// Print a live per-stage progress line (auto-on when stderr is a TTY).
@@ -216,18 +224,26 @@ fn main() -> Result<()> {
             cells,
             plates,
             nations,
+            planet,
             out,
             progress,
             timings,
             dump_stages,
             dump_style,
         } => {
-            let params = GenerateParams {
-                seed,
-                cell_count: cells,
-                plate_count: plates,
-                nation_count: nations,
-                ..Default::default()
+            // `--planet` uses the preset wholesale (its own cells/plates/nations),
+            // so a persisted planet is byte-identical to `planet` / `refine --planet`
+            // and to the `GenerateParams::planet` fixtures the tests pin.
+            let params = if planet {
+                GenerateParams::planet(seed)
+            } else {
+                GenerateParams {
+                    seed,
+                    cell_count: cells,
+                    plate_count: plates,
+                    nation_count: nations,
+                    ..Default::default()
+                }
             };
             let dump_style = match dump_style {
                 Some(s) => Some(s.parse::<Style>().map_err(anyhow::Error::msg)?),

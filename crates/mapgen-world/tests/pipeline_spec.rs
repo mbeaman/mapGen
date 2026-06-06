@@ -40,6 +40,26 @@ fn full_pipeline_golden_hash() {
 }
 
 #[test]
+fn planet_seed9_far_shore_golden_hash() {
+    // A LANED planet seed in the determinism golden. The seed-42 golden above is
+    // the laneless continental default: no carrier crosses water, so every
+    // `Event::far_shore` stays `None` and is byte-invisible (`skip_serializing_if`)
+    // — that golden never exercises the tag. seed 9 is the canonical THREE-strand
+    // far shore (reached by faith AND colony AND the sword; the same fixture
+    // `mapgen-lore/tests/shore.rs` pins), so its `far_shore` tags fire from every
+    // gen carrier. Hashing the whole planet world pins those tag VALUES; its
+    // native↔wasm twin in `mapgen-wasm/tests/cross_platform.rs` makes the pin
+    // cross-platform — the previously-only-structural far_shore byte-identity.
+    let world = generate_full(GenerateParams::planet(9));
+    let hash = hash_world(&world);
+    let committed = include_str!("golden/seed9_planet_full.blake3.txt").trim();
+    assert_eq!(
+        hash, committed,
+        "planet seed-9 output drifted from committed golden hash (far_shore tags included)"
+    );
+}
+
+#[test]
 fn stepper_matches_generate_full() {
     let reference = generate_full(fixed_params(42));
 
