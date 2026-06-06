@@ -320,9 +320,18 @@ fn render_faith(world: &WorldData, out: &mut String) {
 /// lanes fall in range. Mirrors the planet `render_trade_routes`.
 fn render_trade_routes(world: &WorldData, out: &mut String) {
     let mesh = &world.mesh;
+    let control = &world.society.control;
     out.push_str(
         r##"<g fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
     );
+    let prosperity_of = |cell: usize| {
+        control
+            .get(cell)
+            .copied()
+            .flatten()
+            .and_then(|pid| world.society.nations.get(pid as usize))
+            .map(|n| n.prosperity)
+    };
     for lane in &world.sea_lanes.lanes {
         if lane.min_naval > super::MAX_CROSSABLE_NAVAL {
             continue; // not crossable — an abyss no seafarer of this world reaches
@@ -331,12 +340,34 @@ fn render_trade_routes(world: &WorldData, out: &mut String) {
         let (Some(&pa), Some(&pb)) = (mesh.sites.get(a), mesh.sites.get(b)) else {
             continue;
         };
-        write!(
-            out,
-            r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
-            pa[0], pa[1], pb[0], pb[1]
-        )
-        .unwrap();
+        // Tint by the average prosperity of the realms the lane binds, through the
+        // SAME `PROSPERITY` ramp the prosperity wash uses — the trade→prosperity
+        // loop made legible (mirrors the planet `render_trade_routes`). A lane with
+        // no controlled endpoint keeps the group's fallback carmine.
+        let tint = match (prosperity_of(a), prosperity_of(b)) {
+            (Some(pa), Some(pb)) => Some((pa + pb) / 2.0),
+            (Some(p), None) | (None, Some(p)) => Some(p),
+            (None, None) => None,
+        };
+        match tint {
+            Some(t) => {
+                let [r, g, bl] = ramp(&PROSPERITY, t);
+                write!(
+                    out,
+                    r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}" stroke="#{r:02x}{g:02x}{bl:02x}"/>"##,
+                    pa[0], pa[1], pb[0], pb[1]
+                )
+                .unwrap();
+            }
+            None => {
+                write!(
+                    out,
+                    r##"<line x1="{:.1}" y1="{:.1}" x2="{:.1}" y2="{:.1}"/>"##,
+                    pa[0], pa[1], pb[0], pb[1]
+                )
+                .unwrap();
+            }
+        }
     }
     out.push_str("</g>");
 }

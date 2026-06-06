@@ -572,11 +572,22 @@ fn render_faith(world: &WorldData, proj: &Proj, out: &mut String) {
 /// so the lane endpoints land exactly on their anchor coasts.
 fn render_trade_routes(world: &WorldData, proj: &Proj, out: &mut String) {
     let mesh = &world.mesh;
-    // Stroke + width live on the parent group so each <line> stays terse; a warm
-    // carmine that reads over both the sea shading and the biome continents.
+    let control = &world.society.control;
+    // Width + a fallback carmine live on the parent group; each <line> overrides
+    // `stroke` with the prosperity tint of the realms it connects (the default is
+    // used only for a lane with no controlled endpoint).
     out.push_str(
         r##"<g class="planet-trade" display="none" fill="none" stroke="#8c2f1a" stroke-width="1.6" stroke-opacity="0.85" stroke-linecap="round">"##,
     );
+    // The prosperity of the realm controlling a coastal anchor cell, if any.
+    let prosperity_of = |cell: usize| {
+        control
+            .get(cell)
+            .copied()
+            .flatten()
+            .and_then(|pid| world.society.nations.get(pid as usize))
+            .map(|n| n.prosperity)
+    };
     for lane in &world.sea_lanes.lanes {
         if lane.min_naval > super::MAX_CROSSABLE_NAVAL {
             continue; // an abyss no seafarer of this world reaches — not "crossable"
@@ -587,11 +598,33 @@ fn render_trade_routes(world: &WorldData, proj: &Proj, out: &mut String) {
         };
         let (x1, y1) = proj.project(pa[0], pa[1]);
         let (x2, y2) = proj.project(pb[0], pb[1]);
-        write!(
-            out,
-            r##"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}"/>"##
-        )
-        .unwrap();
+        // Tint the lane by the AVERAGE prosperity of the two realms it binds,
+        // through the SAME ramp the prosperity wash uses (one colour source) — so
+        // the Trade lens shows which lanes connect rich shores, making the
+        // trade→prosperity loop legible across lenses. A lane with neither anchor
+        // controlled keeps the group's fallback carmine.
+        let tint = match (prosperity_of(a), prosperity_of(b)) {
+            (Some(pa), Some(pb)) => Some((pa + pb) / 2.0),
+            (Some(p), None) | (None, Some(p)) => Some(p),
+            (None, None) => None,
+        };
+        match tint {
+            Some(t) => {
+                let [r, g, bl] = prosperity_color(t);
+                write!(
+                    out,
+                    r##"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}" stroke="#{r:02x}{g:02x}{bl:02x}"/>"##
+                )
+                .unwrap();
+            }
+            None => {
+                write!(
+                    out,
+                    r##"<line x1="{x1:.1}" y1="{y1:.1}" x2="{x2:.1}" y2="{y2:.1}"/>"##
+                )
+                .unwrap();
+            }
+        }
     }
     out.push_str("</g>");
 }
