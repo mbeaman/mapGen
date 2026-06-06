@@ -20,11 +20,14 @@ use crate::unit_f32;
 /// sim it reliably settles a persistently-unclaimed far anchor.
 const COLONIZE_PROB: f32 = 0.03;
 
-/// Unclaimed far-shore anchors `a` can reach: for each sea lane `a` can sail
-/// (`min_naval <= a`'s naval) where `a` owns one anchor, the OTHER anchor if it
-/// is currently unclaimed. Lane anchors are coastal land cells on sizable bodies
-/// by construction, so claiming a far anchor plants an overseas colony.
-fn colony_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<u32>) {
+/// Unclaimed far-shore anchors `a` can reach, each paired with the continent it
+/// sits on: for each sea lane `a` can sail (`min_naval <= a`'s naval) where `a`
+/// owns one anchor, the OTHER anchor if it is currently unclaimed, tagged with
+/// that anchor's continent (`lane.continent_a/b`, the naming-stage index). Lane
+/// anchors are coastal land cells on sizable bodies by construction, so claiming
+/// a far anchor plants an overseas colony — and the continent tag is the far
+/// shore the chronicle names (history can't recompute landmass membership).
+fn colony_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<(u32, Option<u16>)>) {
     let owns =
         |c: usize, pid: usize| world.society.control.get(c).copied().flatten() == Some(pid as u32);
     for lane in &world.sea_lanes.lanes {
@@ -32,15 +35,15 @@ fn colony_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<u32>) 
             continue;
         }
         let (aa, ab) = (lane.a as usize, lane.b as usize);
-        let far = if owns(aa, a) {
-            ab
+        let (far, far_continent) = if owns(aa, a) {
+            (ab, lane.continent_b)
         } else if owns(ab, a) {
-            aa
+            (aa, lane.continent_a)
         } else {
             continue;
         };
         if world.society.control.get(far).copied().flatten().is_none() {
-            out.push(far as u32);
+            out.push((far as u32, far_continent));
         }
     }
 }
@@ -56,7 +59,7 @@ impl CausalLoop for Colonization {
     fn tick(&mut self, ctx: &mut TickCtx) {
         let year = ctx.year;
         let n = ctx.state.polity_count;
-        let mut targets: Vec<u32> = Vec::new();
+        let mut targets: Vec<(u32, Option<u16>)> = Vec::new();
         for a in 0..n {
             if ctx.state.dissolved[a] {
                 continue;
@@ -64,7 +67,7 @@ impl CausalLoop for Colonization {
             let naval_a = ctx.state.naval[a];
             targets.clear();
             colony_targets(ctx.world, naval_a, a, &mut targets);
-            for &far in &targets {
+            for &(far, far_continent) in &targets {
                 let cell_i = far as usize;
                 // This far cell can appear twice in `targets`: a coastal cell can
                 // be the chosen endpoint of two deduped lanes to two different
@@ -112,13 +115,18 @@ impl CausalLoop for Colonization {
                     .map(|nt| nt.name.clone())
                     .unwrap_or_default();
                 let ruler = ctx.state.courts.get(a).and_then(|c| c.ruler);
+                // Tag the colony with the far shore it was planted on (the lane
+                // anchor's continent), so the shore chronicle can name where the
+                // settlement strand reached — the bare summary says only "a far
+                // shore". `None` for a colony on an unnamed speck.
                 let mut ev = Emit::new(
                     year,
                     EventKind::CityFounded,
                     far,
                     0.45,
                     format!("{name} planted a colony on a far shore across the sea."),
-                );
+                )
+                .far_shore(far_continent);
                 if let Some(r) = ruler {
                     ev = ev.actors(&[r]);
                 }

@@ -55,6 +55,86 @@ pub fn template_draft(
     }
 }
 
+/// Weave the chronicle of one FAR SHORE from the carrier events that reached it
+/// (gathered by [`crate::select_shore`]). The shore is NAMED throughout — once in
+/// the opening, and once in a closing beat for each strand that touched it (a
+/// faith carried over, a colony planted, a beachhead won). Both the name and the
+/// per-strand framing live ONLY here: no event summary carries them (the
+/// `FaithCrossed` / `CityFounded` / `Siege` summaries all say "a far shore"), so
+/// their presence proves the weaver read the `far_shore` tags. NER-clean: `shore`
+/// is a continent name (a lexicon entity), the rest is fixed prose + summaries.
+///
+/// `events` are the shore's tagged strand events; the strand beats are gated on
+/// the event KINDS present, so a single-strand shore (e.g. sword-only) degrades
+/// to one beat rather than inventing the others.
+pub fn shore_draft(shore: &str, events: &[&Event], voice: &VoiceCard) -> ChronicleDraft {
+    let reg = voice.register;
+    let mut evs: Vec<&Event> = events.to_vec();
+    evs.sort_by_key(|e| (e.year, e.id.0));
+    evs.dedup_by_key(|e| e.id.0);
+
+    let has_faith = evs
+        .iter()
+        .any(|e| matches!(e.kind, EventKind::FaithCrossed));
+    let has_colony = evs.iter().any(|e| matches!(e.kind, EventKind::CityFounded));
+    let has_sword = evs.iter().any(|e| matches!(e.kind, EventKind::Siege));
+
+    let mut s = String::from(opening(reg));
+    s.push(' ');
+    s.push_str(&format!(
+        "This is the chronicle of the far shore of {shore}, \
+         and of those who first reached it across the open water."
+    ));
+    for e in &evs {
+        s.push(' ');
+        if matches!(reg, Register::MonasticChronicle) {
+            s.push_str(&format!("In the year {}, {}", e.year, e.summary_canonical));
+        } else {
+            s.push_str(&e.summary_canonical);
+        }
+    }
+    // One closing beat per strand present, each NAMING the shore — so the weave
+    // is explicit and the shore's identity comes from the tag, not the summaries.
+    if has_faith {
+        s.push(' ');
+        s.push_str(&format!(
+            "So the faith first took root upon the shore of {shore}."
+        ));
+    }
+    if has_colony {
+        s.push(' ');
+        s.push_str(&format!(
+            "So the first colony was planted upon the shore of {shore}."
+        ));
+    }
+    if has_sword {
+        s.push(' ');
+        s.push_str(&format!(
+            "So the sword first won a foothold upon the shore of {shore}."
+        ));
+    }
+    s.push(' ');
+    s.push_str(closing(reg));
+
+    ChronicleDraft {
+        title: shore_title(reg, shore),
+        body: s,
+        references: evs.iter().map(|e| e.id.0).collect(),
+        lacunae: Vec::new(),
+    }
+}
+
+/// Title a far-shore chronicle on the shore it tells of.
+fn shore_title(reg: Register, shore: &str) -> String {
+    match reg {
+        Register::Saga => format!("A Lay of the Shore of {shore}"),
+        Register::MonasticChronicle => format!("The Annal of the Reaching of {shore}"),
+        Register::Hymn => format!("A Hymn for the Shore of {shore}"),
+        Register::CourtlyLetter => format!("Concerning the Far Shore of {shore}"),
+        Register::PeasantRumor => format!("What They Say of {shore} Across the Sea"),
+    }
+}
+
 fn title_for(reg: Register, focal: &Event, far_shore: Option<&str>) -> String {
     // A faith's first crossing is titled on the SHORE it reached (named from
     // `far_shore`) — "The Faith Comes to Aethermoor". Falls back to the thematic
@@ -358,6 +438,72 @@ mod tests {
             !mislabelled.body.contains("took root upon the shore"),
             "a non-faith chronicle must not get the faith beat; got: {}",
             mislabelled.body
+        );
+    }
+
+    #[test]
+    fn shore_draft_weaves_a_beat_for_each_strand_present_and_no_others() {
+        // The multi-strand weave's gating, isolated from the pipeline. Each strand
+        // beat is gated on the corresponding event KIND being in the slice, and
+        // every beat NAMES the shore. The discriminators (each a phrase unique to
+        // one strand, found in no event summary): "took root" (faith), "colony was
+        // planted" (colony), "won a foothold" (sword).
+        let voice = VoiceCard::for_register(Register::MonasticChronicle);
+
+        // Two strands — faith + sword, NO colony. Both present beats name the shore;
+        // the absent colony beat must NOT appear (else a beat fires without its
+        // strand — the false-green failure mode).
+        let faith = ev_kind(
+            1,
+            10,
+            EventKind::FaithCrossed,
+            "The Verdance faith was carried over the open water to a far shore.",
+        );
+        let sword = ev_kind(
+            2,
+            20,
+            EventKind::Siege,
+            "Avi wrested 3 settlements from Bel.",
+        );
+        let draft = shore_draft("Aethermoor", &[&faith, &sword], &voice);
+        assert!(
+            draft
+                .body
+                .contains("faith first took root upon the shore of Aethermoor"),
+            "faith strand must weave its beat naming the shore; got: {}",
+            draft.body
+        );
+        assert!(
+            draft
+                .body
+                .contains("sword first won a foothold upon the shore of Aethermoor"),
+            "sword strand must weave its beat naming the shore; got: {}",
+            draft.body
+        );
+        assert!(
+            !draft.body.contains("colony was planted"),
+            "no colony in the slice ⇒ NO colony beat; got: {}",
+            draft.body
+        );
+        assert!(
+            draft.title.contains("Aethermoor"),
+            "the chronicle is titled on the shore; got: {}",
+            draft.title
+        );
+
+        // One strand — sword only. The weave degrades gracefully to a single beat,
+        // still naming the shore; neither other beat is invented.
+        let solo = shore_draft("Aethermoor", &[&sword], &voice);
+        assert!(
+            solo.body
+                .contains("sword first won a foothold upon the shore of Aethermoor"),
+            "a single-strand shore still names itself; got: {}",
+            solo.body
+        );
+        assert!(
+            !solo.body.contains("took root") && !solo.body.contains("colony was planted"),
+            "a sword-only shore must invent no faith/colony beat; got: {}",
+            solo.body
         );
     }
 }

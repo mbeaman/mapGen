@@ -48,11 +48,19 @@ const EPS: f32 = 1e-3;
 /// across water over a passable sea lane ("The Sundered Lanes" carrier). A Sea
 /// crossing carries the two coastal *anchor* cells — `a_anchor` controlled by
 /// the attacker `a`, `b_anchor` by the target `b` — so a won cross-water war can
-/// seize the loser's anchor as a beachhead.
+/// seize the loser's anchor as a beachhead. It also carries each anchor's
+/// continent (`*_continent`, the naming-stage index from `lane.continent_a/b`),
+/// so the beachhead Siege can be tagged with the far shore it landed on without
+/// history recomputing landmass membership.
 #[derive(Clone, Copy)]
 enum Crossing {
     Land,
-    Sea { a_anchor: u32, b_anchor: u32 },
+    Sea {
+        a_anchor: u32,
+        b_anchor: u32,
+        a_continent: Option<u16>,
+        b_continent: Option<u16>,
+    },
 }
 
 /// Polities polity `a` can attack ACROSS WATER this year: for each passable sea
@@ -69,10 +77,12 @@ fn cross_water_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<(
             continue; // a can't sail this lane
         }
         let (aa, ab) = (lane.a as usize, lane.b as usize);
-        let (mine, theirs) = if owns(aa, a) {
-            (aa, ab)
+        // `(mine, theirs)` with their continents kept aligned: whichever lane
+        // anchor `a` owns becomes the attacker anchor, the other the target's.
+        let (mine, mine_cont, theirs, theirs_cont) = if owns(aa, a) {
+            (aa, lane.continent_a, ab, lane.continent_b)
         } else if owns(ab, a) {
-            (ab, aa)
+            (ab, lane.continent_b, aa, lane.continent_a)
         } else {
             continue; // a controls neither anchor — can't launch from this lane
         };
@@ -84,6 +94,8 @@ fn cross_water_targets(world: &WorldData, naval_a: u8, a: usize, out: &mut Vec<(
                     Crossing::Sea {
                         a_anchor: mine as u32,
                         b_anchor: theirs as u32,
+                        a_continent: mine_cont,
+                        b_continent: theirs_cont,
                     },
                 ));
             }
@@ -399,8 +411,23 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Cross
     // ONLY way a polity comes to hold land on a second landmass — inter-
     // continental reach, earned over a sea lane. (Land wars: `crossing` is Land,
     // so this is skipped and everything below is byte-identical.)
-    let beachhead = if let Crossing::Sea { a_anchor, b_anchor } = crossing {
-        let loser_anchor = if w_pid == a { b_anchor } else { a_anchor };
+    // The far shore the beachhead landed on — the loser anchor's continent —
+    // set only when a beachhead is actually seized, so the Siege is tagged with
+    // the shore ONLY for the first cross-water foothold (the milestone), not for
+    // later grinding on an already-established overseas front.
+    let mut beachhead_shore: Option<u16> = None;
+    let beachhead = if let Crossing::Sea {
+        a_anchor,
+        b_anchor,
+        a_continent,
+        b_continent,
+    } = crossing
+    {
+        let (loser_anchor, loser_continent) = if w_pid == a {
+            (b_anchor, b_continent)
+        } else {
+            (a_anchor, a_continent)
+        };
         let cell_i = loser_anchor as usize;
         if ctx.world.society.control.get(cell_i).copied().flatten() == Some(l_pid as u32) {
             ctx.state
@@ -412,6 +439,7 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Cross
                     to: Some(w_pid as u32),
                 });
             ctx.world.society.control[cell_i] = Some(w_pid as u32);
+            beachhead_shore = loser_continent;
             1
         } else {
             0
@@ -449,6 +477,11 @@ fn resolve_war(ctx: &mut TickCtx, a: usize, b: usize, year: i32, crossing: Cross
         .actors(&[w_ruler])
         .patients(&[l_ruler])
         .causes(&[battle_ev])
+        // Tag a cross-water conquest with the far shore its beachhead took, so the
+        // shore chronicle names where the sword strand reached. `None` for a land
+        // war (no beachhead) or a beachhead on an unnamed speck — the Siege summary
+        // itself carries no place, so this tag is the only source of the shore.
+        .far_shore(beachhead_shore)
         .push(ctx.world);
         // Borders moved — Turchin's capacity must track the new territory (and
         // re-compose each realm's trade bonus, so conquest can't erase it).

@@ -182,8 +182,10 @@ enum Cmd {
         r#in: PathBuf,
         /// Event to narrate: a numeric id, "auto-major-war" (the most salient
         /// war), "auto-contact" (the most salient sea-trade contact — weaves the
-        /// first-contact / Sundered-Lane arc), or "auto-faith" (a faith's first
-        /// crossing to a far shore, named from the event's far_shore).
+        /// first-contact / Sundered-Lane arc), "auto-faith" (a faith's first
+        /// crossing to a far shore, named from the event's far_shore), or
+        /// "auto-shore" (the multi-strand chronicle of the most-reached far shore —
+        /// faith, colony, and conquest woven together, naming the landmass).
         #[arg(long, default_value = "auto-major-war")]
         event: String,
         /// Register: saga | monastic-chronicle | hymn | courtly-letter | peasant-rumor.
@@ -433,7 +435,7 @@ fn main() -> Result<()> {
             voice,
             out,
         } => {
-            use mapgen_lore::{narrate, select_focal, Register, VoiceCard};
+            use mapgen_lore::{narrate, narrate_shore, select_focal, Register, VoiceCard};
 
             let mut world = read_world(&r#in)?;
             let register = Register::parse(&voice).ok_or_else(|| {
@@ -441,6 +443,39 @@ fn main() -> Result<()> {
                 anyhow::anyhow!("unknown voice '{voice}' (options: {})", opts.join(", "))
             })?;
             let card = VoiceCard::for_register(register);
+
+            // `auto-shore` is the multi-strand FAR-SHORE chronicle: it picks the
+            // most strand-diverse landmass and weaves every carrier strand that
+            // reached it (faith / colony / conquest), naming the shore from the
+            // `far_shore` tags. It has no single focal event and is always woven by
+            // the deterministic template (not the LLM), so it routes separately.
+            if event == "auto-shore" {
+                let work = narrate_shore(&mut world, &card)?;
+                println!("# {}", work.title);
+                println!(
+                    "*{}, in the {} year*\n",
+                    work.in_world_author, work.written_year
+                );
+                println!("{}\n", work.body);
+                if !work.lacunae.is_empty() {
+                    println!("Lacunae: {}\n", work.lacunae.join("; "));
+                }
+                println!(
+                    "(wove the far-shore chronicle — citing {} events, voice: {})",
+                    work.references.len(),
+                    register.as_str()
+                );
+                if let Some(path) = out {
+                    write_world(&path, &world)?;
+                    eprintln!(
+                        "wrote {} ({} chronicle(s) now persisted)",
+                        path.display(),
+                        world.works.len()
+                    );
+                }
+                return Ok(());
+            }
+
             let focal = select_focal(&world, &event)?;
             let focal_summary = world
                 .events

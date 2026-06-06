@@ -158,6 +158,16 @@ pub fn narrate(
         }
     };
 
+    Ok(finalize(world, draft, voice))
+}
+
+/// Turn a finished [`ChronicleDraft`] into a persisted [`Work`]: merge the
+/// engine-derived lacunae (the age's unresolved threads) with any the model
+/// self-reported, stamp the written year (the latest event year), push it onto
+/// `world.works`, and return it. Shared by [`narrate`] (a focal chronicle) and
+/// [`narrate_shore`] (a far-shore chronicle) so both record authorship and
+/// lacunae identically.
+fn finalize(world: &mut WorldData, draft: ChronicleDraft, voice: &VoiceCard) -> Work {
     let written_year = world
         .events
         .events
@@ -165,8 +175,6 @@ pub fn narrate(
         .map(|e| e.year)
         .max()
         .unwrap_or(0);
-    // Engine-derived lacunae (the age's unresolved threads) merged with any the
-    // model self-reported — so gaps are recorded even on the template path.
     let mut lacunae = draft.lacunae;
     for l in world_lacunae(world) {
         if !lacunae.contains(&l) {
@@ -182,7 +190,120 @@ pub fn narrate(
         written_year,
     };
     world.works.push(work.clone());
-    Ok(work)
+    work
+}
+
+/// A far shore reached by the history carriers, partitioned by the strand that
+/// reached it: a faith carried over the water (`FaithCrossed`), a colony planted
+/// (`CityFounded`), a beachhead won by conquest (`Siege`). The unit
+/// [`narrate_shore`] weaves into one multi-strand chronicle of a single landmass.
+/// Every member event carries `Event::far_shore == Some(continent)` — the tag
+/// the gen carriers stamped and the only place the shore's identity lives.
+#[derive(Clone, Debug)]
+pub struct ShorePick {
+    /// Index into `world.continents` — the named far shore.
+    pub continent: u16,
+    /// Faith-crossing milestones that named this shore.
+    pub faith: Vec<EventId>,
+    /// Overseas colonies planted on this shore.
+    pub colony: Vec<EventId>,
+    /// Cross-water conquests whose beachhead landed on this shore.
+    pub sword: Vec<EventId>,
+}
+
+impl ShorePick {
+    /// How many of the three strands reached this shore (1..=3).
+    pub fn distinct_strands(&self) -> usize {
+        [
+            !self.faith.is_empty(),
+            !self.colony.is_empty(),
+            !self.sword.is_empty(),
+        ]
+        .into_iter()
+        .filter(|&present| present)
+        .count()
+    }
+
+    /// Total strand events on this shore.
+    pub fn total(&self) -> usize {
+        self.faith.len() + self.colony.len() + self.sword.len()
+    }
+
+    /// All strand events, chronological (ascending id == emission order).
+    fn events_chronological(&self) -> Vec<EventId> {
+        let mut v: Vec<EventId> = self
+            .faith
+            .iter()
+            .chain(&self.colony)
+            .chain(&self.sword)
+            .copied()
+            .collect();
+        v.sort_by_key(|e| e.0);
+        v
+    }
+}
+
+/// Pick the far shore reached by the MOST DISTINCT carrier strands — the most
+/// narratively complete landmass (a shore touched by faith AND sword AND
+/// settlement outranks one touched by faith alone), so the chronicle weaves the
+/// richest "by trade, by faith, by sword" story available. Ties broken by total
+/// strand events, then lowest continent index (fully deterministic). `None` when
+/// no event carries a `far_shore` — a laneless world has no far shore to reach.
+pub fn select_shore(world: &WorldData) -> Option<ShorePick> {
+    use std::collections::BTreeMap;
+    let mut by_shore: BTreeMap<u16, ShorePick> = BTreeMap::new();
+    for e in &world.events.events {
+        let Some(idx) = e.far_shore else { continue };
+        let slot = by_shore.entry(idx).or_insert_with(|| ShorePick {
+            continent: idx,
+            faith: Vec::new(),
+            colony: Vec::new(),
+            sword: Vec::new(),
+        });
+        // `far_shore` is stamped only on these three kinds today; any other tagged
+        // kind is ignored rather than miscounted as a strand.
+        match e.kind {
+            EventKind::FaithCrossed => slot.faith.push(e.id),
+            EventKind::CityFounded => slot.colony.push(e.id),
+            EventKind::Siege => slot.sword.push(e.id),
+            _ => {}
+        }
+    }
+    by_shore
+        .into_values()
+        .filter(|p| p.total() > 0)
+        .max_by(|a, b| {
+            a.distinct_strands()
+                .cmp(&b.distinct_strands())
+                .then(a.total().cmp(&b.total()))
+                // tie → LOWEST continent index wins the max (so reverse the cmp)
+                .then(b.continent.cmp(&a.continent))
+        })
+}
+
+/// Narrate the chronicle of one FAR SHORE: the most strand-diverse landmass the
+/// carriers reached (see [`select_shore`]), weaving every strand that touched it
+/// — a faith carried over the water, a colony planted, a beachhead won — into a
+/// single chronicle that NAMES the shore. This is the multi-strand consumer of
+/// `Event::far_shore`: the continent name and the per-strand beats are in the
+/// chronicle ONLY because the weaver read the tags (no event summary carries the
+/// place), which is what makes the tags load-bearing. Deterministic — an offline
+/// template weave (the LLM narrator stays focal-event-centric) — so it always
+/// produces the same chronicle for a world. Persists and returns the `Work`.
+/// Errs when no far shore was reached (a laneless world has nothing to chronicle).
+pub fn narrate_shore(world: &mut WorldData, voice: &VoiceCard) -> anyhow::Result<Work> {
+    let pick = select_shore(world)
+        .ok_or_else(|| anyhow::anyhow!("no far shore was reached — nothing to chronicle"))?;
+    let shore = world
+        .continents
+        .get(pick.continent as usize)
+        .map(|c| c.name.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!("picked shore {} is not a named continent", pick.continent)
+        })?;
+    let events = resolve(world, &pick.events_chronological());
+    let draft = template::shore_draft(&shore, &events, voice);
+    Ok(finalize(world, draft, voice))
 }
 
 /// Resolve event ids to event references in the world.
