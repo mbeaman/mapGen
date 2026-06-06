@@ -214,23 +214,41 @@ scale (zoom out)" below), in priority order:
   (0 defects; 3 risk/partial coverage gaps, all deferred — see Next). 3 mutations verified
   (drop colony tag, drop sword tag, unconditional beat). See the "Multi-strand far-shore
   weave (inc. 4)" rows in `docs/CLAIMS.md`.
-- **Next: Phase 3 continued** — the multi-strand weave (old item (a)) shipped in inc. 4
-  above (faith+colony+sword). The remaining landmass-arc work: (a) **realm tagging**
-  (`far_realms` on the events) — still DEFERRED for lack of a consumer; the **trade-route
-  strand** is architecturally OUT (the lore engine cannot map a realm to a continent at
-  load time — `connected_bodies` isn't a lore dep and the lane continent tags are
-  `serde(skip)` scratch), so "by trade" is carried by the colony/settlement strand. (b)
-  **temporal surfacing** — faith/prosperity are end-state only; the diffusion timeline
-  (`SimState::faith_changes`, already reconstructable per year) wants a scrubber or
-  per-era snapshots. (c) **cross-lens correlation** — tint trade lines by the prosperity
-  they carry, making the causal loop legible. **Test gaps from inc. 4's review (both
-  deferred, low priority):** (i) a CLI integration test for `--event auto-shore` — the
-  consumer (`narrate_shore`) is tested at library level and the CLI branch is thin glue;
-  a laned planet-world fixture through the CLI is real friction (the same reason inc. 2/3
-  tested `auto-*` at library level); (ii) a laned (e.g. seed 23) cross-platform golden to
-  pin the `far_shore` tag-FIRING native↔wasm byte-identity (currently structural — all
-  goldens are seed42-laneless). Aside still open: Phase 1 Step 3b (wind-aware anisotropic
-  lane cost) — revive only if lanes look too symmetric.
+- ~~Phase 3 surfacing — increment 5 (cross-lens correlation)~~ DONE 2026-06-04
+  (`feat` + `docs`) — the Trade lens now tints each crossable sea lane by the prosperity
+  of the realms it connects (the AVERAGE of the two endpoint realms, through the SAME
+  `prosperity_color` / `PROSPERITY` ramp the Prosperity wash uses — one colour source), so
+  a lane binding rich shores reads deeper than one binding poor shores: the
+  trade→prosperity causal loop, legible across lenses. Both `render_trade_routes` paths
+  (planet `planet-trade` + ornate `layer-trade`) tinted; a lane with no controlled
+  endpoint keeps the fallback carmine. **Render-only — no schema, no golden move**
+  (`WorldData` untouched). Probe-picked fixture seed 19 (4 lanes spanning avg prosperity
+  ~0.13→0.97); the render-path test asserts the rendered `<line>` strokes (rich deeper than
+  poor) for BOTH styles, not the per-lane prosperity (which would re-test the data,
+  vacuous). Advisor done-checkpoint caught the ornate tint shipping untested-but-claimed →
+  parameterized the test over both styles. 3 mutations verified (planet no-tint, planet
+  invert, ornate invert). See the "Cross-lens correlation (inc. 5)" row in `docs/CLAIMS.md`.
+- **Next: Phase 3 continued** — increments 4 (multi-strand weave) and 5 (cross-lens
+  correlation) shipped above, and **temporal surfacing is also DONE** — it shipped via the
+  Replay thread (wasm `render_at_year` swaps `control_at_year` + `religion_at_year`, driven
+  by the frontend time-slider, with e2e coverage of both the political and faith sliders;
+  the earlier "temporal surfacing" item here was stale). What remains: (a) **realm tagging**
+  (`far_realms` on the events) — still DEFERRED for lack of a consumer; the chronicle
+  **trade-route strand** is architecturally OUT (the lore engine cannot map a realm to a
+  continent at load time — `connected_bodies` isn't a lore dep and the lane continent tags
+  are `serde(skip)` scratch), so "by trade" is carried by the colony/settlement strand. (b)
+  **prosperity timeline** — the slider animates control + faith, but prosperity is
+  end-state only; a per-year prosperity view needs a population-history substrate that hits
+  the hashed path (schema bump + golden re-anchor), so it's a larger increment, not a quick
+  follow-on. **Test gaps from inc. 4's review (both deferred, low priority):** (i) a CLI
+  integration test for `--event auto-shore` — the consumer (`narrate_shore`) is tested at
+  library level and the CLI branch is thin glue; a laned planet-world fixture through the
+  CLI is real friction (the same reason inc. 2/3 tested `auto-*` at library level); (ii) a
+  laned **crossing-seed** (e.g. 11 or 19 — NOT a sundered seed like 23, which grows no
+  crossable lane and fires no tag) cross-platform golden to pin the `far_shore` tag-FIRING
+  native↔wasm byte-identity (currently structural — all goldens are seed42-laneless). Aside
+  still open: Phase 1 Step 3b (wind-aware anisotropic lane cost) — revive only if lanes look
+  too symmetric.
 
 See **World / planet scale (zoom out)** and **Toggleable map layers + data
 overlays** below for full context.
