@@ -391,13 +391,30 @@ point to drill into that region. Built in 5 gated increments (design: an
 - **Headless WebGL** works in CI via SwiftShader launch flags
   (`playwright.config.ts`); e2e keys off a `data-rendered` first-paint signal +
   `data-textured`, never pixels.
-- **Future work (deferred):** *Antimeridian seam + pole pinch* — the world is a
-  flat non-periodic grid, so the texture's left/right coastlines don't align at
-  lon ±180° and the poles pinch. **Revive** with a Rust-side equirectangular
-  render that fades the edge columns (and a real parchment globe skin would need
-  that render path too — biomes is the fontless v1 texture). Other niceties:
-  cinematic camera fly-to-the-clicked-point on drill; per-year re-texture so the
-  time-slider animates political control on the sphere.
+- ~~**Antimeridian seam + pole pinch**~~ DONE 2026-06-06 — the flat non-periodic
+  grid's left/right coastlines don't meet at lon ±180° and the poles pinch.
+  Resolved client-side (cheaper than the once-envisioned Rust edge-fade render):
+  `globe.ts::fadeMapEdges` fades the texture's four edge bands to the open-ocean
+  colour, so the antimeridian reads as a sea strip (both edges become water) and
+  the poles as clean ocean caps. The geometric pinch is inherent; the visible
+  artifact is gone.
+- ~~**Richer parchment globe skin**~~ DONE 2026-06-06 — replaced the flat `biomes`
+  v1 texture with `Style::GlobeTexture` (`style/planet.rs::render_globe_texture`):
+  an equirectangular, FONTLESS render (the new `Proj::equirect` identity
+  projection) of the parchment biome fill + depth-shaded sea + political control
+  wash + coast + major rivers. Fontless is the point — the labelled styles
+  rasterize unreliably as an `<img>`, which is why the globe was stuck on biomes.
+- ~~**Per-year re-texture (time-lapse on the sphere)**~~ DONE 2026-06-06 — the
+  time-slider now shows at the globe root; scrubbing re-textures the sphere via
+  `renderAtYear("globe", y)` (the political wash is in the texture, so empires
+  rise/fall ON the globe). **Scrub perf:** profiling found the per-frame cost was
+  ~2.4 s, dominated by `fadeMapEdges` sampling the sea colour via `getImageData`
+  (a GPU→CPU readback per call). Fixed by fading to the known deep-sea constant
+  (the globe is always the `globe` style) + skipping mipmap generation — ~10× on
+  the fast path (≈0.2 s floor; the rest is the inherent SVG rasterize).
+- **Still deferred:** cinematic camera fly-to-the-clicked-point on drill (a
+  nicety); buttery scrub via base-layer caching (render only the per-year wash
+  over a cached static base) — a larger refactor for marginal gain over ~0.2 s.
 
 ### World / planet scale (zoom out) — increment 1 DONE (2026-05-25)
 

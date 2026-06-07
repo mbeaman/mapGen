@@ -150,6 +150,8 @@ Three parallel-built, then integrated + adversarially reviewed, surfacing featur
 | The globe renders a frame and applies the texture | Observable | — | `smoke.spec.ts::globe scale mounts a 3D sphere and renders a frame` (`data-rendered`/`data-textured`) | never call `renderer.render` |
 | The globe locks the style control & survives scale toggling | Observable | — | `smoke.spec.ts::globe locks the style control and survives scale toggling` | leak the GL context on swap |
 | The political wash animates over years | Replay | 4 | `smoke.spec.ts::planet time-slider animates political control` + `svg_invariants.rs::planet_style_washes_in_political_control_and_animates_with_history` | freeze the wash to year 0 |
+| The globe wears a richer EQUIRECT, FONTLESS texture (parchment + political wash + coast + rivers) — not the flat biomes v1, not the Mollweide oval | Observable | 11 | `mapgen-render/tests/globe_texture.rs::globe_texture_is_equirect_fontless_and_washes_realms` (equirect 2048×1024, no `@font-face`/`<text>`, has `planet-political`, and a far-NE point Mollweide would pinch) + `planet.rs::tests::equirect_projection_is_identity` (`Proj::equirect` is identity; Mollweide pinches a far-NE point) | switch `render_globe_texture` to the Mollweide `Proj` (far-NE point vanishes) / remove the `equirect` short-circuit in `project` |
+| The globe time-slider re-textures the sphere per year (empires animate on the globe) | Observable (replay) | 4 | `smoke.spec.ts::globe time-slider re-textures the sphere per year` — the slider shows at the globe root and a scrub bumps the monotonic `data-textures` count + the year label leaves "present" | re-add the `&& !globeScale` gate (slider hidden on the globe) → trips |
 
 ## Render invariants
 
