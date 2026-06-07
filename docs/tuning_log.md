@@ -611,6 +611,27 @@ v15). Findings from sweeping seeds 1/7/42/99/123:
   / Nival 5 / Monsoon 2 / Winter-rain 2. **Ephemeral rivers render dashed** (the
   intermittent-stream cartographic convention) — the visible payoff of 6.1.5.
 
+## Render generalisation — `mapgen-render` (cartographic LOD, ADR 0001 §3)
+
+The detail-DECREASING knobs for the zoom-out overview (planet / globe). Render-only
+(the planet SVG is never hashed), so these never move a golden — calibrate by eye.
+
+### `RIVER_SIMPLIFY_TOLERANCE` (`style/planet.rs`)
+
+* **Current:** `60.0` (world-units², a *doubled*-triangle-area threshold for
+  Visvalingam–Whyatt on the overview's major rivers).
+* **Why this value:** the planet preset spaces cells ~10 world-units apart, so a
+  river vertex whose triangle with its neighbours is under ~½ a cell² is sub-scale
+  wiggle the planisphere can't resolve. Dropping it cleans the line and shrinks the
+  SVG without moving the river's course.
+* **Measured (seed 11 — the only canonical planet seed with Strahler≥4 rivers):**
+  12 major rivers, **183 raw cells → 125 drawn points (~31% fewer)**; per-river
+  counts 5–18, so no river collapses to a straight segment (shape preserved). Lower
+  for gentler simplification, raise for a barer overview.
+* **Next.** Coastline simplification (needs coast-linestring tracing) + a per-level
+  tolerance — the planet render is always level-0 so a fixed value suffices here;
+  the per-level stylesheet matters once the ornate render simplifies at depth.
+
 ## Open tuning questions (next sweep candidates)
 
 - **`erosion_rate`** — never audited; sweep `0.01..0.10` step 8 on

@@ -651,11 +651,21 @@ point to drill into that region. Built in 5 gated increments (design: an
     (chord grid for planned cultures, radial spokes + ring road for organic),
     quarters of buildings, a market plaza, the landmark glyph as the central
     citadel, and a **harbour** (piers + moored boats) for coastal towns.
-- **Still open:** the *detail-decreasing* generalisation direction
-  (Töpfer/Visvalingam line simplification + scale-rank label declutter), which is
-  really only meaningful once a coarser-than-world (planet / multi-continent)
-  view exists above level 0 — see Phase 8.3 and the navigation item's follow-ups.
-  Optional further city detail: named districts/wards.
+- **Detail-decreasing generalisation direction (ADR 0001 §3) — STARTED 2026-06-07.**
+  The complement to the detail-increasing fidelity above, now that the planet/globe
+  overview exists above level 0. Increment 1 (DONE): **Visvalingam–Whyatt river
+  simplification on the overview** — a new `mapgen-render::simplify::visvalingam`
+  (pure, unit-tested) drops sub-cell river wiggle the planisphere can't resolve,
+  applied in `style/planet.rs::render_major_rivers` in WORLD space before projection
+  (projection- and seam-independent), so both the Mollweide planisphere and the globe
+  texture get cleaner, lighter rivers (seed 11: 183→125 points, ~31% fewer, shape
+  preserved). Render-only — the planet SVG is never hashed, so no golden moves.
+  Pinned by `simplify` unit tests + `generalisation.rs` (drawn < raw). Tolerance in
+  `docs/tuning_log.md`. **Next increments:** coastline simplification (needs
+  coast-linestring tracing — the aggregation operator), scale-rank settlement/label
+  selection, and a per-level stylesheet (the planet render is always level-0, so a
+  fixed tolerance suffices there; per-level keying matters once the ornate render
+  simplifies at depth). Optional further city detail: named districts/wards.
 - **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
   tree glyphs, finer rivers/coastline), but every feature still renders with the
   same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
