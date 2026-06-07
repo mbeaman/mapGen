@@ -628,9 +628,23 @@ The detail-DECREASING knobs for the zoom-out overview (planet / globe). Render-o
   12 major rivers, **183 raw cells → 125 drawn points (~31% fewer)**; per-river
   counts 5–18, so no river collapses to a straight segment (shape preserved). Lower
   for gentler simplification, raise for a barer overview.
-* **Next.** Coastline simplification (needs coast-linestring tracing) + a per-level
-  tolerance — the planet render is always level-0 so a fixed value suffices here;
-  the per-level stylesheet matters once the ornate render simplifies at depth.
+* **Next.** A per-level tolerance — the planet render is always level-0 so a fixed
+  value suffices here; the per-level stylesheet matters once the ornate render
+  simplifies at depth.
+
+### `COAST_SIMPLIFY_TOLERANCE` (`style/planet.rs`)
+
+* **Current:** `40.0` (world-units², doubled-triangle-area for Visvalingam–Whyatt on
+  the overview coastline). Lower than the river value because coast vertices sit ~a
+  cell-edge apart (~5–10 world units) — closer than river cell-centres — so a smaller
+  threshold drops the same sub-scale crenellation.
+* **Why this approach.** The coast is traced into continuous land/sea loops (the
+  SHARED `extract_coastline_polylines` the ornate ripples use — one coastline
+  extraction) and each loop simplified in world space, replacing the former
+  per-coastal-cell polygon outlines (a crenellated band of full Voronoi hexagons).
+* **Measured (seed 11):** 27 coast loops, ~1089 drawn points (well under the land/sea
+  boundary-edge count) — a clean single coast line, per-cell biome fills preserved
+  beneath. Raise for a smoother (more stylised) coast, lower to hug the cells.
 
 ## Open tuning questions (next sweep candidates)
 

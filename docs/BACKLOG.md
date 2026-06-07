@@ -661,11 +661,22 @@ point to drill into that region. Built in 5 gated increments (design: an
   texture get cleaner, lighter rivers (seed 11: 183→125 points, ~31% fewer, shape
   preserved). Render-only — the planet SVG is never hashed, so no golden moves.
   Pinned by `simplify` unit tests + `generalisation.rs` (drawn < raw). Tolerance in
-  `docs/tuning_log.md`. **Next increments:** coastline simplification (needs
-  coast-linestring tracing — the aggregation operator), scale-rank settlement/label
-  selection, and a per-level stylesheet (the planet render is always level-0, so a
-  fixed tolerance suffices there; per-level keying matters once the ornate render
-  simplifies at depth). Optional further city detail: named districts/wards.
+  `docs/tuning_log.md`. Increment 2 (DONE 2026-06-07): **coastline simplification** —
+  the coast is traced into continuous land/sea loops (reusing the SHARED
+  `extract_coastline_polylines`, now `pub(crate)`, that the ornate ripples use — one
+  coastline extraction) and each loop Visvalingam-simplified in world space, replacing
+  the former per-coastal-cell polygon outlines (a crenellated band of full Voronoi
+  hexagons) with one clean drawn coast line; per-cell biome fills preserved beneath.
+  Both planisphere + globe benefit (shared `render_coast`). seed 11: 27 loops, ~1089
+  points (well under the boundary-edge count). Pinned by
+  `generalisation.rs::overview_coastline_is_traced_and_simplified`.
+  **Remaining — LOWER value for the current structure:** scale-rank settlement/label
+  selection (the overview already rank-selects — top-8 ranges, top-6 labels, Strahler≥4
+  rivers — with working constants; Töpfer-keying them is marginal while the planet is
+  the only level using this render path) and a per-level stylesheet (an architectural
+  refactor that pays off mainly when ONE render path spans many levels — not the current
+  planet-vs-ornate split). The two HIGH-value generalisation wins (rivers + coastline)
+  are shipped. Optional further city detail: named districts/wards.
 - **The gap.** Phase 7 refinement gives a drilled-in sector more *cells* (so more
   tree glyphs, finer rivers/coastline), but every feature still renders with the
   same whole-world glyph vocabulary — a forest is just a denser sprinkle of the
