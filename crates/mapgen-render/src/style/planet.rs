@@ -17,7 +17,8 @@ use std::fmt::Write;
 use mapgen_core::WorldData;
 
 use super::ornate_antique::{
-    ornate_biome_color, render_cartouche, render_compass, FONT_FACE_BLOCK,
+    extract_coastline_polylines, ornate_biome_color, render_cartouche, render_compass,
+    FONT_FACE_BLOCK,
 };
 
 pub fn render(world: &WorldData) -> String {
@@ -237,25 +238,38 @@ fn sea_color(elev: f32) -> String {
 
 /// A sepia stroke along the coast: outline every land cell that touches the sea.
 /// (At planetary scale a per-cell coast band reads as a clean shoreline.)
+/// Doubled-area tolerance for overview coastline simplification ([`crate::simplify`]),
+/// world-units². Coast vertices sit ~a cell-edge apart (~5–10 world units); a vertex
+/// whose triangle with its neighbours is under this is sub-scale crenellation the
+/// overview can't resolve. Calibrated by eye on canonical planet seeds; see
+/// `docs/tuning_log.md`.
+const COAST_SIMPLIFY_TOLERANCE: f32 = 40.0;
+
+/// A clean, simplified coastline: trace the land/sea boundary into continuous loops
+/// (shared with the ornate ripples — one coastline extraction), Visvalingam-simplify
+/// each in WORLD space (drop sub-cell crenellation the overview can't show), then
+/// draw as a single sepia stroke. Replaces the former per-coastal-cell polygon
+/// outlines (a crenellated band of full Voronoi hexagons), so the coast reads as one
+/// drawn line and the SVG carries far fewer points.
 fn render_coast(world: &WorldData, proj: &Proj, out: &mut String) {
-    let mesh = &world.mesh;
-    let elev = &world.terrain.elevation;
     out.push_str(r##"<g fill="none" stroke="#5a4326" stroke-width="0.6" stroke-opacity="0.7">"##);
-    for (i, verts) in mesh.cell_vertices.iter().enumerate() {
-        if verts.is_empty() || elev.get(i).copied().unwrap_or(0.0) <= 0.0 {
+    for (chain, closed) in extract_coastline_polylines(world) {
+        let mut chain = crate::simplify::visvalingam(&chain, COAST_SIMPLIFY_TOLERANCE);
+        if chain.len() < 2 {
             continue;
         }
-        let coastal = mesh
-            .neighbors
-            .get(i)
-            .map(|ns| {
-                ns.iter()
-                    .any(|&n| elev.get(n as usize).copied().unwrap_or(0.0) <= 0.0)
-            })
-            .unwrap_or(false);
-        if coastal {
-            write_polygon_outline(mesh, verts, proj, out);
+        if closed {
+            chain.push(chain[0]); // close the loop visually (the trailing dup was dropped)
         }
+        out.push_str(r##"<polyline points=""##);
+        for (k, p) in chain.iter().enumerate() {
+            let (px, py) = proj.project(p[0], p[1]);
+            if k > 0 {
+                out.push(' ');
+            }
+            write!(out, "{px:.1},{py:.1}").unwrap();
+        }
+        out.push_str(r##""/>"##);
     }
     out.push_str("</g>");
 }
@@ -320,7 +334,11 @@ fn render_major_rivers(world: &WorldData, proj: &Proj, out: &mut String) {
         }
         let width = 0.5 + 0.35 * (river.strahler as f32 - 3.0);
         // Simplify in WORLD space (projection- and seam-independent), then project.
-        let course: Vec<[f32; 2]> = river.cells.iter().map(|&c| mesh.sites[c as usize]).collect();
+        let course: Vec<[f32; 2]> = river
+            .cells
+            .iter()
+            .map(|&c| mesh.sites[c as usize])
+            .collect();
         let course = crate::simplify::visvalingam(&course, RIVER_SIMPLIFY_TOLERANCE);
         write!(out, r##"<polyline stroke-width="{width:.1}" points=""##).unwrap();
         for (k, p) in course.iter().enumerate() {
@@ -903,24 +921,6 @@ fn write_polygon(
         write!(out, "{px:.1},{py:.1}").unwrap();
     }
     write!(out, r##"" fill="{fill}" fill-opacity="{opacity}"/>"##).unwrap();
-}
-
-fn write_polygon_outline(
-    mesh: &mapgen_core::MeshData,
-    verts: &[u32],
-    proj: &Proj,
-    out: &mut String,
-) {
-    out.push_str(r##"<polygon points=""##);
-    for (k, &vi) in verts.iter().enumerate() {
-        let v = mesh.vertices[vi as usize];
-        let (px, py) = proj.project(v[0], v[1]);
-        if k > 0 {
-            out.push(' ');
-        }
-        write!(out, "{px:.1},{py:.1}").unwrap();
-    }
-    out.push_str(r##""/>"##);
 }
 
 /// Minimal XML-text escaping for label content.

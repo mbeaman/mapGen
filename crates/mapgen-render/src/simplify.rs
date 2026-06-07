@@ -81,7 +81,11 @@ mod tests {
         let out = visvalingam(&line, f32::INFINITY); // drop everything droppable
         assert_eq!(out.first(), Some(&[0.0, 0.0]));
         assert_eq!(out.last(), Some(&[2.0, 0.0]));
-        assert_eq!(out.len(), 2, "only the two endpoints survive an infinite tolerance");
+        assert_eq!(
+            out.len(),
+            2,
+            "only the two endpoints survive an infinite tolerance"
+        );
     }
 
     #[test]
@@ -106,7 +110,10 @@ mod tests {
             [40.0, 20.0],
         ];
         let out = visvalingam(&line, 50.0);
-        assert!(out.len() < line.len(), "the jitter vertex should be dropped");
+        assert!(
+            out.len() < line.len(),
+            "the jitter vertex should be dropped"
+        );
         assert!(out.contains(&[20.0, 20.0]), "the genuine corner survives");
         assert_eq!(out.first(), Some(&[0.0, 0.0]));
         assert_eq!(out.last(), Some(&[40.0, 20.0]));
@@ -116,7 +123,10 @@ mod tests {
             while idx < line.len() && &line[idx] != p {
                 idx += 1;
             }
-            assert!(idx < line.len(), "output must be a subsequence of the input");
+            assert!(
+                idx < line.len(),
+                "output must be a subsequence of the input"
+            );
             idx += 1;
         }
     }

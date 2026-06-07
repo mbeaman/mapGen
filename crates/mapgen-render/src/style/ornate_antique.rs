@@ -826,7 +826,7 @@ fn roughr_path_with_move_fix(op_set: roughr::core::OpSet<f32>) -> String {
 /// Vertices of degree >2 (where 3+ coastline edges meet — rare in a
 /// Voronoi mesh) cause the walk to pick the first unvisited neighbor;
 /// the remaining edges become their own chain on a later pass.
-fn extract_coastline_polylines(world: &WorldData) -> Vec<(Vec<[f32; 2]>, bool)> {
+pub(crate) fn extract_coastline_polylines(world: &WorldData) -> Vec<(Vec<[f32; 2]>, bool)> {
     let mesh = &world.mesh;
     let elev = &world.terrain.elevation;
 

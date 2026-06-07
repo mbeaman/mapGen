@@ -48,11 +48,72 @@ fn count_points(group: &str) -> usize {
     total
 }
 
+/// Count of land/sea adjacency edges — the unsimplified coastline has ~one vertex
+/// per such edge, so the simplified trace must come in under this.
+fn boundary_edge_count(world: &mapgen_core::WorldData) -> usize {
+    let mesh = &world.mesh;
+    let elev = &world.terrain.elevation;
+    let mut n = 0;
+    for i in 0..mesh.cell_count() {
+        let land_i = elev[i] > 0.0;
+        for &nj in &mesh.neighbors[i] {
+            let j = nj as usize;
+            if j > i && (elev[j] > 0.0) != land_i {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// The coast `<g>` — stroke `#5a4326` at width 0.6 (the graticule shares the colour
+/// but is width 0.5), up to its close.
+fn coast_group(svg: &str) -> &str {
+    let start = svg
+        .find(r##"<g fill="none" stroke="#5a4326" stroke-width="0.6""##)
+        .expect("planet render must have a coast group");
+    let rest = &svg[start..];
+    let end = rest.find("</g>").expect("coast group must close");
+    &rest[..end]
+}
+
+#[test]
+fn overview_coastline_is_traced_and_simplified() {
+    let world = generate_full(planet_params(RIVER_SEED));
+    let svg = render(&world, Style::Planet).expect("planet renders");
+    let coast = coast_group(&svg);
+
+    // Traced continuous loops (polylines), NOT the former per-coastal-cell polygon
+    // outlines — dropping the polygon form is the structural half of the change.
+    assert!(
+        coast.contains("<polyline"),
+        "coast must be drawn as traced polylines"
+    );
+    assert!(
+        !coast.contains("<polygon"),
+        "coast must no longer be per-cell polygon outlines"
+    );
+
+    let drawn = count_points(coast);
+    let raw = boundary_edge_count(&world);
+    assert!(drawn > 0 && raw > 0, "fixture must have a coastline");
+    // Visvalingam dropped sub-scale crenellation: fewer drawn points than land/sea
+    // boundary edges (the unsimplified trace is ~one vertex per edge). Remove the
+    // `visvalingam` call in render_coast and drawn climbs to ~raw → this trips.
+    assert!(
+        drawn < raw,
+        "coast simplification must reduce points: drew {drawn} from {raw} boundary edges"
+    );
+}
+
 #[test]
 fn overview_major_rivers_are_visvalingam_simplified() {
     let world = generate_full(planet_params(RIVER_SEED));
     let raw = raw_river_points(&world);
-    assert!(raw > 0, "fixture precondition: seed 11 must have major rivers to simplify");
+    assert!(
+        raw > 0,
+        "fixture precondition: seed 11 must have major rivers to simplify"
+    );
 
     let svg = render(&world, Style::Planet).expect("planet renders");
     let drawn = count_points(rivers_group(&svg));
