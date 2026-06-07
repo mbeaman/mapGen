@@ -412,9 +412,20 @@ point to drill into that region. Built in 5 gated increments (design: an
   (a GPU→CPU readback per call). Fixed by fading to the known deep-sea constant
   (the globe is always the `globe` style) + skipping mipmap generation — ~10× on
   the fast path (≈0.2 s floor; the rest is the inherent SVG rasterize).
-- **Still deferred:** cinematic camera fly-to-the-clicked-point on drill (a
-  nicety); buttery scrub via base-layer caching (render only the per-year wash
-  over a cached static base) — a larger refactor for marginal gain over ~0.2 s.
+- ~~**Lens toggles on the globe**~~ DONE 2026-06-07 — Faith/Prosperity/Trade washes
+  on the sphere (parity with the 2D planisphere, which the globe lacked). The
+  globe texture (`render_globe_texture`) now emits the lens wash groups + the same
+  swap CSS the planisphere uses; the frontend injects the active `on-<lens>` root
+  class into the cached `globe` SVG before rasterizing (`withLayerClasses`), and a
+  lens toggle in globe mode re-textures the sphere (`setLayerState` → `retextureGlobe`,
+  no worker hop). Composes with the time-slider (the lens applies to each year frame).
+- ~~**Cinematic fly-to on drill**~~ DONE 2026-06-07 — a click on the globe now
+  animates the camera to swing the clicked point to face the viewer and zoom partway
+  in (~600 ms ease-in-out, `globe.ts` RAF loop), THEN drills to the 2D sector,
+  instead of an instant cut. Reads `hit.point` (world space), so it's independent of
+  the UV hemisphere convention; the drag-rotates-doesn't-drill behaviour is unchanged.
+- **Still deferred:** buttery scrub via base-layer caching (render only the per-year
+  wash over a cached static base) — a larger refactor for marginal gain over ~0.2 s.
 
 ### World / planet scale (zoom out) — increment 1 DONE (2026-05-25)
 
