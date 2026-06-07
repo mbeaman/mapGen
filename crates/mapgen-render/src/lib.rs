@@ -2,6 +2,7 @@
 //! pluggable; the same world re-renders in any style without re-simulating.
 
 pub mod layers;
+pub mod simplify;
 pub mod style;
 
 use mapgen_core::WorldData;

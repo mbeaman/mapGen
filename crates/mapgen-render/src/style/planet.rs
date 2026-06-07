@@ -299,8 +299,18 @@ fn render_graticule(proj: &Proj, out: &mut String) {
     out.push_str("</g>");
 }
 
+/// Doubled-area tolerance for overview river simplification ([`crate::simplify`]),
+/// in world-units². The planet preset spaces cells ~10 world-units apart, so a
+/// vertex whose triangle with its neighbours is under ~half a cell² is sub-scale
+/// wiggle the planisphere can't resolve — dropping it cleans the line (and shrinks
+/// the SVG) without moving the river's course. Calibrated by eye on canonical
+/// planet seeds; see `docs/tuning_log.md`.
+const RIVER_SIMPLIFY_TOLERANCE: f32 = 60.0;
+
 /// Major rivers only (Strahler ≥ 4) as thin polylines — tributaries are noise
-/// at this scale.
+/// at this scale. Each river's world-space course is Visvalingam-simplified before
+/// projection (cartographic generalisation: the overview drops sub-cell wiggle the
+/// scale can't show), so the line reads cleanly and the SVG carries fewer points.
 fn render_major_rivers(world: &WorldData, proj: &Proj, out: &mut String) {
     let mesh = &world.mesh;
     out.push_str(r##"<g fill="none" stroke="#4f6f86" stroke-opacity="0.8" stroke-linejoin="round" stroke-linecap="round">"##);
@@ -309,9 +319,11 @@ fn render_major_rivers(world: &WorldData, proj: &Proj, out: &mut String) {
             continue;
         }
         let width = 0.5 + 0.35 * (river.strahler as f32 - 3.0);
+        // Simplify in WORLD space (projection- and seam-independent), then project.
+        let course: Vec<[f32; 2]> = river.cells.iter().map(|&c| mesh.sites[c as usize]).collect();
+        let course = crate::simplify::visvalingam(&course, RIVER_SIMPLIFY_TOLERANCE);
         write!(out, r##"<polyline stroke-width="{width:.1}" points=""##).unwrap();
-        for (k, &c) in river.cells.iter().enumerate() {
-            let p = mesh.sites[c as usize];
+        for (k, p) in course.iter().enumerate() {
             let (px, py) = proj.project(p[0], p[1]);
             if k > 0 {
                 out.push(' ');
