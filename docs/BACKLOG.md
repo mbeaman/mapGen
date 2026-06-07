@@ -424,8 +424,33 @@ point to drill into that region. Built in 5 gated increments (design: an
   in (~600 ms ease-in-out, `globe.ts` RAF loop), THEN drills to the 2D sector,
   instead of an instant cut. Reads `hit.point` (world space), so it's independent of
   the UV hemisphere convention; the drag-rotates-doesn't-drill behaviour is unchanged.
-- **Still deferred:** buttery scrub via base-layer caching (render only the per-year
-  wash over a cached static base) — a larger refactor for marginal gain over ~0.2 s.
+- **Buttery scrub via base-layer caching (render only the per-year political wash
+  over a cached static base) — ADVISED AGAINST (2026-06-07); do cartographic
+  generalisation instead.** Decision from a vision-vs-optimization assessment.
+  *Why not:* it optimises the symptom (one giant per-frame SVG), not the cause —
+  the globe is the zoom-OUT *overview* yet renders the full ~18k-cell world, detail
+  a 2048×1024 sphere texture can't even resolve. It also fights "one mechanism, not
+  five": it adds a second render+composite path, and since the planet/globe SVG is
+  deliberately NOT golden-pinned (`planet.rs`: "the planet SVG is never hashed"),
+  that path could silently drift from the canonical `render()` (the wash is alpha-
+  blended at 0.40 over the fill; compositing it as a separate layer changes the
+  blend math) with nothing to catch it. And it speeds ONLY scrub — initial texture,
+  lens toggles, and the fly-to first paint stay full-cost.
+  *Do instead:* **cartographic generalisation** (ADR 0001 §3 — per-level
+  stylesheets, Visvalingam–Whyatt coastline/river simplification, Töpfer feature
+  budgets, rank-selected settlements). It shrinks the overview SVG at the source,
+  so EVERY globe op gets cheap (not just scrub), keeps ONE canonical render path,
+  serves planet/continental/regional alike, and is the missing detail-DECREASING
+  half of the already-shipped detail-INCREASING render fidelity (shared per-level
+  stylesheet). It makes the cache moot — a small overview SVG re-renders fast enough
+  that splitting base from wash buys nothing.
+  *Revival trigger (build the cache only if ALL hold):* (1) globe time-scrub becomes
+  a central, heavily-used interaction (e.g. a "play history" auto-animation at many
+  fps); AND (2) generalisation has already shipped and scrub STILL misses its frame
+  budget; AND (3) a visual-equivalence guard (pinned snapshot diff of base+wash vs
+  single-pass `render()`) closes the "never hashed" gap. Cheap interim before then:
+  throttle scrub frames + show the nearest already-rasterised year instantly (no new
+  render path).
 
 ### World / planet scale (zoom out) — increment 1 DONE (2026-05-25)
 
