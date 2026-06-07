@@ -107,6 +107,12 @@ pub fn render(world: &WorldData) -> String {
 /// correct, font-free texture. Because the political wash is included, `render_at_year`
 /// (which swaps `control` before re-rendering) animates empires on the globe for free,
 /// exactly as the 2D planisphere slider does.
+///
+/// Lens parity with the 2D planisphere: the faith / prosperity / trade wash groups +
+/// their lens CSS are emitted too (off by default). The frontend swaps one in by
+/// injecting the root `on-<lens>` class before rasterizing the texture — the same CSS
+/// the 2D map toggles live, applied here at rasterize time. Legends are still omitted
+/// (fontless), so the lens CSS's legend selectors are harmless no-ops.
 pub fn render_globe_texture(world: &WorldData) -> String {
     let mesh = &world.mesh;
     let [vx, vy, vx1, vy1] = mesh.view_rect();
@@ -118,6 +124,11 @@ pub fn render_globe_texture(world: &WorldData) -> String {
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vx:.0} {vy:.0} {w:.0} {h:.0}" width="{w:.0}" height="{h:.0}">"##
     )
     .unwrap();
+    // Lens overlays swap in via a root `on-<lens>` class (the frontend injects it
+    // before rasterizing); identical CSS to the 2D planisphere.
+    out.push_str(FAITH_LENS_STYLE);
+    out.push_str(PROSPERITY_LENS_STYLE);
+    out.push_str(TRADE_LENS_STYLE);
     // Opaque deep-sea backdrop: a sphere skin must be land-or-sea at every texel,
     // so any sub-pixel sliver between Voronoi cells reads as ocean, not a gap.
     write!(
@@ -130,7 +141,12 @@ pub fn render_globe_texture(world: &WorldData) -> String {
     // Identity projection — the sphere UVs want a flat lon/lat grid, not the oval.
     let proj = Proj::equirect([vx, vy, w, h]);
     render_fill(world, &proj, &mut out);
+    // Political wash (default) + the off-by-default lens washes, in the same order
+    // the planisphere draws them so the swap-CSS targets the right groups.
     render_political(world, &proj, &mut out);
+    render_faith(world, &proj, &mut out);
+    render_prosperity(world, &proj, &mut out);
+    render_trade_routes(world, &proj, &mut out);
     render_coast(world, &proj, &mut out);
     render_major_rivers(world, &proj, &mut out);
     out.push_str("</svg>");

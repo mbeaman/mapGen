@@ -63,6 +63,23 @@ fn globe_texture_is_equirect_fontless_and_washes_realms() {
         "globe texture must carry the political wash"
     );
 
+    // Lens parity: the faith/prosperity/trade wash groups + their swap CSS are baked
+    // in, so the frontend can show a lens on the globe by injecting an `on-<lens>`
+    // root class (exactly as the 2D planisphere toggles them live). The wash groups
+    // are data-driven; seed 11 has religions, prosperity, AND crossable lanes.
+    for css in ["svg.on-faith", "svg.on-prosperity", "svg.on-trade"] {
+        assert!(
+            svg.contains(css),
+            "globe texture must carry the {css} lens swap CSS"
+        );
+    }
+    for grp in ["planet-faith", "planet-prosperity", "planet-trade"] {
+        assert!(
+            svg.contains(grp),
+            "globe texture must emit the {grp} lens wash group"
+        );
+    }
+
     // EQUIRECT, not Mollweide. The mesh tiles the whole rect, so a far-NE corner
     // cell has a vertex near (2048, 0). The identity projection keeps it there;
     // Mollweide pinches EVERY north-edge longitude toward the central meridian

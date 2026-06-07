@@ -1,5 +1,13 @@
 import "./style.css";
-import { applyLayers, defaultLayerState, LAYERS, PRESETS, presetState, toggleLayer } from "./layers";
+import {
+  applyLayers,
+  defaultLayerState,
+  LAYERS,
+  PRESETS,
+  presetState,
+  svgLayerClasses,
+  toggleLayer,
+} from "./layers";
 import { PanZoom } from "./panzoom";
 import {
   ancestors,
@@ -96,6 +104,10 @@ let globeScale = false;
 // the default SVG page stays tiny (guarded by scripts/check-bundle.mjs).
 type GlobeHandle = import("./globe").GlobeHandle;
 let globe: GlobeHandle | null = null;
+// The latest equirectangular `globe` SVG (present render or a scrubbed year). Kept
+// so a lens toggle can re-texture the sphere by re-rasterizing it with a new layer
+// class — no worker round-trip.
+let lastGlobeSvg = "";
 const ensureGlobe = async (): Promise<GlobeHandle> => {
   if (!globe) {
     const mod = await import("./globe");
@@ -112,16 +124,32 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
   }
   return globe;
 };
+// Inject the active layer classes onto the SVG root, so a rasterized `<img>` of it
+// applies the embedded lens CSS (`svg.on-faith .planet-faith{display:inline}` …) —
+// the same swap the 2D map does live, but baked in before rasterizing. Only the
+// overlay `on-*` classes affect the globe texture (it carries no `off-*` feature
+// CSS); the rest are harmless no-ops.
+const withLayerClasses = (svg: string): string => {
+  const classes = svgLayerClasses(layerState).join(" ");
+  return classes ? svg.replace("<svg ", `<svg class="${classes}" `) : svg;
+};
+
 // Rasterize an equirectangular `globe` SVG and wrap it onto the sphere. Shared by
-// the initial texture (enterGlobeView) and the per-year re-texture the time-slider
-// drives (the `yearFrame` handler), so empires animate ON the globe.
+// the initial texture (enterGlobeView), the per-year re-texture the time-slider
+// drives (the `yearFrame` handler), and lens toggles (`setLayerState`).
 const textureGlobe = async (g: GlobeHandle, svg: string): Promise<void> => {
   try {
     // Planet world is 2048×1024; a 2:1 texture wraps the sphere's UVs cleanly.
-    g.setTexture(await rasterizeSvg(svg, 2048, 1024));
+    g.setTexture(await rasterizeSvg(withLayerClasses(svg), 2048, 1024));
   } catch {
     // Rasterization failed (unlikely) — keep the current texture.
   }
+};
+
+// Re-texture the sphere from the cached `globe` SVG with the current lens applied —
+// used when a lens toggles while the globe is shown (no regenerate / worker hop).
+const retextureGlobe = (): void => {
+  if (globe && lastGlobeSvg) void textureGlobe(globe, lastGlobeSvg);
 };
 
 // Show the sphere over the (hidden) SVG layer, optionally texturing it from an
@@ -151,7 +179,8 @@ const enterGlobeView = async (textureSvg?: string) => {
     );
     return;
   }
-  if (textureSvg) await textureGlobe(g, textureSvg);
+  if (textureSvg) lastGlobeSvg = textureSvg;
+  if (lastGlobeSvg) await textureGlobe(g, lastGlobeSvg);
   g.show();
 };
 // Return to the SVG layer (used when leaving globe scale, and on drill into a
@@ -477,6 +506,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       // then send the latest pending year if the user moved on. The globe path is
       // async (rasterize→upload), so it flushes in `.finally`.
       if (globeScale && globe) {
+        lastGlobeSvg = msg.svg; // cache so a lens toggle re-applies to this year
         void textureGlobe(globe, msg.svg).finally(() => {
           yearBusy = false;
           flushPendingYear();
@@ -857,6 +887,13 @@ const setLayerState = (next: Set<string>) => {
   layerState.clear();
   for (const n of next) layerState.add(n);
   for (const [name, cb] of layerChecks) cb.checked = layerState.has(name);
+  // On the globe the lens lives in the texture, not the DOM: re-rasterize the
+  // cached `globe` SVG with the new class. On a flat map, toggle the live SVG's
+  // classes (CSS does the rest).
+  if (globeScale && nav.level === 0) {
+    retextureGlobe();
+    return;
+  }
   const svg = contentEl.querySelector("svg");
   if (svg) applyLayers(svg, layerState);
 };

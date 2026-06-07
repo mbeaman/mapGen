@@ -22,6 +22,7 @@ import {
   Texture,
   CanvasTexture,
   Vector2,
+  Vector3,
   WebGLRenderer,
   SRGBColorSpace,
   RepeatWrapping,
@@ -198,8 +199,30 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let running = false;
   let painted = false;
   let textureCount = 0; // bumped on each real texture upload (drives the slider e2e)
+
+  // Cinematic fly-to: on a click, animate the camera so the clicked point swings to
+  // face the viewer and zooms in, THEN drill (hand off to the 2D sector). `null`
+  // when idle. `start`/`dur` are wall-clock ms; `onArrive` fires the drill.
+  const FLY_MS = 600;
+  let flyTo: { from: Vector3; target: Vector3; start: number; onArrive: () => void } | null = null;
+  const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
   const tick = () => {
-    controls.update();
+    if (flyTo) {
+      // Manual camera drive while flying (OrbitControls is disabled, so skip its
+      // update — it would fight the lerp). The globe stays centred at the origin.
+      const t = Math.min(1, (performance.now() - flyTo.start) / FLY_MS);
+      camera.position.lerpVectors(flyTo.from, flyTo.target, easeInOut(t));
+      camera.lookAt(0, 0, 0);
+      if (t >= 1) {
+        const arrive = flyTo.onArrive;
+        flyTo = null;
+        controls.enabled = true;
+        arrive(); // drill now that the camera has settled on the point
+      }
+    } else {
+      controls.update();
+    }
     renderer.render(scene, camera);
     if (!painted) {
       // Signal first paint: a frame actually rendered (renderer instantiated +
@@ -241,7 +264,22 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     );
     raycaster.setFromCamera(ndc, camera);
     const hit = raycaster.intersectObject(sphere)[0];
-    if (hit?.uv) pickCb(hit.uv.x, hit.uv.y);
+    if (!hit?.uv || !hit.point) return; // clicked the backdrop, not the sphere
+    const u = hit.uv.x;
+    const v = hit.uv.y;
+    // Fly the camera to face the clicked point (its direction from the globe
+    // centre) and zoom partway in, then drill. Reading `hit.point` (world space)
+    // is independent of the UV → no hemisphere flip. Skip if already flying.
+    if (flyTo) return;
+    const dir = hit.point.clone().normalize();
+    const dist = Math.max(controls.minDistance + 0.3, camera.position.length() * 0.55);
+    controls.enabled = false; // hand the camera to the fly animation
+    flyTo = {
+      from: camera.position.clone(),
+      target: dir.multiplyScalar(dist),
+      start: performance.now(),
+      onArrive: () => pickCb!(u, v),
+    };
   });
 
   return {
@@ -258,6 +296,8 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       running = false;
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
+      flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
+      controls.enabled = true;
     },
     setTexture(source: HTMLCanvasElement) {
       fadeMapEdges(source); // fade the seam + poles to sea before uploading

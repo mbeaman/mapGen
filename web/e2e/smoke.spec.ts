@@ -451,4 +451,27 @@ test("globe time-slider re-textures the sphere per year", async ({ page }) => {
     .toBeGreaterThan(before);
   await expect(page.locator("#timeyear")).not.toHaveText("present");
 });
+
+// Lens parity: a data overlay (Faith/Prosperity/Trade) can be shown on the globe,
+// not just the 2D planisphere. On the globe the lens lives in the TEXTURE (the CSS
+// can't reach a rasterized sphere), so toggling a lens re-rasterizes the cached
+// `globe` SVG with the `on-<lens>` class injected — observable as the monotonic
+// `data-textures` count bumping. Prosperity always has data (every realm has it),
+// so it's the robust lens to assert at low cell counts.
+test("globe lens toggle re-textures the sphere", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=11");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+
+  const before = Number(await canvas.getAttribute("data-textures"));
+  await page.locator("#layers-panel summary").click(); // open the Layers panel
+  const prosperity = page.getByRole("checkbox", { name: "Prosperity" });
+  await prosperity.check();
+  await expect(prosperity).toBeChecked();
+  // The toggle re-rasterized the sphere with the lens applied (not a DOM restyle).
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
+    .toBeGreaterThan(before);
+});
 }); // test.describe.serial("3D globe")
