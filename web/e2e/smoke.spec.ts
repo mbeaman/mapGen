@@ -328,6 +328,10 @@ test("scrubbing the slider reveals an overseas exclave region", async ({ page })
   await expect(exclaves).toHaveCount(0, { timeout: 15_000 });
 });
 
+// The 3D globe tests each spin up a WebGL context (SwiftShader in headless). Run
+// them SERIALLY so multiple software-GL contexts don't contend for the CPU and
+// starve a globe's first paint past its timeout under the fully-parallel suite.
+test.describe.serial("3D globe", () => {
 // The 3D globe view (Increment 1): Scale: Globe mounts a three.js sphere over
 // the (hidden) SVG layer. The discriminating signal is a REAL WebGL context on
 // #globe-canvas — proving the lazily-imported three.js renderer actually mounted,
@@ -390,9 +394,9 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await expect(page.locator("#map-content")).toBeHidden();
 });
 
-// Increment 5: the style control is locked on the globe (the sphere is always
-// biomes-textured), and toggling globe↔planet reuses the one WebGLRenderer
-// without exhausting the browser's GL-context pool.
+// Increment 5: the style control is locked on the globe (the sphere wears the
+// fixed equirectangular `globe` texture), and toggling globe↔planet reuses the one
+// WebGLRenderer without exhausting the browser's GL-context pool.
 test("globe locks the style control and survives scale toggling", async ({ page }) => {
   await page.goto("/?scale=globe&cells=2000&seed=4");
   const status = page.locator("#status");
@@ -417,3 +421,34 @@ test("globe locks the style control and survives scale toggling", async ({ page 
     await expect(page.locator("#style")).toBeDisabled();
   }
 });
+
+// The globe time-slider: with border history the slider shows at the globe root,
+// and scrubbing RE-textures the sphere with that year's political control —
+// empires rise/fall ON the globe, the 3D mirror of the planisphere slider. A GPU
+// texture can't be diffed from the DOM, so globe.ts bumps a monotonic
+// `data-textures` count per upload; scrubbing must increase it (a new year frame
+// was rasterized + uploaded) and the year label must leave "present".
+test("globe time-slider re-textures the sphere per year", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=4");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+
+  // Seed 4 has border history, so the slider shows at the globe root too (it was
+  // hidden in globe mode before this feature).
+  await expect(page.locator("#timeslider")).not.toHaveClass(/hidden/);
+
+  const before = Number(await canvas.getAttribute("data-textures"));
+  await page.locator("#timescrub").evaluate((el: HTMLInputElement) => {
+    el.value = el.min; // founding year
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  // A fresh texture was rasterized + uploaded for the scrubbed year.
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
+    .toBeGreaterThan(before);
+  await expect(page.locator("#timeyear")).not.toHaveText("present");
+});
+}); // test.describe.serial("3D globe")

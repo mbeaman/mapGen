@@ -97,6 +97,46 @@ pub fn render(world: &WorldData) -> String {
     out
 }
 
+/// Equirectangular, fontless globe TEXTURE for the 3D sphere (`Style::GlobeTexture`).
+/// The 2D planisphere [`render`] is a Mollweide oval with chrome (graticule, labels,
+/// compass, cartouche, legends) — none of which belongs on a sphere skin: the oval
+/// can't tile sphere UVs, and the labels' embedded fonts rasterize unreliably as an
+/// `<img>` (which is why the globe was stuck on the flat `biomes` style). This emits
+/// the SAME parchment cell fill + depth-shaded sea + political control wash + coast +
+/// major rivers, but with an IDENTITY projection and NO text — a richer, lon/lat-
+/// correct, font-free texture. Because the political wash is included, `render_at_year`
+/// (which swaps `control` before re-rendering) animates empires on the globe for free,
+/// exactly as the 2D planisphere slider does.
+pub fn render_globe_texture(world: &WorldData) -> String {
+    let mesh = &world.mesh;
+    let [vx, vy, vx1, vy1] = mesh.view_rect();
+    let (w, h) = (vx1 - vx, vy1 - vy);
+
+    let mut out = String::with_capacity(mesh.cell_count() * 64 + 1024);
+    write!(
+        out,
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vx:.0} {vy:.0} {w:.0} {h:.0}" width="{w:.0}" height="{h:.0}">"##
+    )
+    .unwrap();
+    // Opaque deep-sea backdrop: a sphere skin must be land-or-sea at every texel,
+    // so any sub-pixel sliver between Voronoi cells reads as ocean, not a gap.
+    write!(
+        out,
+        r##"<rect x="{vx:.0}" y="{vy:.0}" width="{w:.0}" height="{h:.0}" fill="{}"/>"##,
+        sea_color(-1.0)
+    )
+    .unwrap();
+
+    // Identity projection — the sphere UVs want a flat lon/lat grid, not the oval.
+    let proj = Proj::equirect([vx, vy, w, h]);
+    render_fill(world, &proj, &mut out);
+    render_political(world, &proj, &mut out);
+    render_coast(world, &proj, &mut out);
+    render_major_rivers(world, &proj, &mut out);
+    out.push_str("</svg>");
+    out
+}
+
 /// CSS for the Faith lens. The political wash + realms legend are the always-on
 /// baseline; under the root `on-faith` class (set by the frontend layer toggle)
 /// they hide and the faith wash + faiths legend appear. `planet-faith` /
@@ -909,6 +949,7 @@ struct Proj {
     cx0: f32,            // central-meridian screen x = vx + vw/2
     cos_theta: Vec<f32>, // cos θ per sampled row
     sy: Vec<f32>,        // screen y per sampled row
+    equirect: bool,      // identity projection (globe texture) — skip Mollweide
 }
 
 impl Proj {
@@ -938,10 +979,32 @@ impl Proj {
             cx0: vx + vw / 2.0,
             cos_theta,
             sy,
+            equirect: false,
+        }
+    }
+
+    /// Identity (equirectangular) projection: world coords ARE screen coords, so
+    /// the rendered map is a flat lon/lat grid. Used for the 3D globe texture,
+    /// whose sphere UVs expect equirectangular input — the Mollweide oval is for
+    /// the 2D planisphere only. No per-row table is built (project short-circuits).
+    fn equirect(vr: [f32; 4]) -> Self {
+        let [vx, vy, vw, vh] = vr;
+        Proj {
+            vx,
+            vy,
+            vw,
+            vh,
+            cx0: vx + vw / 2.0,
+            cos_theta: Vec::new(),
+            sy: Vec::new(),
+            equirect: true,
         }
     }
 
     fn project(&self, wx: f32, wy: f32) -> (f32, f32) {
+        if self.equirect {
+            return (wx, wy);
+        }
         let t = ((wy - self.vy) / self.vh).clamp(0.0, 1.0) * Self::N as f32;
         let i = (t as usize).min(Self::N - 1);
         let (ct, sy) = if i == 0 || i == Self::N - 1 {
@@ -1005,6 +1068,37 @@ mod tests {
         assert!(
             checked >= 15,
             "expected the full vector grid, got {checked}"
+        );
+    }
+
+    /// The globe-texture projection is the IDENTITY (equirectangular): world
+    /// coords pass straight through, so the rendered map is a flat lon/lat grid
+    /// the sphere UVs can wrap. Guards the `equirect` short-circuit in `project` —
+    /// remove it and these points get Mollweide-pinched instead, tripping here.
+    #[test]
+    fn equirect_projection_is_identity() {
+        let p = Proj::equirect([0.0, 0.0, 2048.0, 1024.0]);
+        for &(x, y) in &[
+            (0.0, 0.0),
+            (2048.0, 0.0),
+            (1024.0, 512.0),
+            (0.0, 1024.0),
+            (2048.0, 1024.0),
+            (1700.0, 90.0),
+        ] {
+            assert_eq!(
+                p.project(x, y),
+                (x, y),
+                "equirect must be identity at ({x},{y})"
+            );
+        }
+        // Discriminator: the Mollweide projection of a far-north-east point is NOT
+        // identity — it pinches longitude toward the central meridian — so the
+        // identity above is a real property of `equirect`, not of all projections.
+        let (mx, _) = Proj::new([0.0, 0.0, 2048.0, 1024.0]).project(2048.0, 90.0);
+        assert!(
+            mx < 1700.0,
+            "Mollweide must pinch a far-NE point inward, got x={mx}"
         );
     }
 }

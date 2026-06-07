@@ -112,23 +112,46 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
   }
   return globe;
 };
+// Rasterize an equirectangular `globe` SVG and wrap it onto the sphere. Shared by
+// the initial texture (enterGlobeView) and the per-year re-texture the time-slider
+// drives (the `yearFrame` handler), so empires animate ON the globe.
+const textureGlobe = async (g: GlobeHandle, svg: string): Promise<void> => {
+  try {
+    // Planet world is 2048×1024; a 2:1 texture wraps the sphere's UVs cleanly.
+    g.setTexture(await rasterizeSvg(svg, 2048, 1024));
+  } catch {
+    // Rasterization failed (unlikely) — keep the current texture.
+  }
+};
+
 // Show the sphere over the (hidden) SVG layer, optionally texturing it from an
-// equirectangular (flat `biomes`) render of the world. The texture is applied
-// BEFORE show() so the placeholder graticule never flashes.
+// equirectangular `globe` render of the world (parchment + political wash + coast
+// + rivers). The texture is applied BEFORE show() so the placeholder graticule
+// never flashes.
 const enterGlobeView = async (textureSvg?: string) => {
   contentEl.style.display = "none";
   placeholderEl.classList.add("hidden");
   mapEl.classList.remove("navigable"); // the globe rotates; it isn't zoom-in
-  styleSelect.disabled = true; // the sphere is always biomes-textured (see doRestyle)
-  const g = await ensureGlobe();
-  if (textureSvg) {
-    try {
-      // Planet world is 2048×1024; a 2:1 texture wraps the sphere's UVs cleanly.
-      g.setTexture(await rasterizeSvg(textureSvg, 2048, 1024));
-    } catch {
-      // Rasterization failed (unlikely) — keep the placeholder graticule.
-    }
+  styleSelect.disabled = true; // the sphere uses the fixed `globe` texture (see doRestyle)
+  let g: GlobeHandle;
+  try {
+    g = await ensureGlobe();
+  } catch (err) {
+    // The globe chunk (three.js) failed to load — almost always a missing/stale
+    // dependency install (run `npm install` / `just web-setup`) or an offline
+    // first load. The caller fires this with `void` and then reports "Globe
+    // ready", so without this catch the failure is a SILENT blank canvas behind
+    // a misleading status. Surface it and restore the 2D layer instead.
+    exitGlobeView();
+    setStatus(
+      `3D globe failed to load (${
+        err instanceof Error ? err.message : String(err)
+      }). Run \`npm install\` (or \`just web-setup\`) and reload.`,
+      "error",
+    );
+    return;
   }
+  if (textureSvg) await textureGlobe(g, textureSvg);
   g.show();
 };
 // Return to the SVG layer (used when leaving globe scale, and on drill into a
@@ -384,8 +407,8 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       nav = { ...ROOT };
       if (globeScale) {
         // Globe view: texture the sphere with the returned SVG (we asked the
-        // worker for the flat `biomes` render at generate time, which is exactly
-        // the equirectangular whole-world map the sphere UVs want) and show it
+        // worker for the equirectangular `globe` render at generate time, which is
+        // exactly the lon/lat whole-world map the sphere UVs want) and show it
         // instead of injecting the SVG into the DOM. worldW/worldH were already
         // pinned to planet dims.
         void enterGlobeView(msg.svg);
@@ -448,14 +471,20 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       break;
     }
     case "yearFrame":
-      // A time-slider frame: swap the SVG only (no refit/status churn while
-      // scrubbing), then send the latest pending year if the user moved on.
-      showSvg(msg.svg);
-      yearBusy = false;
-      if (pendingYear !== null) {
-        const p = pendingYear;
-        pendingYear = null;
-        requestYear(p);
+      // A time-slider frame. On the globe, re-texture the sphere (empires animate
+      // ON the globe); on a flat map, swap the SVG. Either way, no refit/status
+      // churn while scrubbing. Release the coalescer once the frame is applied,
+      // then send the latest pending year if the user moved on. The globe path is
+      // async (rasterize→upload), so it flushes in `.finally`.
+      if (globeScale && globe) {
+        void textureGlobe(globe, msg.svg).finally(() => {
+          yearBusy = false;
+          flushPendingYear();
+        });
+      } else {
+        showSvg(msg.svg);
+        yearBusy = false;
+        flushPendingYear();
       }
       break;
     case "chronicle":
@@ -508,8 +537,9 @@ const doGenerate = () => {
   // Final render at the root uses the effective style ("planet" at a planet
   // root); the per-stage build-up frames pick their own style in the worker. The
   // globe ignores the returned SVG (it textures a sphere), so ask for the cheap
-  // flat `biomes` render rather than a slow ornate planisphere.
-  send({ type: "generate", ...s, style: globeScale ? "biomes" : effectiveStyle() });
+  // fontless equirectangular `globe` texture (parchment + political wash + coast
+  // + rivers) rather than a slow ornate planisphere.
+  send({ type: "generate", ...s, style: globeScale ? "globe" : effectiveStyle() });
 };
 
 // ---- Narration (Phase 5, via the native sidecar) ----
@@ -543,10 +573,10 @@ const doNarrate = () => {
 
 const doRestyle = () => {
   if (busy) return;
-  // At the globe root the sphere is always the flat `biomes` texture (other
-  // styles embed fonts that rasterize unreliably as an <img>), so the style
-  // control doesn't apply — the select is disabled there, and this guards the
-  // path defensively. In a drilled 2D sector it works normally.
+  // At the globe root the sphere wears the fixed equirectangular `globe` texture
+  // (a font-free skin — the labelled ornate styles rasterize unreliably as an
+  // <img>), so the style control doesn't apply — the select is disabled there, and
+  // this guards the path defensively. In a drilled 2D sector it works normally.
   if (globeScale && nav.level === 0) return;
   if (!lastSvg) {
     doGenerate();
@@ -704,11 +734,11 @@ mapEl.addEventListener("pointerup", (e) => {
 // Shown only at the world scale (history is world-wide) and only when borders
 // actually moved. Drilling into a sector hides it (sectors have no timeline).
 const refreshTimeslider = () => {
-  // Shown at the root of either scale (the planisphere now washes in political
-  // control, so scrubbing animates empires there too); hidden inside a sector,
-  // which has no timeline of its own. The globe is present-day only (a per-year
-  // sphere re-texture is a later increment), so the slider is hidden there.
-  const show = hasWorld && nav.level === 0 && historyYears.length === 2 && !globeScale;
+  // Shown at the root of every scale — the planisphere and the globe both wash in
+  // political control, so scrubbing animates empires rise + fall on either (the
+  // globe re-textures the sphere per year via `renderAtYear("globe", y)`). Hidden
+  // inside a drilled sector, which has no timeline of its own.
+  const show = hasWorld && nav.level === 0 && historyYears.length === 2;
   timesliderEl.classList.toggle("hidden", !show);
   if (!show) return;
   const [start, end] = historyYears;
@@ -730,7 +760,19 @@ const requestYear = (y: number) => {
     return;
   }
   yearBusy = true;
-  send({ type: "renderYear", style: effectiveStyle(), year: y });
+  // On the globe the texture is the equirectangular `globe` render; elsewhere the
+  // current view's style. Both go through `renderAtYear`, which swaps control to
+  // the year before rendering.
+  send({ type: "renderYear", style: globeScale ? "globe" : effectiveStyle(), year: y });
+};
+
+// Send the latest year the user scrubbed to while a render was in flight.
+const flushPendingYear = () => {
+  if (pendingYear !== null) {
+    const p = pendingYear;
+    pendingYear = null;
+    requestYear(p);
+  }
 };
 
 timescrubInput.addEventListener("input", () => {

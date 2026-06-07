@@ -26,6 +26,7 @@ import {
   SRGBColorSpace,
   RepeatWrapping,
   ClampToEdgeWrapping,
+  LinearFilter,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -96,7 +97,76 @@ function wrapTexture(t: CanvasTexture): CanvasTexture {
   t.colorSpace = SRGBColorSpace;
   t.wrapS = RepeatWrapping; // longitude wraps around
   t.wrapT = ClampToEdgeWrapping; // latitude clamps at the poles
+  // No mipmaps: the globe is viewed ~1:1, so the mip chain adds nothing visible,
+  // but GENERATING it on every upload is costly — brutally so under software GL
+  // (headless SwiftShader) and wasted work even on a real GPU. Skipping it is the
+  // single biggest win for fluid per-year re-texturing while scrubbing.
+  t.generateMipmaps = false;
+  t.minFilter = LinearFilter;
   return t;
+}
+
+/// Edge-band widths for [`fadeMapEdges`] — pure (no canvas), so the geometry is
+/// trivially inspectable. The seam bands are ~5% of width each (the antimeridian
+/// at lon ±180°), the pole bands ~7% of height (the pinched top/bottom rows).
+/// Narrow on purpose: only the artifact-prone edges fade; the map interior is
+/// untouched.
+function edgeFadeBands(w: number, h: number): { seam: number; pole: number } {
+  return { seam: Math.max(1, Math.round(w * 0.05)), pole: Math.max(1, Math.round(h * 0.08)) };
+}
+
+/// The deep-sea blue-grey the globe texture's open-ocean edges already are — the
+/// abyss end of `style/planet.rs::sea_color`, which the encircling sea around the
+/// continents renders in. The fade bands blend to THIS so the antimeridian and
+/// poles read as a continuation of that open ocean. A fixed colour (not sampled
+/// from the canvas): the globe is always the `globe` style, so its sea colour is
+/// known — and sampling via `getImageData` forced a multi-hundred-ms GPU→CPU
+/// readback per call (the dominant cost of a per-year scrub re-texture).
+const GLOBE_SEA = "rgb(93,122,134)";
+
+/// Hide the equirectangular wrap artifacts the `wrapTexture` note documents: the
+/// flat world's left/right edges are DIFFERENT coastlines that don't meet at lon
+/// ±180° (a seam), and its top/bottom rows aren't single points (pole pinch). We
+/// fade the four edge bands of the texture to the open-ocean colour, so the
+/// antimeridian and poles read as open sea — both seam edges become water and
+/// meet cleanly, and the pinched poles become tidy ocean caps instead of a smear.
+/// The geometric pinch is inherent to equirectangular-on-a-sphere; this removes
+/// the visible artifact. Mutates `canvas` in place (a throwaway texture canvas).
+function fadeMapEdges(canvas: HTMLCanvasElement): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const opaque = GLOBE_SEA;
+  const clear = "rgba(93,122,134,0)"; // GLOBE_SEA, fully transparent
+  const { seam, pole } = edgeFadeBands(w, h);
+  // Paint one edge band: opaque sea for the inner `solid` fraction (covering the
+  // worst-compressed rows/columns outright), then a gradient fading to
+  // transparent so the interior shows through untouched. The poles get a larger
+  // solid cap than the seam because equirect compression is extreme right at the
+  // pole point — a pure gradient there leaves a faint land starburst.
+  const band = (
+    rx: number,
+    ry: number,
+    rw: number,
+    rh: number,
+    gx0: number,
+    gy0: number,
+    gx1: number,
+    gy1: number,
+    solid: number,
+  ) => {
+    const grad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    grad.addColorStop(0, opaque);
+    grad.addColorStop(solid, opaque);
+    grad.addColorStop(1, clear);
+    ctx.fillStyle = grad;
+    ctx.fillRect(rx, ry, rw, rh);
+  };
+  band(0, 0, seam, h, 0, 0, seam, 0, 0.35); // left edge → inward
+  band(w - seam, 0, seam, h, w, 0, w - seam, 0, 0.35); // right edge → inward
+  band(0, 0, w, pole, 0, 0, 0, pole, 0.6); // top edge → down
+  band(0, h - pole, w, pole, 0, h, 0, h - pole, 0.6); // bottom edge → up
 }
 
 export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
@@ -127,6 +197,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let raf = 0;
   let running = false;
   let painted = false;
+  let textureCount = 0; // bumped on each real texture upload (drives the slider e2e)
   const tick = () => {
     controls.update();
     renderer.render(scene, camera);
@@ -189,6 +260,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       raf = 0;
     },
     setTexture(source: HTMLCanvasElement) {
+      fadeMapEdges(source); // fade the seam + poles to sea before uploading
       const next = wrapTexture(new CanvasTexture(source));
       next.anisotropy = renderer.capabilities.getMaxAnisotropy();
       const prev = material.map as Texture | null;
@@ -196,8 +268,11 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       material.needsUpdate = true;
       prev?.dispose();
       // Signal a real world texture was applied (vs the constructor's placeholder
-      // graticule, which never goes through setTexture). The e2e keys off this.
+      // graticule, which never goes through setTexture). The e2e keys off this;
+      // the monotonic `textures` count lets the time-slider e2e prove a per-year
+      // RE-texture happened (a new frame uploaded), not just the first one.
       canvas.dataset.textured = "1";
+      canvas.dataset.textures = String((textureCount += 1));
     },
     resize,
     onPick(cb: (u: number, v: number) => void) {

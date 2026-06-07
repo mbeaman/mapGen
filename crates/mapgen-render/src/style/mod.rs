@@ -70,6 +70,12 @@ pub enum Style {
     /// planisphere (continents, sea basins, graticule, major rivers/ranges,
     /// engraved labels). See [`crate::style::planet`].
     Planet,
+    /// Equirectangular, fontless texture for the 3D globe sphere — the planet's
+    /// parchment fill + depth-shaded sea + political wash + coast + major rivers on
+    /// a flat lon/lat grid (no Mollweide oval, no labels/chrome). The richer skin
+    /// the sphere wears in place of flat `Biomes`. See
+    /// [`crate::style::planet::render_globe_texture`].
+    GlobeTexture,
 }
 
 impl std::str::FromStr for Style {
@@ -81,6 +87,7 @@ impl std::str::FromStr for Style {
             "cultures" | "culture" => Ok(Self::Cultures),
             "ornate" | "ornate_antique" | "antique" => Ok(Self::OrnateAntique),
             "planet" | "planisphere" | "world" => Ok(Self::Planet),
+            "globe" | "globe_texture" => Ok(Self::GlobeTexture),
             other => Err(format!("unknown style: {other}")),
         }
     }
