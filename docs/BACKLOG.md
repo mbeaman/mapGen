@@ -35,37 +35,42 @@ Picking this branch up on a fresh clone / new machine? Start here. Branch
   place tag, multi-strand far-shore weave, cross-lens correlation) — COMPLETE, plus
   its inc-4 review test gaps closed (CLI `auto-shore` e2e + a laned cross-platform
   `far_shore` golden, seed 9).
-- **3D globe** (`Scale: Globe`) — COMPLETE: richer equirect parchment+political
-  texture (`Style::GlobeTexture` + `Proj::equirect`), seam/pole fade, time-lapse
-  scrub, fluid scrubbing (the `getImageData` perf fix), Faith/Prosperity/Trade lens
-  parity, cinematic fly-to-the-clicked-point drill. Deferred + ADVISED AGAINST: a
-  base-layer-cache "buttery scrub" (see the "3D globe view" entry) — do
-  generalisation instead.
+- **3D globe** (`Scale: Globe`) — base shipped (richer equirect parchment+political
+  texture, seam/pole fade, time-lapse scrub, lens parity, fly-to drill) and now being
+  EXTENDED into the continuous-LOD navigation arc below.
 - **Cartographic generalisation** (ADR 0001 §3, the detail-DECREASING direction) —
   river + coastline Visvalingam–Whyatt simplification on the overview shipped
-  (`mapgen-render::simplify`). The high-value slice is done.
+  (`mapgen-render::simplify`). The high-value slice is done. The remaining increments
+  (Töpfer scale-rank selection, per-level stylesheet) are LOW-ROI and now DEFERRED
+  behind the active arc (see the "Scale-dependent render fidelity" entry for them).
 
-**NEXT TASKS — pick these up first (the remaining generalisation increments).**
-Honest caveat: both are LOWER value for the current render structure (the planet
-render is always level-0; `ornate_antique` is the separate zoom-in path), so weigh
-ROI before sinking time — queued here by request. Full context in the
-"Scale-dependent render fidelity" entry → **Detail-decreasing generalisation
-direction**. Render-only (planet SVG never hashed → no golden moves).
+**🚧 ACTIVE ARC (2026-06-08): Globe→ground continuous-3D navigation.** The user
+reported that drilling the globe DROPPED to a flat 2D sector, and chose (knowingly,
+maximal) a full **continuous-LOD streaming globe** ("detail follows everywhere") plus
+roadmapped relief + region-name billboard labels. Locked design (judge-panel +
+red-team workflows): **`docs/design/globe-ground-3d-navigation.md`** (foundation +
+continuous-LOD streaming addendum). Honest scope call baked into the design:
+continuous-follow during fast motion is physically infeasible on the single-worker +
+main-thread-rasterize substrate, so **v1 = "detail follows on SETTLE"** (continuous-
+follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
+(free-fly camera) — DONE 2026-06-08** → 1b → 1c → streaming ST-1…ST-4 → gated ST-5
+(spike) / relief.
 
-1. **Scale-rank feature selection (Töpfer's Radical Law).** Replace the overview's
-   hardcoded selection constants in `style/planet.rs` — `render_major_ranges` top-8,
-   `render_labels` top-6 continents, `render_major_rivers` Strahler≥4 — with a
-   feature-count budget derived from Töpfer keyed to the world's cell-count/scale.
-   Marginal while the planet is the only level using this path (the constants already
-   work), but it's the principled form and the input the per-level stylesheet wants.
-2. **Per-level stylesheet.** Lift the scattered scale thresholds — `ornate_antique`'s
-   detail-increasing gates (`detail >= 2/4/8`), the generalisation tolerances
-   (`RIVER_SIMPLIFY_TOLERANCE`, `COAST_SIMPLIFY_TOLERANCE` in `style/planet.rs`), and
-   the selection budgets from (1) — into ONE scale→style data structure keyed off the
-   detail factor (`mesh.width / view_width`). The architectural refactor that unifies
-   the increasing (zoom-in) and decreasing (zoom-out) directions (ADR 0001 §3). Pays
-   off most if/when a single render path spans many levels (not the current
-   planet-vs-ornate split).
+- **1a — free-fly globe camera — DONE 2026-06-08.** Drilling the globe now STAYS in
+  3D (no 2D handoff); a custom globe-flight camera frames the region in its local
+  east-north-up frame (sidesteps the world-+Y polar-clamp singularity) with pan+zoom
+  wired (pitch/heading pure but unwired). New pure `web/src/camera.ts` (pinned by a
+  raycast round-trip through the trusted `uvToWorld` path) + flight mode in `globe.ts`
+  + `navTo` change in `main.ts`. A 4-dimension adversarial review found 10 defects
+  (1 blocker, 5 major) — ALL fixed + regression-tested (stale-flight wedge on
+  re-entry; rolled-overview on return; intermediate-crumb 2D leak; unpinned up
+  direction; pan-sign; doc/getCameraState deferral). `getCameraState` deferred to
+  ST-1 with its consumer. Render-only, no Rust/golden change. CLAIMS rows registered.
+- **NEXT: 1b — curved high-detail patch + region-name billboard label.** Restore the
+  per-drill cartography 1a's coarse whole-globe skin lacks: render the drilled sector
+  (`refineSector`→`"globe"` SVG→`rasterizeSvg`) onto a partial-sphere segment over the
+  base globe (`depthTest=false`+`renderOrder`), at the sector's true aspect; add the
+  region name as an HTML billboard. See the design doc's "Increment 1b".
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
