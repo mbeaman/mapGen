@@ -14,6 +14,8 @@
 /// `camera.test.ts` against a real raycast, NOT hand-trusted, because a flipped
 /// sign here would silently fly the camera to the mirror-image region.
 
+import { type Sector, sectorRect } from "./sector";
+
 export type Vec3 = [number, number, number];
 
 export interface GlobeCamState {
@@ -85,6 +87,48 @@ export function globeCamPose(s: GlobeCamState): { position: Vec3; target: Vec3; 
   // so it is never parallel to the view direction (no undefined roll).
   const up = norm(add(scale(fwd, Math.cos(s.pitch)), scale(P, Math.sin(s.pitch))));
   return { position, target: P, up };
+}
+
+/// Partial-sphere geometry for a drilled sector (increment 1b). Maps the sector's
+/// equirectangular world rect to a three.js `SphereGeometry` segment occupying
+/// exactly that lon/lat span on the unit sphere, so a high-detail texture of the
+/// sector lays over its slice of the base globe. PURE — pinned (ranges + the
+/// segW/segH aspect that must track phiLength/thetaLength, else the cartography is
+/// anisotropically squashed; + a raycast that the patch centers on the sector).
+export interface PatchParams {
+  phiStart: number;
+  phiLength: number;
+  thetaStart: number;
+  thetaLength: number;
+  /** unit vector to the sector center — for camera framing / horizon culling. */
+  centerDir: Vec3;
+  /** tessellation segments; segW/segH track the lon/lat aspect for curvature + UV. */
+  segW: number;
+  segH: number;
+}
+
+/** ~rad per patch segment (≈ the base sphere's 64×48 density); clamped [4, 64]. */
+const PATCH_ANGULAR_RES = 0.06;
+const patchSegs = (span: number) => Math.max(4, Math.min(64, Math.round(span / PATCH_ANGULAR_RES)));
+
+export function sectorPatchParams(sector: Sector, worldW: number, worldH: number): PatchParams {
+  const r = sectorRect(sector, worldW, worldH);
+  // three.js SphereGeometry: phi (azimuth) ↔ longitude = (x/W)·2π; theta (polar
+  // from +Y) ↔ latitude = (y/H)·π. Matches `lonLatToUnit`/`worldToUnit` (pinned).
+  const phiStart = (r.x0 / worldW) * 2 * Math.PI;
+  const phiLength = (r.w / worldW) * 2 * Math.PI;
+  const thetaStart = (r.y0 / worldH) * Math.PI;
+  const thetaLength = (r.h / worldH) * Math.PI;
+  const { lon, lat } = worldToLonLat(r.x0 + r.w / 2, r.y0 + r.h / 2, worldW, worldH);
+  return {
+    phiStart,
+    phiLength,
+    thetaStart,
+    thetaLength,
+    centerDir: lonLatToUnit(lon, lat),
+    segW: patchSegs(phiLength),
+    segH: patchSegs(thetaLength),
+  };
 }
 
 /// Pan the sub-point for a screen drag of (dx, dy) pixels. PURE so the pan-feel

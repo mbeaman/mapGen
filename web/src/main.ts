@@ -23,7 +23,7 @@ import {
   uvToWorld,
   type Sector,
 } from "./sector";
-import { worldToLonLat } from "./camera";
+import { sectorPatchParams, worldToLonLat } from "./camera";
 import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -478,6 +478,31 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       break;
     case "refined":
       setBusy(false);
+      if (globeScale && nav.level > 0) {
+        // 1b: the refined sector's fontless `globe` render lays onto a curved patch
+        // over the still-shown sphere (no 2D layer). Geometry + raster aspect both
+        // derive from the drilled sector's world rect so the texture aligns.
+        const params = sectorPatchParams(nav, worldW, worldH);
+        const rect = sectorRect(nav, worldW, worldH);
+        const aspect = rect.w / rect.h;
+        const long = 1024;
+        const tw = aspect >= 1 ? long : Math.round(long * aspect);
+        const th = aspect >= 1 ? Math.round(long / aspect) : long;
+        // Guard the async raster against a nav change DURING the rasterize window
+        // (busy is already cleared, so the user can return-to-globe / regenerate /
+        // re-drill before this resolves). navTo assigns a fresh `nav` object per hop,
+        // so reference identity discriminates any change — without this, a stale
+        // patch (incl. a wrong-region one) welds onto the overview after a return.
+        const reqNav = nav;
+        void rasterizeSvg(withLayerClasses(msg.svg), tw, th).then((raster) => {
+          if (globe && globeScale && nav === reqNav && nav.level > 0) {
+            globe.showPatch(raster, params, reqNav.level);
+          }
+        });
+        narrateBtn.disabled = true;
+        setStatus(`Region L${msg.level} — drag to pan, scroll to zoom; Globe to return.`, "ok");
+        break;
+      }
       showSvg(msg.svg);
       setExportEnabled(true);
       narrateBtn.disabled = msg.level !== 0;
@@ -671,7 +696,10 @@ const requestRefine = () => {
     "busy",
   );
   updateBreadcrumb();
-  send({ type: "refine", level: nav.level, sx: nav.sx, sy: nav.sy, style: effectiveStyle() });
+  // On the globe, every level wears the fontless equirect `globe` render (the
+  // user's labelled style rasterizes unreliably as an <img>, and the patch needs
+  // the sector's lon/lat viewBox) — force it here (1b).
+  send({ type: "refine", level: nav.level, sx: nav.sx, sy: nav.sy, style: globeScale ? "globe" : effectiveStyle() });
 };
 
 // Navigate to an explicit sector (breadcrumb / up). Re-refines from the seed —
@@ -691,18 +719,19 @@ const navTo = (target: Sector) => {
       // overview. The sphere was never hidden on drill (1a stays in 3D), so no
       // re-show / re-texture / regenerate.
       globe?.exitRegion();
+      narrateBtn.disabled = false; // the globe root has a chronicle again (1b drill disabled it)
       setStatus("Globe.", "ok");
     } else {
-      // Drill STAYS on the globe (increment 1a): fly into a free-fly camera over
-      // the region on the same sphere — no 2D handoff, no refine. Altitude frames
-      // the sector by its angular (longitude) span: deeper sectors → closer. The
-      // high-detail patch lands in a later increment; for now the region shows on
-      // the whole-world sphere skin.
+      // Drill STAYS on the globe: fly into a free-fly camera over the region on the
+      // same sphere — no 2D handoff. Altitude frames the sector by its angular
+      // (longitude) span: deeper sectors → closer.
       const rc = sectorRect(target, worldW, worldH);
       const { lon, lat } = worldToLonLat(rc.x0 + rc.w / 2, rc.y0 + rc.h / 2, worldW, worldH);
       const altitude = Math.max(0.12, Math.min(1.5, (2 * Math.PI) / 2 ** target.level));
       globe?.enterRegion(lon, lat, altitude);
-      setStatus("Region — drag to pan, scroll to zoom; Globe to return.", "ok");
+      // 1b: fetch the refined sector → its fontless `globe` render lands on a curved
+      // high-detail patch (the `refined` handler routes to showPatch on the globe).
+      requestRefine();
     }
     return;
   }

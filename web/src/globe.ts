@@ -30,7 +30,7 @@ import {
   LinearFilter,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { type GlobeCamState, globeCamPose, LAT_MAX, panSubPoint } from "./camera";
+import { type GlobeCamState, globeCamPose, LAT_MAX, panSubPoint, type PatchParams } from "./camera";
 
 export interface GlobeHandle {
   /** Reveal the canvas and start the render loop. */
@@ -51,8 +51,13 @@ export interface GlobeHandle {
    *  Sets `data-region="1"` and the per-frame `data-sub-lon/lat`/`data-altitude`
    *  the e2e reads. (Deeper 3D drilling + the detail patch land in later increments.) */
   enterRegion(subLon: number, subLat: number, altitude: number): void;
-  /** Return to the whole-globe overview: drop flight mode, pull the camera back to
-   *  the overview framing, re-arm the pick, and clear the region signals. */
+  /** Lay the rasterized refined-sector render onto a curved partial-sphere patch
+   *  over the base globe (increment 1b), occupying the sector's lon/lat span
+   *  (`params` from `sectorPatchParams`). At most one patch exists; this disposes
+   *  any previous one. Sets `data-patch=<level>` + bumps `data-patch-textures`. */
+  showPatch(source: HTMLCanvasElement, params: PatchParams, level: number): void;
+  /** Return to the whole-globe overview: drop flight mode, dispose the patch, pull
+   *  the camera back to the overview framing, re-arm the pick, clear region signals. */
   exitRegion(): void;
   /** Full teardown: stop the loop and free GPU resources. */
   dispose(): void;
@@ -224,6 +229,36 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   const MIN_ALT = 0.05;
   const MAX_ALT = 2.5;
   const clampLat = (lat: number) => Math.max(-LAT_MAX, Math.min(LAT_MAX, lat));
+
+  // Curved high-detail patch (increment 1b): a partial-sphere segment over the
+  // base globe, textured with the rasterized refined-sector render. At most ONE
+  // exists (the hard line against an unbounded tile pyramid); a new drill / return
+  // disposes it. Drawn with depthTest=false + renderOrder=1 so it composites over
+  // its base region unconditionally — no z-fighting to depend on under SwiftShader.
+  let patch: Mesh | null = null;
+  let patchTexCount = 0; // bumped per patch texture upload — its OWN e2e signal
+  const disposePatch = () => {
+    if (!patch) return;
+    scene.remove(patch);
+    patch.geometry.dispose();
+    const m = patch.material as MeshBasicMaterial;
+    m.map?.dispose();
+    m.dispose();
+    patch = null;
+    delete canvas.dataset.patch;
+  };
+  // A patch texture is NOT periodic (it's a continent interior), so — unlike the
+  // base sphere's `setTexture` — it skips `fadeMapEdges` and clamps both axes.
+  const patchTexture = (source: HTMLCanvasElement): CanvasTexture => {
+    const t = new CanvasTexture(source);
+    t.colorSpace = SRGBColorSpace;
+    t.wrapS = ClampToEdgeWrapping;
+    t.wrapT = ClampToEdgeWrapping;
+    t.generateMipmaps = false;
+    t.minFilter = LinearFilter;
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  };
   // Per-frame flight signals for the e2e (a GPU camera can't be diffed from the
   // DOM): the sub-point the camera looks at + its altitude. A pan must move these.
   const writeFlightData = () => {
@@ -370,6 +405,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       raf = 0;
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
       controls.enabled = true;
+      disposePatch(); // free the patch's GPU resources when leaving the globe
     },
     setTexture(source: HTMLCanvasElement) {
       fadeMapEdges(source); // fade the seam + poles to sea before uploading
@@ -398,6 +434,10 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // DEFERRED (1a, cosmetic): the fly-to end pose and this flight pose differ
       // slightly (centroid vs click, radius, roll), so there's a one-frame snap
       // here; a short entry-ease is a polish increment, not a 1a correctness gap.
+      // Drop any previous patch immediately so a re-drill doesn't leave the OLD
+      // region's patch hanging off to the side during the new refine (1b); the new
+      // patch arrives once its refine resolves (coarse base covers the gap).
+      disposePatch();
       flight = { subLon, subLat: clampLat(subLat), altitude, heading: 0, pitch: 0 };
       flyTo = null;
       controls.enabled = false;
@@ -405,12 +445,34 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       canvas.dataset.region = "1";
       writeFlightData();
     },
+    showPatch(source: HTMLCanvasElement, params: PatchParams, level: number) {
+      // Lay the refined sector onto a curved segment occupying its lon/lat span on
+      // the unit sphere (radius 1.001 → just above the base skin). depthTest=false
+      // + renderOrder=1 draw it over the base region with no z-fight dependency.
+      disposePatch();
+      const geo = new SphereGeometry(
+        1.001,
+        params.segW,
+        params.segH,
+        params.phiStart,
+        params.phiLength,
+        params.thetaStart,
+        params.thetaLength,
+      );
+      const mat = new MeshBasicMaterial({ map: patchTexture(source), depthTest: false });
+      patch = new Mesh(geo, mat);
+      patch.renderOrder = 1;
+      scene.add(patch);
+      canvas.dataset.patch = String(level);
+      canvas.dataset.patchTextures = String((patchTexCount += 1));
+    },
     exitRegion() {
       // Back to the whole-globe overview: drop flight mode and restore the canonical
       // overview camera. Flight left `camera.up` as a SURFACE TANGENT — it MUST be
       // reset to world +Y, or OrbitControls' lookAt renders the returned globe
       // rolled/tilted. Snap to the home framing (0,0,3.6) so the return is
       // predictable (and so a fresh-world re-entry, which reuses this, starts clean).
+      disposePatch();
       flight = null;
       flyTo = null;
       pickable = true;

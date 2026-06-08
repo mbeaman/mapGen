@@ -1,7 +1,14 @@
 import { Mesh, PerspectiveCamera, Raycaster, SphereGeometry, Vector2, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { type GlobeCamState, globeCamPose, lonLatToUnit, panSubPoint, worldToLonLat } from "./camera";
-import { latLonToWorld, uvToWorld } from "./sector";
+import {
+  type GlobeCamState,
+  globeCamPose,
+  lonLatToUnit,
+  panSubPoint,
+  sectorPatchParams,
+  worldToLonLat,
+} from "./camera";
+import { latLonToWorld, ROOT, uvToWorld } from "./sector";
 
 const W = 2048;
 const H = 1280;
@@ -83,6 +90,83 @@ describe("globeCamPose", () => {
     near(dot(up0, up90), 0); // a 90° heading change rotates up by ~90°
     const tilt = globeCamPose({ ...base, pitch: 1.0 });
     expect(length(tilt.position)).toBeGreaterThan(1); // still outside the sphere when tilted
+  });
+});
+
+describe("sectorPatchParams", () => {
+  it("ROOT covers the whole sphere; a level-2 sector maps to its exact lon/lat sub-ranges", () => {
+    const root = sectorPatchParams(ROOT, W, H);
+    near(root.phiStart, 0);
+    near(root.phiLength, 2 * Math.PI);
+    near(root.thetaStart, 0);
+    near(root.thetaLength, Math.PI);
+    // level-2 (1,1) on a 4×4 grid → world rect {512,320,512,320} (see sector.test.ts)
+    const p = sectorPatchParams({ level: 2, sx: 1, sy: 1 }, W, H);
+    near(p.phiStart, Math.PI / 2); // 512/2048 · 2π
+    near(p.phiLength, Math.PI / 2);
+    near(p.thetaStart, Math.PI / 4); // 320/1280 · π
+    near(p.thetaLength, Math.PI / 4);
+  });
+
+  it("segW/segH track the lon/lat aspect (else the cartography squashes) and centerDir matches the sector center", () => {
+    const p = sectorPatchParams({ level: 2, sx: 0, sy: 1 }, W, H); // wide-ish sector
+    // The segment aspect must follow the angular aspect within rounding.
+    expect(Math.abs(p.segW / p.segH - p.phiLength / p.thetaLength)).toBeLessThan(0.25);
+    // centerDir is the unit vector at the sector center (cross-checked vs lonLatToUnit).
+    const cx = 0 + 512 / 2;
+    const cyWorld = 320 + 320 / 2;
+    const { lon, lat } = worldToLonLat(cx, cyWorld, W, H);
+    const expected = lonLatToUnit(lon, lat);
+    near(p.centerDir[0], expected[0]);
+    near(p.centerDir[1], expected[1]);
+    near(p.centerDir[2], expected[2]);
+  });
+
+  it("a ray toward centerDir hits the PATCH at its centre (uv ≈ 0.5,0.5) — pins the geometry on the real partial sphere", () => {
+    const p = sectorPatchParams({ level: 2, sx: 2, sy: 1 }, W, H);
+    const patch = new Mesh(
+      new SphereGeometry(1.001, p.segW, p.segH, p.phiStart, p.phiLength, p.thetaStart, p.thetaLength),
+    );
+    patch.updateMatrixWorld(true);
+    const ray = new Raycaster();
+    ray.set(
+      new Vector3(p.centerDir[0] * 3, p.centerDir[1] * 3, p.centerDir[2] * 3),
+      new Vector3(-p.centerDir[0], -p.centerDir[1], -p.centerDir[2]).normalize(),
+    );
+    const hit = ray.intersectObject(patch)[0];
+    expect(hit?.uv).toBeTruthy();
+    expect(hit!.uv!.x).toBeCloseTo(0.5, 1);
+    expect(hit!.uv!.y).toBeCloseTo(0.5, 1);
+  });
+
+  it("patch uv orientation: north → top (uv.y>0.5), west → left (uv.x<0.5) — pins a flip/mirror off-GPU", () => {
+    // Pins the GEOMETRY's phi→u, theta→uv.y layout against a flip/mirror (the
+    // residual texture-row flipY composition stays screenshot-only). North = theta
+    // toward thetaStart (the +Y pole); west = lower phi (lower longitude).
+    const p = sectorPatchParams({ level: 2, sx: 2, sy: 1 }, W, H);
+    const patch = new Mesh(
+      new SphereGeometry(1.001, p.segW, p.segH, p.phiStart, p.phiLength, p.thetaStart, p.thetaLength),
+    );
+    patch.updateMatrixWorld(true);
+    const ray = new Raycaster();
+    // three.js SphereGeometry vertex for (phi, theta)
+    const at = (phi: number, theta: number): [number, number, number] => [
+      -Math.cos(phi) * Math.sin(theta),
+      Math.cos(theta),
+      Math.sin(phi) * Math.sin(theta),
+    ];
+    const hitUv = (phi: number, theta: number) => {
+      const d = at(phi, theta);
+      ray.set(
+        new Vector3(d[0] * 3, d[1] * 3, d[2] * 3),
+        new Vector3(-d[0], -d[1], -d[2]).normalize(),
+      );
+      return ray.intersectObject(patch)[0]!.uv!;
+    };
+    const north = hitUv(p.phiStart + p.phiLength * 0.5, p.thetaStart + p.thetaLength * 0.25);
+    expect(north.y).toBeGreaterThan(0.5); // north quarter → upper half
+    const west = hitUv(p.phiStart + p.phiLength * 0.25, p.thetaStart + p.thetaLength * 0.5);
+    expect(west.x).toBeLessThan(0.5); // west quarter → left half
   });
 });
 

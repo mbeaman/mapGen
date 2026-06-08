@@ -380,16 +380,22 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
 
   // A click (no drag) drills BUT STAYS IN 3D (1a free-fly): the raycaster's
   // surface UV → continentAt → the camera retargets INTO the region on the SAME
-  // sphere — no 2D handoff, no refine. The discriminating signal is
-  // `data-region="1"` (set ONLY by globe.enterRegion on a drill) WITH the sphere
-  // still shown and `#map-content` still hidden — the exact inverse of the old
-  // "globe stepped aside to a 2D sector" contract. An L-level breadcrumb proves
-  // the drill chain fired (a swallowed click would leave us at the root).
+  // sphere — no 2D handoff. The discriminating signal is `data-region="1"` (set
+  // ONLY by globe.enterRegion on a drill) WITH the sphere still shown and
+  // `#map-content` still hidden — the exact inverse of the old "globe stepped aside
+  // to a 2D sector" contract. An L-level breadcrumb proves the drill chain fired.
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
   await expect(page.locator("#breadcrumb")).toContainText(/L[1-6]/);
   await expect(canvas).toBeVisible(); // still the 3D globe, NOT a 2D sector
   await expect(page.locator("#map-content")).toBeHidden();
+
+  // 1b: the refined sector lands on a curved high-detail patch over the base globe
+  // — `data-patch=<level>` is set ONLY by globe.showPatch, and `data-patch-textures`
+  // is its own upload counter (not the base sphere's `data-textures`). This restores
+  // the sharp cartography the coarse 1a skin lacked; the refine is async, so poll.
+  await expect(canvas).toHaveAttribute("data-patch", /^[1-6]$/, { timeout: 30_000 });
+  expect(Number(await canvas.getAttribute("data-patch-textures"))).toBeGreaterThan(0);
 
   // Free-fly (1a step 2): the camera is now driven by a flight state over the
   // region. A drag PANS the sub-point across the surface (OrbitControls is
@@ -420,6 +426,9 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // the globe rolled. globe.ts writes camera.up.y to data-cam-up-y on overview
   // frames; ≈1 ⇒ upright (it would be < 1 with the stale tangent up).
   await expect.poll(async () => Number(await canvas.getAttribute("data-cam-up-y"))).toBeGreaterThan(0.99);
+  // ...AND narrate is re-enabled (a drill disables it — no sector chronicle; the
+  // 1b patch path left it stuck disabled on return until this was fixed).
+  await expect(page.locator("#narrate")).toBeEnabled();
 });
 
 // Increment 5: the style control is locked on the globe (the sphere wears the
@@ -519,10 +528,15 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
   await expect(page.locator("#breadcrumb")).toContainText(/L[2-6]/); // deep enough for an intermediate crumb
+  // Wait for the initial L2 patch to settle (busy clears) before the crumb hop —
+  // otherwise navTo's `if (busy) return` guard would silently drop the click.
+  await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
 
-  // (1) Click the intermediate L1 crumb → must STAY on the 3D sphere; the 2D layer
-  // must NOT appear (the pre-fix guard fell through to a hidden 2D refine behind it).
+  // (1) Click the intermediate L1 crumb → must STAY on the 3D sphere and rebuild the
+  // patch at L1; the 2D layer must NOT appear (the pre-fix guard fell through to a
+  // hidden 2D refine behind it). data-patch flipping 2→1 proves the in-3D rebuild.
   await page.locator("#breadcrumb").getByRole("button", { name: /^L1 / }).click();
+  await expect(canvas).toHaveAttribute("data-patch", "1", { timeout: 30_000 });
   await expect(canvas).toHaveAttribute("data-region", "1");
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
