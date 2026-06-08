@@ -66,11 +66,25 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   re-entry; rolled-overview on return; intermediate-crumb 2D leak; unpinned up
   direction; pan-sign; doc/getCameraState deferral). `getCameraState` deferred to
   ST-1 with its consumer. Render-only, no Rust/golden change. CLAIMS rows registered.
-- **NEXT: 1b — curved high-detail patch + region-name billboard label.** Restore the
-  per-drill cartography 1a's coarse whole-globe skin lacks: render the drilled sector
-  (`refineSector`→`"globe"` SVG→`rasterizeSvg`) onto a partial-sphere segment over the
-  base globe (`depthTest=false`+`renderOrder`), at the sector's true aspect; add the
-  region name as an HTML billboard. See the design doc's "Increment 1b".
+- **1b (patch) — DONE 2026-06-08.** A globe drill now also refines the sector and lays
+  its fontless `"globe"` render onto a curved partial-sphere patch over the base globe
+  (`showPatch`/`patchTexture` in `globe.ts`: `SphereGeometry(1.001,…)`, `depthTest=false`
+  +`renderOrder`, no-fade `ClampToEdge`, dedicated `data-patch-textures`; `main.ts`
+  forces `style:"globe"` + routes `"refined"`→`showPatch`, raster at the sector aspect).
+  Pure `sectorPatchParams` (`camera.ts`) pinned by raycast (centering + N/W orientation).
+  A 4-dim review found 7 (1 major) — fixed: async `showPatch` **nav-guard** (a stale
+  patch could weld onto the overview after a return during the rasterize window), narrate
+  re-enabled on return, orientation raycast added. Deferred polish (1f): altitude framing
+  tightening + fly-to→flight entry-ease (the patch is dead-centred but loosely framed).
+  **HONEST CEILING (CLAIMS):** `data-patch`/textures prove ROUTING only — texture
+  orientation + visibility are screenshot-verified (a mandatory review artifact).
+  Render-only, no Rust/golden change.
+- **NEXT: 1b-ii — region-name billboard label.** The patch is fontless (no labels) — add
+  the drilled region's name as an HTML billboard. Needs the continent NAME exposed to JS
+  (a small read-only, RNG-free, golden-neutral addition to `continent_at`; consumer = the
+  billboard, same increment). Then **1c — deeper drilling in 3D** (patch raycast →
+  `patchLocalUvToWorld` → `childSectorAt`; close the `navTo` fall-through for L1→L2+).
+  See the design doc's "Increment 1c".
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
