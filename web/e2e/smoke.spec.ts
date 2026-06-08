@@ -531,6 +531,12 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   // Wait for the initial L2 patch to settle (busy clears) before the crumb hop —
   // otherwise navTo's `if (busy) return` guard would silently drop the click.
   await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
+  // 1b-ii: the region-name billboard shows the drilled landmass's GROUNDED name
+  // (seed 8 drills into a named continent). The name's correctness is pinned in
+  // Rust (continents_spec); here we prove the consumer renders a non-empty label.
+  const label = page.locator(".globe-region-label");
+  await expect(label).toBeVisible();
+  await expect(label).not.toHaveText("");
 
   // (1) Click the intermediate L1 crumb → must STAY on the 3D sphere and rebuild the
   // patch at L1; the 2D layer must NOT appear (the pre-fix guard fell through to a
@@ -548,5 +554,6 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   await expect(canvas).not.toHaveAttribute("data-region", "1");
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
+  await expect(label).toBeHidden(); // the billboard cleared with the region on reset
 });
 }); // test.describe.serial("3D globe")

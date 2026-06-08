@@ -294,13 +294,16 @@ fn centroid(mesh: &MeshData, cells: &[usize]) -> [f32; 2] {
 }
 
 /// The major landmass under a world-space point, for the continent-aware drill.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ContinentHit {
     /// World-space centroid of the landmass (the drill re-centers here).
     pub cx: f32,
     pub cy: f32,
     /// Cells in the landmass — the UI sizes the drill depth from this.
     pub cell_count: u32,
+    /// The grounded name of this landmass (from `world.continents`) — for the
+    /// drilled-region label. Empty if the world was never named.
+    pub name: String,
 }
 
 /// The major landmass under world-space point `(x, y)`, or `None` when the point
@@ -341,10 +344,25 @@ pub fn continent_at(world: &WorldData, x: f32, y: f32) -> Option<ContinentHit> {
         return None; // a speck island, not a continent — let the caller grid-drill
     }
     let c = centroid(mesh, &body);
+    // Resolve the grounded name: `name_geographic_bodies` built `world.continents`
+    // from the SAME `connected_bodies` + threshold, so this body's entry is the one
+    // whose centroid is nearest `c` (exact in practice — same `centroid` fn on the
+    // same cells — but nearest-match is robust to any f32 wobble). Empty if unnamed.
+    let name = world
+        .continents
+        .iter()
+        .min_by(|a, b| {
+            let da = (a.centroid[0] - c[0]).powi(2) + (a.centroid[1] - c[1]).powi(2);
+            let db = (b.centroid[0] - c[0]).powi(2) + (b.centroid[1] - c[1]).powi(2);
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
     Some(ContinentHit {
         cx: c[0],
         cy: c[1],
         cell_count: body.len() as u32,
+        name,
     })
 }
 

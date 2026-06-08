@@ -94,6 +94,7 @@ impl WorldHandle {
                     cy: hit.cy,
                     cell_count: hit.cell_count,
                     total_cells: self.inner.mesh.cell_count() as u32,
+                    name: hit.name,
                 };
                 serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
             }
@@ -162,6 +163,8 @@ struct ContinentInfo {
     /// from the ratio.
     cell_count: u32,
     total_cells: u32,
+    /// The grounded landmass name — the drilled-region billboard (1b-ii).
+    name: String,
 }
 
 /// Per-step progress descriptor handed back to JS. A plain serializable

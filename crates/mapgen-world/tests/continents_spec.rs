@@ -400,3 +400,57 @@ fn continent_at_picks_the_body_containing_the_click_not_the_largest() {
     assert_eq!(b.cell_count, 45);
     assert!((b.cx - 77.0).abs() < 1e-3, "body B centroid was {}", b.cx);
 }
+
+#[test]
+fn continent_at_carries_the_grounded_landmass_name() {
+    // The drilled-region billboard (1b-ii) reads `ContinentHit::name`. A continent
+    // click must carry the SAME grounded name `world.continents` stores — non-empty,
+    // a real continent name, and DISTINCT across continents (proves it's resolved
+    // from the named bodies, not a constant or left empty).
+    let world = generate_full(params(4)); // 3 named continents (Dvuv/Tkuf/Fu)
+    assert!(
+        world.continents.len() >= 2,
+        "seed 4 has multiple named continents"
+    );
+    let names: HashSet<&str> = world.continents.iter().map(|c| c.name.as_str()).collect();
+    let mut seen: HashSet<String> = HashSet::new();
+    // Sample land sites across the mesh (a stride keeps it O(1) generate + cheap).
+    for cell in (0..world.mesh.cell_count()).step_by(37) {
+        let s = world.mesh.sites[cell];
+        if let Some(hit) = continent_at(&world, s[0], s[1]) {
+            assert!(
+                !hit.name.is_empty(),
+                "a continent hit carries a grounded name"
+            );
+            assert!(
+                names.contains(hit.name.as_str()),
+                "hit name {:?} is one of the grounded continent names",
+                hit.name
+            );
+            seen.insert(hit.name);
+        }
+    }
+    assert!(
+        seen.len() >= 2,
+        "distinct continents resolve to distinct names (data-driven, not a constant)"
+    );
+
+    // ...AND the body→name MAPPING is correct, not merely a real name (the review's
+    // catch: membership + distinctness above pass even under a "rotate names by one"
+    // bug). `connected_bodies` and `world.continents` are both largest-first off the
+    // SAME flood-fill, so the largest land body must resolve to `continents[0]`. A
+    // rotation / off-by-one in the nearest-centroid resolution returns a different
+    // (still-real) name and turns this red.
+    let is_land = |i: usize| world.terrain.elevation.get(i).copied().unwrap_or(0.0) > 0.0;
+    let biggest = connected_bodies(&world.mesh, is_land)
+        .into_iter()
+        .next()
+        .expect("a generated world has at least one land body");
+    let site = world.mesh.sites[biggest[0]];
+    let hit = continent_at(&world, site[0], site[1])
+        .expect("a cell on the largest land body resolves to a continent");
+    assert_eq!(
+        hit.name, world.continents[0].name,
+        "the largest body resolves to the largest continent's name (mapping, not just a real name)"
+    );
+}

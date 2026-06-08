@@ -109,6 +109,10 @@ let globe: GlobeHandle | null = null;
 // so a lens toggle can re-texture the sphere by re-rasterizing it with a new layer
 // class — no worker round-trip.
 let lastGlobeSvg = "";
+// The grounded name of the drilled landmass (from continentAt), for the globe
+// region billboard (1b-ii). Set on a continent drill, reused across intermediate
+// breadcrumb hops within that continent, cleared on a sea/speck grid-drill.
+let regionName = "";
 const ensureGlobe = async (): Promise<GlobeHandle> => {
   if (!globe) {
     const mod = await import("./globe");
@@ -523,8 +527,10 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       if (busy || !hasWorld || nav.level !== 0) break;
       if (msg.info) {
         const level = continentDrillLevel(msg.info.cell_count, msg.info.total_cells, MAX_LEVEL);
+        regionName = msg.info.name; // the billboard reads this in enterRegion (1b-ii)
         navTo(sectorAt(msg.info.cx, msg.info.cy, level, worldW, worldH));
       } else {
+        regionName = ""; // sea / speck grid-drill — no grounded landmass name
         const child = childSectorAt(msg.x, msg.y, nav.level, worldW, worldH, MAX_LEVEL);
         if (child) navTo(child);
       }
@@ -728,7 +734,7 @@ const navTo = (target: Sector) => {
       const rc = sectorRect(target, worldW, worldH);
       const { lon, lat } = worldToLonLat(rc.x0 + rc.w / 2, rc.y0 + rc.h / 2, worldW, worldH);
       const altitude = Math.max(0.12, Math.min(1.5, (2 * Math.PI) / 2 ** target.level));
-      globe?.enterRegion(lon, lat, altitude);
+      globe?.enterRegion(lon, lat, altitude, regionName);
       // 1b: fetch the refined sector → its fontless `globe` render lands on a curved
       // high-detail patch (the `refined` handler routes to showPatch on the globe).
       requestRefine();

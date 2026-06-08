@@ -45,6 +45,8 @@ export interface ContinentInfo {
   cy: number;
   cell_count: number;
   total_cells: number;
+  /** The grounded landmass name — the drilled-region billboard (1b-ii). */
+  name: string;
 }
 
 export type WorkerRequest =

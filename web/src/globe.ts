@@ -30,7 +30,14 @@ import {
   LinearFilter,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { type GlobeCamState, globeCamPose, LAT_MAX, panSubPoint, type PatchParams } from "./camera";
+import {
+  type GlobeCamState,
+  globeCamPose,
+  LAT_MAX,
+  lonLatToUnit,
+  panSubPoint,
+  type PatchParams,
+} from "./camera";
 
 export interface GlobeHandle {
   /** Reveal the canvas and start the render loop. */
@@ -50,7 +57,7 @@ export interface GlobeHandle {
    *  the surface, wheel zooms — and the sphere is NOT hidden (no 2D handoff).
    *  Sets `data-region="1"` and the per-frame `data-sub-lon/lat`/`data-altitude`
    *  the e2e reads. (Deeper 3D drilling + the detail patch land in later increments.) */
-  enterRegion(subLon: number, subLat: number, altitude: number): void;
+  enterRegion(subLon: number, subLat: number, altitude: number, name: string): void;
   /** Lay the rasterized refined-sector render onto a curved partial-sphere patch
    *  over the base globe (increment 1b), occupying the sector's lon/lat span
    *  (`params` from `sectorPatchParams`). At most one patch exists; this disposes
@@ -259,6 +266,38 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return t;
   };
+
+  // Region-name billboard (1b-ii): an HTML label anchored to the drilled region's
+  // CENTRE (a fixed unit vector), tracked each frame by projecting that point
+  // through the camera — so it stays glued to the continent as you pan, and hides
+  // when the region rotates behind the globe's horizon. position:fixed so it needs
+  // no positioned ancestor; removed on dispose.
+  const regionLabel = document.createElement("div");
+  regionLabel.className = "globe-region-label";
+  Object.assign(regionLabel.style, {
+    position: "fixed",
+    left: "0",
+    top: "0",
+    pointerEvents: "none",
+    zIndex: "5",
+    font: "italic 20px 'EB Garamond', Georgia, serif",
+    color: "#f4ebd0",
+    // A dark sepia pill so the label reads over light terrain AND dark sea alike.
+    background: "rgba(21,17,12,0.55)",
+    padding: "1px 10px",
+    borderRadius: "3px",
+    textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+    whiteSpace: "nowrap",
+    transform: "translate(-9999px,-9999px)",
+  });
+  regionLabel.hidden = true;
+  document.body.appendChild(regionLabel);
+  let labelAnchor: Vector3 | null = null; // fixed unit vec at the region centre, or null
+  const hideLabel = () => {
+    labelAnchor = null;
+    regionLabel.hidden = true;
+    regionLabel.textContent = "";
+  };
   // Per-frame flight signals for the e2e (a GPU camera can't be diffed from the
   // DOM): the sub-point the camera looks at + its altitude. A pan must move these.
   const writeFlightData = () => {
@@ -296,6 +335,20 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
       camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
       camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+      // Track the region billboard: project its FIXED anchor; hide it once the
+      // region rotates past the horizon (dot(anchor, camPos) < 1 ⇒ behind the limb).
+      if (labelAnchor && regionLabel.textContent) {
+        if (labelAnchor.dot(camera.position) >= 1) {
+          const ndc = labelAnchor.clone().project(camera);
+          const rect = canvas.getBoundingClientRect();
+          const px = rect.left + (ndc.x * 0.5 + 0.5) * rect.width;
+          const py = rect.top + (-ndc.y * 0.5 + 0.5) * rect.height;
+          regionLabel.style.transform = `translate(${px}px, ${py}px) translate(-50%, -160%)`;
+          regionLabel.hidden = false;
+        } else {
+          regionLabel.hidden = true;
+        }
+      }
     } else {
       controls.update();
       // Overview camera-up.y, for the e2e to prove the globe returns UPRIGHT after a
@@ -406,6 +459,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
       controls.enabled = true;
       disposePatch(); // free the patch's GPU resources when leaving the globe
+      hideLabel();
     },
     setTexture(source: HTMLCanvasElement) {
       fadeMapEdges(source); // fade the seam + poles to sea before uploading
@@ -426,7 +480,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     onPick(cb: (u: number, v: number) => void) {
       pickCb = cb;
     },
-    enterRegion(subLon: number, subLat: number, altitude: number) {
+    enterRegion(subLon: number, subLat: number, altitude: number, name: string) {
       // Enter free-fly mode over the drilled region: the camera is driven from
       // this state (tick → globeCamPose) and OrbitControls steps aside. The drill
       // fly-to has already swung the camera near the point; this re-centres it on
@@ -438,11 +492,17 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // region's patch hanging off to the side during the new refine (1b); the new
       // patch arrives once its refine resolves (coarse base covers the gap).
       disposePatch();
-      flight = { subLon, subLat: clampLat(subLat), altitude, heading: 0, pitch: 0 };
+      const cl = clampLat(subLat);
+      flight = { subLon, subLat: cl, altitude, heading: 0, pitch: 0 };
       flyTo = null;
       controls.enabled = false;
       pickable = false;
       canvas.dataset.region = "1";
+      // 1b-ii: anchor the region-name billboard at the region centre (fixed); the
+      // tick projector positions it each frame. Empty name → the projector hides it.
+      const a = lonLatToUnit(subLon, cl);
+      labelAnchor = new Vector3(a[0], a[1], a[2]);
+      regionLabel.textContent = name;
       writeFlightData();
     },
     showPatch(source: HTMLCanvasElement, params: PatchParams, level: number) {
@@ -473,6 +533,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // rolled/tilted. Snap to the home framing (0,0,3.6) so the return is
       // predictable (and so a fresh-world re-entry, which reuses this, starts clean).
       disposePatch();
+      hideLabel();
       flight = null;
       flyTo = null;
       pickable = true;
@@ -488,6 +549,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     },
     dispose() {
       this.hide();
+      regionLabel.remove();
       geometry.dispose();
       material.map?.dispose();
       material.dispose();
