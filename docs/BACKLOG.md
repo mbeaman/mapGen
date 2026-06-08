@@ -21,36 +21,65 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
-## Up next — resume here (2026-06-03)
+## Up next — resume here (2026-06-07)
 
-Picking this branch up on a fresh clone? Start here. **Active arc: The Sundered
-Lanes** — Phase 1 carriers + Phase 2 Diffusion are shipped and surfaced on the
-map (faith lens). See **The Sundered Lanes — build progress** below for the live
-state and what's next.
+Picking this branch up on a fresh clone / new machine? Start here. Branch
+`claude/fantasy-map-generator-1du5B`.
 
-**Where we left off.** Branch `claude/fantasy-map-generator-1du5B`. The overlay
-system (toggles, 5 overlays, 6 presets, legends, `mapgen atlas` export), the
-zoom-out planet view (increment 1: `mapgen planet`, `Style::Planet`, `mapgen
-refine --planet`), **planet zoom-out increment 2 item 1 — frontend zoom-out**
-(a "Scale: Continent · Planet" control, `Generation.planet`,
-planet-as-breadcrumb-root, click-to-drill, `?scale=planet` permalink),
-**item 2 — grounded continent/ocean names** (schema v17:
-`world.continents`/`oceans` named in each body's dominant culture; the
-planisphere reads them instead of positional Latin), and **item 3 —
-continent-aware drill** (a root click snaps to the continent under the cursor,
-re-centering + depth-sizing the drill on it) are
-shipped and green. Quality bar: `just check`, `just web-test`, and the
-Playwright e2e (incl. a planet-drill smoke) all pass.
+**State (all shipped + green: `just check`, web `tsc`/`vitest`/bundle-guard/e2e,
+`wasm-pack test --node`).**
 
-**Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first
-wasm build; see `web/README.md`). Then `mapgen planet --seed 42` for the
-planisphere, or `just web-dev` for the browser frontend. Gotcha: Playwright
-ships browser builds per-Ubuntu-version and lags new releases — on a too-new
-distro (e.g. 26.04) install/run the e2e with
+- **The Sundered Lanes** inter-continental arc — Phase 1 carriers + Phase 2
+  mechanics (diffusion, faith replay, trade, embargo) + Phase 3 surfacing
+  (prosperity heatmap, trade lens, chronicle weaving, first-contact arc, landmass
+  place tag, multi-strand far-shore weave, cross-lens correlation) — COMPLETE, plus
+  its inc-4 review test gaps closed (CLI `auto-shore` e2e + a laned cross-platform
+  `far_shore` golden, seed 9).
+- **3D globe** (`Scale: Globe`) — COMPLETE: richer equirect parchment+political
+  texture (`Style::GlobeTexture` + `Proj::equirect`), seam/pole fade, time-lapse
+  scrub, fluid scrubbing (the `getImageData` perf fix), Faith/Prosperity/Trade lens
+  parity, cinematic fly-to-the-clicked-point drill. Deferred + ADVISED AGAINST: a
+  base-layer-cache "buttery scrub" (see the "3D globe view" entry) — do
+  generalisation instead.
+- **Cartographic generalisation** (ADR 0001 §3, the detail-DECREASING direction) —
+  river + coastline Visvalingam–Whyatt simplification on the overview shipped
+  (`mapgen-render::simplify`). The high-value slice is done.
+
+**NEXT TASKS — pick these up first (the remaining generalisation increments).**
+Honest caveat: both are LOWER value for the current render structure (the planet
+render is always level-0; `ornate_antique` is the separate zoom-in path), so weigh
+ROI before sinking time — queued here by request. Full context in the
+"Scale-dependent render fidelity" entry → **Detail-decreasing generalisation
+direction**. Render-only (planet SVG never hashed → no golden moves).
+
+1. **Scale-rank feature selection (Töpfer's Radical Law).** Replace the overview's
+   hardcoded selection constants in `style/planet.rs` — `render_major_ranges` top-8,
+   `render_labels` top-6 continents, `render_major_rivers` Strahler≥4 — with a
+   feature-count budget derived from Töpfer keyed to the world's cell-count/scale.
+   Marginal while the planet is the only level using this path (the constants already
+   work), but it's the principled form and the input the per-level stylesheet wants.
+2. **Per-level stylesheet.** Lift the scattered scale thresholds — `ornate_antique`'s
+   detail-increasing gates (`detail >= 2/4/8`), the generalisation tolerances
+   (`RIVER_SIMPLIFY_TOLERANCE`, `COAST_SIMPLIFY_TOLERANCE` in `style/planet.rs`), and
+   the selection budgets from (1) — into ONE scale→style data structure keyed off the
+   detail factor (`mesh.width / view_width`). The architectural refactor that unifies
+   the increasing (zoom-in) and decreasing (zoom-out) directions (ADR 0001 §3). Pays
+   off most if/when a single render path spans many levels (not the current
+   planet-vs-ornate split).
+
+**Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
+build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
+`just web-dev` for the browser frontend. **Gotchas:** (1) **the 3D globe needs
+`three` installed** — if it shows a blank / "failed to load" canvas, run
+`npm install` (or `just web-setup`); the globe chunk lazy-loads three and a stale
+`node_modules` is the usual cause. (2) Playwright ships browser builds per-Ubuntu-
+version and lags new releases — on a too-new distro (e.g. 26.04) run the e2e with
 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` (noted in `just web-e2e`).
 
-**Immediate next — planet zoom-out, increment 2** (continues "World / planet
-scale (zoom out)" below), in priority order:
+**Historical build logs below** (the Sundered Lanes + planet zoom-out records are
+kept for context; all items marked DONE).
+
+**Planet zoom-out, increment 2** (shipped — historical), in priority order:
 
 1. ~~**Frontend zoom-out.**~~ DONE 2026-05-31 — planet usable in the browser
    (Scale control, `Generation.planet`, breadcrumb-root, click-to-drill).

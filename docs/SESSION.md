@@ -1,9 +1,10 @@
 # Session state
 
-**Resume entry point.** Read this first to understand where the
-project is right now, then read `AGENTS.md` (if you're an agent) or
-`CONTRIBUTING.md` (if you're a human) for process. This file changes
-fast; the others are stable.
+**Resume entry point.** ⇒ **For the current resume pointer + the next tasks to pick
+up, read `docs/BACKLOG.md` "## Up next — resume here" (kept current).** This file's
+fast-moving sections below lag; treat BACKLOG "Up next" as authoritative for "what's
+done / what's next". Then read `AGENTS.md` (agent) or `CONTRIBUTING.md` (human) for
+process.
 
 ---
 
@@ -12,12 +13,11 @@ fast; the others are stable.
 | Field | Value |
 |---|---|
 | Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | Phase 7 complete — refinement framework + drill-in nav + scale-dependent render fidelity (forests→cities) + seam-pinning + projected rivers + hardening. Run `git log -1` for the head. |
+| Latest commit | **The Sundered Lanes (inter-continental) + 3D globe + cartographic-generalisation arcs all shipped** (2026-06-07). Run `git log -1` for the head; see BACKLOG "Up next" for the full state + next tasks (the remaining generalisation increments: scale-rank selection, per-level stylesheet). |
 | Tree | clean |
-| Tests | full workspace suite green (adds `scale_spec`, `soils_spec`, `rivers_spec`, `refine_render`, sector-seed + `refineSector` wasm tests) + `--features lore` suite + web `tsc --noEmit`/vite build clean. **`wasm-pack test --node` (native↔wasm golden + refineSector) green** — in CI + `just test-wasm`. |
-| Gate | `just check` green (fmt + clippy -D warnings + tests + wasm release). `just perf` **green** (26/111/259 ms medians vs 39/166/388 budgets). |
-| Schema | v15 (Phase 6: v14 6.1.4 `ClimateData::soil` + `biomes::WETLAND`, v15 6.1.5 `HydrologyData::strahler` + `River::{strahler,regime}`). `MeshData::region` (Phase 7) is elided when `None` → no schema bump, level-0 byte-identical. |
-| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 **amended 2026-05-24** to record the six-loop Phase-4 scope (trigger: the "time is not a factor" + "uplevel" directive) |
+| Tests | green across the board: `just check` (fmt + clippy -D + workspace tests + wasm release), web `tsc`/`vitest`/`check:bundle`/Playwright e2e (incl. 3D globe — run with `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` on a too-new distro), and `wasm-pack test --node` (native↔wasm goldens incl. the laned seed-9 `far_shore` pin). |
+| Schema | **v22** — `Event::far_shore` (landmass place tag; `skip_serializing_if`-elided). Earlier: v17 `world.continents`/`oceans`, v18 `sea_lanes`, v20 `faith_changes`, v21 `Nation::prosperity`. The 3D-globe + generalisation work is render-only (planet SVG never hashed) → no further schema/golden moves. |
+| Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 amended 2026-05-24 (six-loop Phase-4 scope). Inter-continental arc per `docs/inter_continental_design.md`; multi-scale render LOD per `docs/adr/0001-multiscale-navigation.md`. |
 
 ---
 
@@ -64,15 +64,22 @@ git log -8 --oneline
 
 ## Currently in flight
 
-**Nothing mid-flight.** Phases 5 (lore), 6 (realism + cross-cutting), and 7
-(multi-scale atlas — refinement, drill-in nav, projected society + rivers,
-seam-pinning, scale-dependent render fidelity, hardening) are all complete and
-pushed. Remaining follow-ups, documented in `docs/adr/0001-multiscale-navigation.md`
-("Implementation status") and the BACKLOG: **planet / multi-continent view above
-level 0** (zoom-out — also the prerequisite that makes cartographic
-generalisation meaningful: Töpfer/Visvalingam + scale-rank label declutter);
+**Nothing mid-flight (clean tree, all pushed).** Since the Phase-7 era this file
+otherwise describes, three arcs shipped on top: **The Sundered Lanes** (inter-
+continental society/history + Phase-3 surfacing), the **3D globe** view, and
+**cartographic generalisation** (river + coastline simplification). The clean
+high-value work is done.
+
+**Next tasks** (see `docs/BACKLOG.md` "## Up next — resume here" for the actionable
+detail): the two remaining generalisation increments — **scale-rank feature
+selection** (Töpfer budgets replacing the overview's hardcoded top-N constants) and
+a **per-level stylesheet** (unifying the zoom-in detail gates + zoom-out
+simplification tolerances + selection budgets into one scale→style structure). Both
+are flagged LOWER value for the current planet-vs-ornate render split — weigh ROI.
+
+Older deferred follow-ups still open (ADR 0001 "Implementation status" + BACKLOG):
 rank-driven background prefetch; per-sector local history; the deferred Phase-8
-scale-consumer bands (urban interiors, planet). None is mid-flight.
+scale-consumer bands (urban/rural interiors).
 
 The full narration round-trip, built offline-first in `mapgen-lore`:
 voice/register types, a tolerant `ChronicleDraft` parser, prompt assembly (WORLD
