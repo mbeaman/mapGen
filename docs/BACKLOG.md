@@ -79,12 +79,21 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   **HONEST CEILING (CLAIMS):** `data-patch`/textures prove ROUTING only — texture
   orientation + visibility are screenshot-verified (a mandatory review artifact).
   Render-only, no Rust/golden change.
-- **NEXT: 1b-ii — region-name billboard label.** The patch is fontless (no labels) — add
-  the drilled region's name as an HTML billboard. Needs the continent NAME exposed to JS
-  (a small read-only, RNG-free, golden-neutral addition to `continent_at`; consumer = the
-  billboard, same increment). Then **1c — deeper drilling in 3D** (patch raycast →
-  `patchLocalUvToWorld` → `childSectorAt`; close the `navTo` fall-through for L1→L2+).
-  See the design doc's "Increment 1c".
+- **1b-ii (region-name billboard) — DONE 2026-06-08.** The drilled region now shows its
+  GROUNDED landmass name on an HTML billboard anchored to the region centre (a fixed unit
+  vector) and tracked each flight frame by projecting it through the camera (hidden past
+  the horizon). `continent_at` gained a read-only `name` (nearest-centroid match to the
+  named `world.continents` — RNG-free, golden-neutral; not serialized), threaded
+  `continentInfo`→`regionName`→`enterRegion`. Rust test pins name correctness (non-empty,
+  real, ≥2 distinct); e2e pins the consumer (label visible+named on drill, hidden on reset);
+  the projection/positioning is screenshot-verified (a sepia pill for contrast). CLAIMS row
+  added.
+- **NEXT: 1c — deeper drilling in 3D.** From a patch, a click should drill DEEPER and stay
+  in 3D: patch raycast → `patchLocalUvToWorld` (pure, new in `sector.ts`/`camera.ts`) →
+  `childSectorAt` → `navTo(child)` → rebuild a smaller patch. The `navTo` globe guard
+  already handles L>0→L>0 (1a fix), and `pickable` must re-arm via an `onPatchPick`
+  callback at level≥1 (1a left a single drill, pickable=false while drilled). See the
+  design doc's "Increment 1c".
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
