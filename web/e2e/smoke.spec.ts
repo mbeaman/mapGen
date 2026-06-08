@@ -378,20 +378,48 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await expect(page.locator("#breadcrumb").getByRole("button", { name: "Globe" })).toBeVisible();
   await expect(canvas).toBeVisible(); // still the globe, not a drilled SVG sector
 
-  // A click (no drag) drills: the raycaster's surface UV → uvToWorld → the SAME
-  // continentAt + refine the 2D planet uses, handing off to the 2D SVG sector.
-  // "refined in" + an L-level prove the whole chain fired (a click that did
-  // nothing, or a globe that swallowed the event, would leave us at the root).
+  // A click (no drag) drills BUT STAYS IN 3D (1a free-fly): the raycaster's
+  // surface UV → continentAt → the camera retargets INTO the region on the SAME
+  // sphere — no 2D handoff, no refine. The discriminating signal is
+  // `data-region="1"` (set ONLY by globe.enterRegion on a drill) WITH the sphere
+  // still shown and `#map-content` still hidden — the exact inverse of the old
+  // "globe stepped aside to a 2D sector" contract. An L-level breadcrumb proves
+  // the drill chain fired (a swallowed click would leave us at the root).
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(status).toContainText("refined in", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
   await expect(page.locator("#breadcrumb")).toContainText(/L[1-6]/);
-  await expect(page.locator("#map-content")).toBeVisible(); // the 2D sector
-  await expect(canvas).toBeHidden(); // the globe stepped aside
+  await expect(canvas).toBeVisible(); // still the 3D globe, NOT a 2D sector
+  await expect(page.locator("#map-content")).toBeHidden();
 
-  // The "Globe" breadcrumb returns to the sphere with NO regenerate.
+  // Free-fly (1a step 2): the camera is now driven by a flight state over the
+  // region. A drag PANS the sub-point across the surface (OrbitControls is
+  // disabled while drilled, so it can't rotate the whole globe), and the camera
+  // stays outside the sphere (altitude > 0). The GPU camera can't be read from the
+  // DOM, so globe.ts writes the flight state to data-* — `data-sub-lon` moving on a
+  // drag is a signal ONLY flight-mode panning produces (the old OrbitControls drill
+  // never wrote it).
+  await expect(canvas).toHaveAttribute("data-sub-lon", /-?\d/);
+  expect(Number(await canvas.getAttribute("data-altitude"))).toBeGreaterThan(0);
+  const lonBefore = Number(await canvas.getAttribute("data-sub-lon"));
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 120, box.y + box.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-sub-lon")))
+    .not.toBe(lonBefore);
+
+  // The "Globe" breadcrumb returns to the whole sphere with NO regenerate, and
+  // clears the region mark (a stale data-region would false-green the return).
   await page.locator("#breadcrumb").getByRole("button", { name: "Globe" }).click();
+  await expect(canvas).not.toHaveAttribute("data-region", "1");
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
+  // ...AND the returned overview is UPRIGHT. Flight leaves camera.up as a surface
+  // tangent; without exitRegion resetting it to +Y, OrbitControls' lookAt renders
+  // the globe rolled. globe.ts writes camera.up.y to data-cam-up-y on overview
+  // frames; ≈1 ⇒ upright (it would be < 1 with the stale tangent up).
+  await expect.poll(async () => Number(await canvas.getAttribute("data-cam-up-y"))).toBeGreaterThan(0.99);
 });
 
 // Increment 5: the style control is locked on the globe (the sphere wears the
@@ -473,5 +501,38 @@ test("globe lens toggle re-textures the sphere", async ({ page }) => {
   await expect
     .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
     .toBeGreaterThan(before);
+});
+// Lifecycle regressions the 1a review caught that the rest of the suite is blind
+// to: (1) an intermediate breadcrumb hop while drilled must STAY on the sphere —
+// not fall through to the (hidden) 2D refine path; (2) regenerating while drilled
+// and still on globe scale (so hide() never fires) must reset to the OVERVIEW, not
+// wedge the fresh globe in the stale region with the controls dead. seed 8 drills
+// to L2 (probed), exposing an intermediate L1 crumb.
+test("globe drill survives an intermediate crumb hop and a regenerate", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  await expect(page.locator("#breadcrumb")).toContainText(/L[2-6]/); // deep enough for an intermediate crumb
+
+  // (1) Click the intermediate L1 crumb → must STAY on the 3D sphere; the 2D layer
+  // must NOT appear (the pre-fix guard fell through to a hidden 2D refine behind it).
+  await page.locator("#breadcrumb").getByRole("button", { name: /^L1 / }).click();
+  await expect(canvas).toHaveAttribute("data-region", "1");
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
+
+  // (2) Regenerate while still drilled + still on globe scale (no hide() fires):
+  // the fresh globe must return to the OVERVIEW (region cleared), not stay wedged.
+  await page.locator("#generate").click();
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).not.toHaveAttribute("data-region", "1");
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
 });
 }); // test.describe.serial("3D globe")

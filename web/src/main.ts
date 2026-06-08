@@ -23,6 +23,7 @@ import {
   uvToWorld,
   type Sector,
 } from "./sector";
+import { worldToLonLat } from "./camera";
 import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -181,6 +182,11 @@ const enterGlobeView = async (textureSvg?: string) => {
   }
   if (textureSvg) lastGlobeSvg = textureSvg;
   if (lastGlobeSvg) await textureGlobe(g, lastGlobeSvg);
+  // Every globe (re-)entry lands at the OVERVIEW. enterRegion never hides the
+  // sphere, and a regenerate-while-drilled (or scale-away-and-back) keeps the loop
+  // alive, so without this a stale `flight` would leave the fresh globe wedged in
+  // the previous region with OrbitControls dead. Reset before showing.
+  g.exitRegion();
   g.show();
 };
 // Return to the SVG layer (used when leaving globe scale, and on drill into a
@@ -672,20 +678,31 @@ const requestRefine = () => {
 // sectors are stateless, so this never needs the parent to be cached.
 const navTo = (target: Sector) => {
   if (busy || !hasWorld) return;
-  // Globe mode: the root (level 0) is the 3D sphere, which has no SVG parent
-  // pixels for the coarse-first zoom. So when crossing the globe boundary, hand
-  // off directly instead of animating a focusContentRect.
-  if (globeScale && (nav.level === 0 || target.level === 0)) {
+  // Globe mode: EVERY navigation stays on the sphere (1a) — there is no globe→2D
+  // path. The guard must catch all globe-mode hops, not just those touching level 0:
+  // an intermediate breadcrumb hop between two non-zero levels (e.g. L3→L1) would
+  // otherwise fall through to the 2D refine path and render an invisible sector
+  // behind the still-shown globe. So branch purely on the target level here.
+  if (globeScale) {
     nav = target;
     updateBreadcrumb();
     if (target.level === 0) {
-      // Back to the globe — re-show the (already-textured) sphere, no regenerate.
-      void enterGlobeView();
+      // Back to the whole globe — clear the region + pull the camera back to the
+      // overview. The sphere was never hidden on drill (1a stays in 3D), so no
+      // re-show / re-texture / regenerate.
+      globe?.exitRegion();
       setStatus("Globe.", "ok");
     } else {
-      // Drill in from the globe → leave the sphere, refine the 2D SVG sector.
-      exitGlobeView();
-      requestRefine();
+      // Drill STAYS on the globe (increment 1a): fly into a free-fly camera over
+      // the region on the same sphere — no 2D handoff, no refine. Altitude frames
+      // the sector by its angular (longitude) span: deeper sectors → closer. The
+      // high-detail patch lands in a later increment; for now the region shows on
+      // the whole-world sphere skin.
+      const rc = sectorRect(target, worldW, worldH);
+      const { lon, lat } = worldToLonLat(rc.x0 + rc.w / 2, rc.y0 + rc.h / 2, worldW, worldH);
+      const altitude = Math.max(0.12, Math.min(1.5, (2 * Math.PI) / 2 ** target.level));
+      globe?.enterRegion(lon, lat, altitude);
+      setStatus("Region — drag to pan, scroll to zoom; Globe to return.", "ok");
     }
     return;
   }

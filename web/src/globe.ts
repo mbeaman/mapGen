@@ -30,6 +30,7 @@ import {
   LinearFilter,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { type GlobeCamState, globeCamPose, LAT_MAX, panSubPoint } from "./camera";
 
 export interface GlobeHandle {
   /** Reveal the canvas and start the render loop. */
@@ -43,6 +44,16 @@ export interface GlobeHandle {
   /** Register a click handler: fired with the surface UV (u,v ∈ [0,1]) of a
    *  near-stationary click on the sphere (a drag rotates instead). */
   onPick(cb: (u: number, v: number) => void): void;
+  /** Drill stays on the globe (increment 1a): enter free-fly mode framing the
+   *  drilled region (sub-point `subLon`/`subLat` in radians, `altitude` above the
+   *  unit sphere). The camera is then driven from this state — drag pans across
+   *  the surface, wheel zooms — and the sphere is NOT hidden (no 2D handoff).
+   *  Sets `data-region="1"` and the per-frame `data-sub-lon/lat`/`data-altitude`
+   *  the e2e reads. (Deeper 3D drilling + the detail patch land in later increments.) */
+  enterRegion(subLon: number, subLat: number, altitude: number): void;
+  /** Return to the whole-globe overview: drop flight mode, pull the camera back to
+   *  the overview framing, re-arm the pick, and clear the region signals. */
+  exitRegion(): void;
   /** Full teardown: stop the loop and free GPU resources. */
   dispose(): void;
 }
@@ -199,6 +210,28 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let running = false;
   let painted = false;
   let textureCount = 0; // bumped on each real texture upload (drives the slider e2e)
+  let pickable = true; // false while drilled into a region (1a) — a click won't re-fly
+
+  // Free-fly globe-flight camera (increment 1a). Non-null ⇒ DRILLED mode: the
+  // camera is driven each frame from this state via `globeCamPose` and
+  // OrbitControls is disabled (it owns the level-0 overview only). Drag pans the
+  // sub-point across the surface; wheel changes altitude. pitch/heading are in the
+  // state (and the pose math) but UNWIRED in 1a — pan+zoom is the increment.
+  let flight: GlobeCamState | null = null;
+  let dragLast: { x: number; y: number } | null = null; // active flight-pan drag origin
+  const PAN_SPEED = 0.0022; // rad of sub-point travel per px, scaled by altitude
+  const ZOOM_RATE = 0.001; // altitude multiplier per wheel-delta unit
+  const MIN_ALT = 0.05;
+  const MAX_ALT = 2.5;
+  const clampLat = (lat: number) => Math.max(-LAT_MAX, Math.min(LAT_MAX, lat));
+  // Per-frame flight signals for the e2e (a GPU camera can't be diffed from the
+  // DOM): the sub-point the camera looks at + its altitude. A pan must move these.
+  const writeFlightData = () => {
+    if (!flight) return;
+    canvas.dataset.subLon = flight.subLon.toFixed(4);
+    canvas.dataset.subLat = flight.subLat.toFixed(4);
+    canvas.dataset.altitude = flight.altitude.toFixed(4);
+  };
 
   // Cinematic fly-to: on a click, animate the camera so the clicked point swings to
   // face the viewer and zooms in, THEN drill (hand off to the 2D sector). `null`
@@ -220,8 +253,20 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
         controls.enabled = true;
         arrive(); // drill now that the camera has settled on the point
       }
+    } else if (flight) {
+      // Drilled (free-fly) mode: drive the camera from the flight state. The
+      // anchor is framed in its LOCAL up frame, so an equatorial region orbits
+      // correctly (no orbiting through the planet core).
+      const pose = globeCamPose(flight);
+      camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+      camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
+      camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
     } else {
       controls.update();
+      // Overview camera-up.y, for the e2e to prove the globe returns UPRIGHT after a
+      // drill (flight leaves camera.up as a surface tangent; exitRegion must reset it
+      // to +Y or OrbitControls' lookAt renders the globe rolled). ~1 ⇒ upright.
+      canvas.dataset.camUpY = camera.up.y.toFixed(3);
     }
     renderer.render(scene, camera);
     if (!painted) {
@@ -251,12 +296,39 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let down: { x: number; y: number } | null = null;
   canvas.addEventListener("pointerdown", (e) => {
     down = { x: e.clientX, y: e.clientY };
+    if (flight) dragLast = { x: e.clientX, y: e.clientY }; // start a flight pan
   });
+  // Flight-mode pan: drag the surface under the camera (OrbitControls is disabled
+  // while drilled, so it ignores these — no conflict). Sub-point travel scales
+  // with altitude, so the drag feels the same at every zoom.
+  canvas.addEventListener("pointermove", (e) => {
+    if (!flight || !dragLast) return;
+    const dx = e.clientX - dragLast.x;
+    const dy = e.clientY - dragLast.y;
+    dragLast = { x: e.clientX, y: e.clientY };
+    const next = panSubPoint(flight, dx, dy, PAN_SPEED); // pure → the SIGN is unit-tested
+    flight.subLon = next.subLon;
+    flight.subLat = next.subLat;
+    writeFlightData();
+  });
+  // Flight-mode zoom: wheel changes altitude (OrbitControls owns the wheel only at
+  // the overview). Multiplicative so each notch is a constant %.
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      if (!flight) return; // let OrbitControls handle the overview wheel
+      e.preventDefault();
+      flight.altitude = Math.max(MIN_ALT, Math.min(MAX_ALT, flight.altitude * Math.exp(e.deltaY * ZOOM_RATE)));
+      writeFlightData();
+    },
+    { passive: false },
+  );
   canvas.addEventListener("pointerup", (e) => {
+    dragLast = null; // end any flight pan
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     down = null;
-    if (moved > 6 || !pickCb) return; // a drag, not a click
+    if (moved > 6 || !pickCb || !pickable) return; // a drag, or already drilled
     const rect = canvas.getBoundingClientRect();
     const ndc = new Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -317,6 +389,40 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     resize,
     onPick(cb: (u: number, v: number) => void) {
       pickCb = cb;
+    },
+    enterRegion(subLon: number, subLat: number, altitude: number) {
+      // Enter free-fly mode over the drilled region: the camera is driven from
+      // this state (tick → globeCamPose) and OrbitControls steps aside. The drill
+      // fly-to has already swung the camera near the point; this re-centres it on
+      // the region and sets the framing altitude.
+      // DEFERRED (1a, cosmetic): the fly-to end pose and this flight pose differ
+      // slightly (centroid vs click, radius, roll), so there's a one-frame snap
+      // here; a short entry-ease is a polish increment, not a 1a correctness gap.
+      flight = { subLon, subLat: clampLat(subLat), altitude, heading: 0, pitch: 0 };
+      flyTo = null;
+      controls.enabled = false;
+      pickable = false;
+      canvas.dataset.region = "1";
+      writeFlightData();
+    },
+    exitRegion() {
+      // Back to the whole-globe overview: drop flight mode and restore the canonical
+      // overview camera. Flight left `camera.up` as a SURFACE TANGENT — it MUST be
+      // reset to world +Y, or OrbitControls' lookAt renders the returned globe
+      // rolled/tilted. Snap to the home framing (0,0,3.6) so the return is
+      // predictable (and so a fresh-world re-entry, which reuses this, starts clean).
+      flight = null;
+      flyTo = null;
+      pickable = true;
+      delete canvas.dataset.region;
+      delete canvas.dataset.subLon;
+      delete canvas.dataset.subLat;
+      delete canvas.dataset.altitude;
+      controls.enabled = true;
+      camera.up.set(0, 1, 0);
+      camera.position.set(0, 0, 3.6);
+      controls.target.set(0, 0, 0);
+      controls.update();
     },
     dispose() {
       this.hide();
