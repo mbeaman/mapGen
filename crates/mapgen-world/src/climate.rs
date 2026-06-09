@@ -91,6 +91,15 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
     let mut precipitation = vec![0.0_f32; n];
     let mut order: Vec<u32> = (0..n as u32).collect();
 
+    // Periodic world: wrap the upwind x-delta (so upwind detection is correct across the
+    // antimeridian), and track processed cells. On a cylinder each latitude band's march
+    // START has its upwind ACROSS the seam — not yet processed (the moisture cycle's cut).
+    // Reading that unprocessed cell would inject stale dryness; instead treat it as
+    // saturated ocean inflow, exactly like the flat domain's west edge. `None` → flat path
+    // (byte-identical: the wrap is identity, the upwind is always already processed).
+    let period = world.mesh.periodic.then_some(world.mesh.width);
+    let mut done = vec![false; n];
+
     // Per-cell wind direction lookup.
     let wind_for = |y: f32| -> [f32; 2] {
         // lat_norm: -1 N pole, 0 equator, +1 S pole.
@@ -114,25 +123,20 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
 
     for &c in &order {
         let c = c as usize;
+        done[c] = true; // safe at the top: a cell is never its own neighbour/upwind
         let cy = sites[c][1];
-        let cx = sites[c][0];
         let w = wind_for(cy);
 
-        // Upwind = neighbor whose displacement is most opposite to wind
-        // direction. Equivalent to maximizing dot(self - nbr, w).
-        let upwind = neighbors[c].iter().copied().max_by(|&a, &b| {
-            let da = (cx - sites[a as usize][0]) * w[0] + (cy - sites[a as usize][1]) * w[1];
-            let db = (cx - sites[b as usize][0]) * w[0] + (cy - sites[b as usize][1]) * w[1];
-            da.total_cmp(&db)
-        });
-        // Only accept if the dot is positive (genuinely upwind).
-        let upwind = upwind.filter(|&u| {
-            (cx - sites[u as usize][0]) * w[0] + (cy - sites[u as usize][1]) * w[1] > 0.0
-        });
+        // Upwind = the neighbour most opposite the wind (wrapped at the seam when periodic).
+        let upwind = upwind_neighbor(c, &neighbors[c], sites, w, period);
 
         let (uw_m, uw_e) = match upwind {
-            Some(u) => (moisture[u as usize], elev[u as usize]),
-            None => (1.0, 0.0), // upwind boundary = saturated ocean
+            // Periodic seam cut: the upwind cell across the seam isn't processed yet → it's
+            // the per-band march start → saturated ocean inflow (like the flat west edge).
+            Some(u) if period.is_none() || done[u as usize] => {
+                (moisture[u as usize], elev[u as usize])
+            }
+            _ => (1.0, 0.0), // upwind boundary = saturated ocean
         };
 
         // Latitude band base: ITCZ wet, subtropical dry, mid-lat wet,
@@ -184,6 +188,35 @@ pub fn run(world: &mut WorldData, params: ClimateParams) {
 ///   0.33 : subtropical desert trough → 0.4
 ///   0.55 : mid-lat westerly storm track → 1.1
 ///   1.0  : polar dry → 0.3
+/// The upwind neighbour of cell `c` — the one whose displacement is most opposite the
+/// wind (`max dot(self - nbr, wind)`), or `None` if none is genuinely upwind (`dot > 0`).
+/// On a PERIODIC world the x-component of the displacement wraps at the seam (minimum
+/// image), so a cell at x≈0 correctly sees its true western neighbour at x≈width — without
+/// the wrap that neighbour reads as ~width away (a huge, sign-wrong dot) and is mis-ranked.
+/// Shared by the non-seasonal and seasonal marches (was duplicated, drifting-prone).
+pub(crate) fn upwind_neighbor(
+    c: usize,
+    neighbors: &[u32],
+    sites: &[[f32; 2]],
+    wind: [f32; 2],
+    period: Option<f32>,
+) -> Option<u32> {
+    let (cx, cy) = (sites[c][0], sites[c][1]);
+    let dot = |a: u32| -> f32 {
+        let dx = cx - sites[a as usize][0];
+        let dx = match period {
+            Some(p) => crate::plates::wrap_dx(dx, p),
+            None => dx,
+        };
+        dx * wind[0] + (cy - sites[a as usize][1]) * wind[1]
+    };
+    neighbors
+        .iter()
+        .copied()
+        .max_by(|&a, &b| dot(a).total_cmp(&dot(b)))
+        .filter(|&u| dot(u) > 0.0)
+}
+
 pub(crate) fn band_precip(abs_lat: f32) -> f32 {
     // Two cosine bumps + linear pole falloff.
     let itcz = fmath::exp(-((abs_lat - 0.0) * 4.5).powi(2)) * 0.9;
@@ -258,6 +291,26 @@ mod tests {
         let v = wind_vector(0.5);
         assert!(v[0] > 0.0);
         assert!(v[1] > 0.0);
+    }
+
+    // Phase 3: on a periodic world the upwind search wraps the seam, so a cell at x≈0
+    // correctly sees its true western neighbour at x≈width. Flat logic mis-ranks that
+    // neighbour as ~width away (downwind) → misses it. Drop the wrap → the Some(2) reds.
+    #[test]
+    fn upwind_neighbor_wraps_the_seam() {
+        let width = 100.0_f32;
+        // c0 at x=2 (just east of the x=0 seam). c1: same-side east at x=10. c2: ACROSS the
+        // seam at x=98. Wind blows +x (westerly) → "upwind" is to the WEST (lower x).
+        let sites = [[2.0, 5.0], [10.0, 5.0], [98.0, 5.0]];
+        let nbrs = [1u32, 2u32];
+        let wind = [1.0, 0.0];
+        // Wrapped: x=98 is only 4 WEST of x=2 → it is the upwind.
+        assert_eq!(
+            upwind_neighbor(0, &nbrs, &sites, wind, Some(width)),
+            Some(2)
+        );
+        // Flat: x=98 reads 96 EAST (downwind), x=10 is east too → nothing genuinely upwind.
+        assert_eq!(upwind_neighbor(0, &nbrs, &sites, wind, None), None);
     }
 
     #[test]

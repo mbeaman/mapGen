@@ -116,6 +116,12 @@ fn one_pass(
     let mut precipitation = vec![0.0_f32; n];
     let mut order: Vec<u32> = (0..n as u32).collect();
 
+    // Periodic seam handling — kept in LOCKSTEP with `climate::run` (see its comment): wrap
+    // the upwind x-delta + treat the per-band march start's unprocessed cross-seam upwind as
+    // saturated ocean inflow. `None` → flat path, byte-identical.
+    let period = world.mesh.periodic.then_some(world.mesh.width);
+    let mut done = vec![false; n];
+
     let wind_for = |y: f32| -> [f32; 2] {
         let lat_norm = (y - half_h) / half_h;
         crate::climate::wind_vector(lat_norm)
@@ -133,22 +139,20 @@ fn one_pass(
 
     for &c in &order {
         let c = c as usize;
+        done[c] = true; // safe at the top: a cell is never its own upwind
         let cy = sites[c][1];
-        let cx = sites[c][0];
         let w = wind_for(cy);
 
-        let upwind = neighbors[c].iter().copied().max_by(|&a, &b| {
-            let da = (cx - sites[a as usize][0]) * w[0] + (cy - sites[a as usize][1]) * w[1];
-            let db = (cx - sites[b as usize][0]) * w[0] + (cy - sites[b as usize][1]) * w[1];
-            da.total_cmp(&db)
-        });
-        let upwind = upwind.filter(|&u| {
-            (cx - sites[u as usize][0]) * w[0] + (cy - sites[u as usize][1]) * w[1] > 0.0
-        });
+        // Shared seam-aware upwind selection (lockstep with `climate::run`).
+        let upwind = crate::climate::upwind_neighbor(c, &neighbors[c], sites, w, period);
 
         let (uw_m, uw_e) = match upwind {
-            Some(u) => (moisture[u as usize], elev[u as usize]),
-            None => (1.0, 0.0),
+            // Periodic seam cut (see climate::run): unprocessed cross-seam upwind = the
+            // per-band march start → saturated ocean inflow.
+            Some(u) if period.is_none() || done[u as usize] => {
+                (moisture[u as usize], elev[u as usize])
+            }
+            _ => (1.0, 0.0),
         };
 
         // Band base on the *seasonal* effective latitude — ITCZ shifts
