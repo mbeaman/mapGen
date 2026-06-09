@@ -14,6 +14,7 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  GLOBE_FIRST_DRILL_LEVEL,
   globeDrillTarget,
   mollweideUnproject,
   navStyle,
@@ -153,7 +154,12 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
 };
 
 // ---- Continuous-LOD streaming (ST-1): the in-view patch set ----
-const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 1 }; // 3×3 sectors around the sub-point
+// window 2 = a 5×5 candidate set = the in-view sectors PLUS a one-sector PREFETCH RING
+// beyond the view edge (horizon-culled to the visible hemisphere). So a settle streams
+// the ring too, and a subsequent pan lands on already-rendered detail instead of waiting
+// for it. The single worker still rasterizes one tile at a time (~100ms), so a fast fling
+// past the ring lags until it catches up — full during-motion streaming is the ST-5 spike.
+const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 2 };
 const CACHE_CFG = { maxPatches: MAX_LIVE_PATCHES, maxBytes: MAX_TEXTURE_BYTES, estBytes: ESTIMATED_PATCH_BYTES };
 const pendingTiles = new Set<string>(); // sector keys with a refineTile in flight
 
@@ -744,6 +750,15 @@ const updateBreadcrumb = () => {
     }
     const crumb = document.createElement("button");
     crumb.className = "crumb";
+    // On the globe a click lands at GLOBE_FIRST_DRILL_LEVEL (L3) in one hop — the
+    // shallower L1/L2 ancestors are quadtree path stops you JUMPED, never a distinct
+    // globe view (L1/L2 patches are too curved to show). Mute them so the breadcrumb
+    // reads "Globe › ⟨zoom path⟩ › L3", not four equal steps you stepped through. They
+    // stay clickable (up-nav intact) — only the styling changes.
+    if (globeScale && a.level > 0 && a.level < GLOBE_FIRST_DRILL_LEVEL) {
+      crumb.classList.add("via");
+      crumb.title = "Zoom out to here";
+    }
     crumb.textContent = globeScale && a.level === 0 ? "Globe" : crumbLabel(a, planetScale);
     if (a.level === nav.level) {
       crumb.classList.add("current");

@@ -362,6 +362,9 @@ section.map.navigable.grabbing { cursor: grabbing; }
 }
 .crumb:hover:not(:disabled) { background: rgba(110, 36, 25, 0.15); }
 .crumb.current { font-weight: 700; color: #6e2419; }
+/* Jumped-over quadtree ancestors on the globe (L1/L2): the zoom-out path, not levels
+   you stepped into — muted so the first drill reads as one hop to L3. */
+.crumb.via { opacity: 0.5; font-size: 0.85em; }
 .crumb:disabled { opacity: 1; cursor: default; }
 .crumb-sep { color: rgba(58, 42, 24, 0.5); }
 .crumb-hint {

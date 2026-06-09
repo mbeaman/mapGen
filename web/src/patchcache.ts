@@ -10,8 +10,11 @@ import type { Sector } from "./sector";
 /// The hard caps — a SINGLE source of truth so the selector's `maxPatches` and the
 /// cache's `maxPatches` cannot drift (pass `MAX_LIVE_PATCHES` to BOTH at the call
 /// site). Per the streaming addendum.
-export const MAX_LIVE_PATCHES = 24;
-export const MAX_TEXTURE_BYTES = 96_000_000; // ~96 MB
+// Sized for a PREFETCH RING (ST-2, window 2 = 5×5 candidates): the cap must hold the
+// visible hemisphere's worth of patches PLUS a ring beyond the view edge, so panning
+// lands on already-streamed detail. ~32 patches × the real ~2.1 MB/tile ≈ 67 MB GPU.
+export const MAX_LIVE_PATCHES = 32;
+export const MAX_TEXTURE_BYTES = 128_000_000; // ~128 MB (estBytes-based room → 32 loads)
 export const ESTIMATED_PATCH_BYTES = 4_000_000; // 1024px-long-edge RGBA, no mipmaps
 
 /// Stable cache key — `style` is IN the key so a lens toggle can't serve a stale

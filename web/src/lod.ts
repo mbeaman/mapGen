@@ -96,11 +96,13 @@ export function desiredSectors(
       ranked.push({ sec, rank: d }); // higher dot ⇒ nearer the sub-point
     }
   }
-  ranked.sort((a, b) => b.rank - a.rank); // closest first
+  // Nearest first (sx/sy tiebreak → deterministic). The consumer LOADS in this order,
+  // so the worker rasterizes the sectors UNDER the camera before the prefetch ring —
+  // breadth-first from the sub-point outward, the "near sections render first" the
+  // prefetch ring (ST-2) needs. The cache (markSeen/reconcile) is order-insensitive.
+  ranked.sort((a, b) => b.rank - a.rank || a.sec.sx - b.sec.sx || a.sec.sy - b.sec.sy);
   // Clamp the cap defensively: a non-finite / negative maxPatches must NOT fail
   // open (slice(0, Infinity/-1) would un-bound or mis-truncate the firewall).
   const cap = Math.max(0, Math.floor(Number.isFinite(cfg.maxPatches) ? cfg.maxPatches : 0));
-  const kept = ranked.slice(0, cap).map((o) => o.sec);
-  kept.sort((a, b) => a.sx - b.sx || a.sy - b.sy); // stable order for tests/consumers
-  return kept;
+  return ranked.slice(0, cap).map((o) => o.sec);
 }

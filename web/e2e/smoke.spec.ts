@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { MAX_LIVE_PATCHES } from "../src/patchcache"; // the hard live-patch cap (bound assertions track it)
 
 // One end-to-end smoke covering the interactive path the Vitest unit tests
 // can't: worker + wasm + DOM wiring. The app auto-generates a world once the
@@ -736,7 +737,7 @@ test("CONTRACT: scrolling after a zoom keeps detail — patches stream as you pa
     )
     .toBe(true);
   const before = new Set(((await canvas.getAttribute("data-patch-keys")) ?? "").split(",").filter(Boolean));
-  expect(before.size).toBeLessThanOrEqual(24); // bounded
+  expect(before.size).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // bounded by the hard cap
 
   // Scroll/pan a FULL L3 sector across (~325px crosses one 45° sector at this
   // altitude; 450 comfortably clears it) so the post-pan window provably includes a
@@ -761,6 +762,6 @@ test("CONTRACT: scrolling after a zoom keeps detail — patches stream as you pa
     .toBe(true);
   const liveAfter = Number(await canvas.getAttribute("data-live-patches"));
   expect(liveAfter).toBeGreaterThanOrEqual(2);
-  expect(liveAfter).toBeLessThanOrEqual(24); // still bounded
+  expect(liveAfter).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // still bounded by the hard cap
 });
 }); // test.describe.serial("3D globe")

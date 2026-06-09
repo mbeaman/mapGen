@@ -65,7 +65,7 @@ describe("desiredSectors", () => {
     // (the detail vanished exactly where the user was looking). Nearest-point culling
     // keeps it. RED on the old centre-cull, GREEN now.
     const cam = camOver(0, 0, 0.05); // production MIN_ALT
-    const res = desiredSectors(cam, 3, W, H, cfg(24, 1)); // production STREAM_CFG window:1
+    const res = desiredSectors(cam, 3, W, H, cfg(24, 1)); // window 1 = the TIGHTEST window (worst case for emptiness)
     expect(res.length).toBeGreaterThan(0);
     const subW = latLonToWorld(0, 0, W, H);
     const sub = sectorAt(subW.x, subW.y, 3, W, H);
