@@ -21,7 +21,13 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
-## Up next — resume here (2026-06-07)
+## Up next — resume here (2026-06-09)
+
+**🌍 SEAMLESS GLOBE SHIPPED (periodic world gen, all phases 0–6 — `f426c31`/`4f2e46a`).** The planet is a
+longitude-cylinder with no antimeridian seam, base + drilled (screenshot-confirmed). The carrier seed
+taxonomy was re-derived (`CROSSING=[11,19,26,30]`, `SUNDERED=[23,10]`, `COLONIZE=[18,27,32]`). NOT pushed.
+Next candidates: 1f framing/entry-ease, ST-5 OffscreenCanvas spike — see the "NEXT candidates" line below.
+
 
 Picking this branch up on a fresh clone / new machine? Start here. Branch
 `claude/fantasy-map-generator-1du5B`.
@@ -36,8 +42,9 @@ Picking this branch up on a fresh clone / new machine? Start here. Branch
   its inc-4 review test gaps closed (CLI `auto-shore` e2e + a laned cross-platform
   `far_shore` golden, seed 9).
 - **3D globe** (`Scale: Globe`) — base shipped (richer equirect parchment+political
-  texture, seam/pole fade, time-lapse scrub, lens parity, fly-to drill) and now being
-  EXTENDED into the continuous-LOD navigation arc below.
+  texture, pole fade — the seam fade is gone now the world is periodic, time-lapse
+  scrub, lens parity, fly-to drill) and now being EXTENDED into the continuous-LOD
+  navigation arc below.
 - **Cartographic generalisation** (ADR 0001 §3, the detail-DECREASING direction) —
   river + coastline Visvalingam–Whyatt simplification on the overview shipped
   (`mapgen-render::simplify`). The high-value slice is done. The remaining increments
@@ -149,16 +156,18 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   distinct globe view) now render muted (`.crumb.via`) so the bar reads "Globe › ⟨zoom path⟩ › L3".
   Labels/clicks unchanged (up-nav + crumb-hop invariant intact). A LIGHT pass — if the *jump itself*
   should feel more gradual, options are fewer levels (accept L2 curvature) or continuous altitude-LOD.
-- **⚖️ SEAM (#1) — DECIDED: PERIODIC WORLD GEN (the globe is now the primary view; geography genuinely
-  doesn't align at the seam, so hiding it isn't enough). Rotate-to-ocean is DROPPED.** Full plan:
-  **`docs/design/periodic-world-generation.md`** (mapped by a 7-reader understand-workflow + synthesized).
-  Make the mesh a CYLINDER (wrap x at lon ±180°, clamp y at the poles); adjacency-driven stages
-  (erosion/hydrology/continents) wrap for FREE, coordinate stages (noise/plates/climate/ocean) need
-  minimum-image dx. Phased 0–6. **GROWN COST (beyond the generic "re-anchor goldens"):** `connected_bodies`
-  walks `mesh.neighbors`, so a continent straddling the seam MERGES → the `CROSSING/SUNDERED/COLONIZE`
-  seed taxonomies must be RE-DERIVED (re-run the Step-0 lane probe), not re-anchored — a judgment-heavy
-  cost on `trade_claims`/`diffusion_claims`/`faith_crossing_claims`/etc. The Phase 5 FLIP
-  (`planet()`→periodic + golden re-anchor + seed re-derivation) is GATED on explicit user sign-off.
+- **✅ SEAM (#1) — DONE 2026-06-09: PERIODIC WORLD GEN SHIPPED, ALL PHASES 0–6. The globe is seamless
+  (base + drilled, screenshot-confirmed at the antimeridian).** Rotate-to-ocean was DROPPED. Full plan +
+  final status: **`docs/design/periodic-world-generation.md`**. The mesh is a CYLINDER (wrap x at lon
+  ±180°, clamp y at the poles); adjacency stages wrap FREE, coordinate stages use minimum-image dx.
+  Commits: P0–P4 `d3d5af1`/`5980418`/`44d9694`/`d2ccb07`/`e204daf`; **P5 plumbing `443b3df`, THE FLIP
+  `f426c31`, colony-tag guard `e3c2ebc`; P6 render/web `4f2e46a`.** The GROWN COST (re-deriving the
+  `CROSSING/SUNDERED/COLONIZE` taxonomy because seam-straddling continents merge) was paid via a
+  CALIBRATED probe (reproduced the old flat constants exactly first): CROSSING `[11,19,7,4]→[11,19,26,30]`,
+  SUNDERED `[23,42]→[23,10]`, COLONIZE `[2,5,9,11,18]→[18,27,32]`. **Headline regression:** the 3-strand
+  far shore no longer occurs naturally (no seed in 0..120 reaches one shore by faith+colony+sword) → the
+  weave is pinned synthetically; the colony far-shore tag got a new real-world guard. See `docs/CLAIMS.md`
+  "Periodic world generation".
   - **✅ Phase 0 (mesh ghost topology) — DONE 2026-06-08, byte-identical.** `MeshBuildParams.periodic`
     + a two-pass ghost build (`mesh.rs::periodic_seam_edges`: relax real sites unchanged → re-triangulate
     with seam ghosts at x±width, lloyd=0 → keep opposite-edge pairs within a few cell-widths → symmetrise).
@@ -182,14 +191,20 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
     Test: `upwind_neighbor_wraps_the_seam` (mutation-verified). Lockstep in both climate modules.
   - **✅ Phase 4 (erosion/hydrology seam-flow) — DONE 2026-06-08.** No production change (adjacency wraps
     free since P0); a differential guard test proves flow crosses the seam ONLY on a periodic mesh.
-  - **THE SEAMLESS WORLD IS FULLY BUILT BEHIND THE `periodic` FLAG (P0–P4). Remaining:**
-    **P5 — THE FLIP (GATED on explicit user sign-off):** set `planet()`→periodic, re-anchor the
-    `seed9_planet_full` golden + its wasm twin, and RE-DERIVE the CROSSING/SUNDERED/COLONIZE seed
-    taxonomies from a fresh Step-0 lane probe (seam-straddling continents merge → the partition changes).
-    Pick the seam longitude over the emptiest ocean. This is where the seam VISIBLY disappears.
-    **P6 — render/web:** remove the `fadeMapEdges` seam band (keep the pole bands), WRAP (not clamp) the
-    `sectorAt`/`lod.ts` longitude window + the graticule meridian.
-- **NEXT candidates:** periodic-gen P1+ (above); **1f** framing/altitude + fly-to→flight entry-ease
+  - **✅ Phase 5 (THE FLIP) — DONE 2026-06-09 (`443b3df`/`f426c31`/`e3c2ebc`).** `planet()`→`periodic:true`;
+    `seed9_planet_full` golden + wasm twin re-anchored (native↔wasm 5/5 — the seam path is fmath-clean);
+    taxonomy re-derived via a calibrated probe (above). Seed 7 fell out of CROSSING (its lone seizure became
+    an isolated exclave → vacuous legibility check); seed 14 excluded from COLONIZE (colonizes an unnamed
+    body, carries no tag). 3-strand weave → synthetic; `colony_far_shore_claims.rs` added as the real-world
+    colony-tag guard; faith_crossing/shore laneless fixtures → a SUNDERED seed; RIVER_SEED 11→26;
+    trade_prosperity fixture 19→11. All mutation-verified.
+  - **✅ Phase 6 (render/web) — DONE 2026-06-09 (`4f2e46a`).** `fadeMapEdges`→`fadePoleCaps` (seam bands
+    dropped, poles kept; `RepeatWrapping` joins the now-continuous edges); `lod.ts` longitude window WRAPS
+    modularly (+ `sectorNearestDir` minimum-image), latitude still clamps; e2e fixtures re-derived (drill
+    seed 4→8, exclave seed 15→26). Drilled-seam stitch confirmed end-to-end. The graticule needed no
+    change (it's the placeholder, not the seam); `refine_sector` correctly stays `periodic:false` (the seam
+    is always a sector boundary, so no sector contains it in its interior).
+- **NEXT candidates** (periodic-gen / the seam is DONE): **1f** framing/altitude + fly-to→flight entry-ease
   (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
   OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
 

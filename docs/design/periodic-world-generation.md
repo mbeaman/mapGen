@@ -2,11 +2,11 @@
 Provenance: mapped by a 7-reader understand-workflow over the generation pipeline +
 synthesized (2026-06-08). Decision driver: the globe became the primary view and the
 flat world's antimeridian coastlines don't align — rotate-to-ocean only hides it, so we
-do the proper fix. STATUS: plan DRAFTED; Phase 0 (mesh ghost topology) foundation in
-progress (flag-off → byte-identical, commits to nothing irreversible). The user approved
-periodic-gen GENERICALLY (globe-is-primary); they have NOT yet signed off on this 6-phase
-plan or its grown cost — the Phase 5 FLIP (planet()→periodic + golden re-anchor + the
-CROSSING/SUNDERED/COLONIZE seed RE-DERIVATION) is gated on explicit buy-in.
+do the proper fix. STATUS: ✅ DONE (2026-06-09) — ALL PHASES 0–6 SHIPPED. The planet is
+longitude-periodic end-to-end and the globe is seamless (base + drilled, screenshot-
+confirmed at the antimeridian). Commits: Phase 0–4 `d3d5af1`/`5980418`/`44d9694`/`d2ccb07`/
+`e204daf`; Phase 5 plumbing `443b3df`, THE FLIP `f426c31`, colony-tag guard `e3c2ebc`;
+Phase 6 (render/web) `4f2e46a`. Goldens re-anchored + native↔wasm re-verified (5/5).
 This supersedes the rotate-to-ocean option in docs/BACKLOG.md "SEAM (#1)". -->
 
 # Longitude-Periodic World Generation (Seamless Globe) — Phased Implementation Plan
@@ -117,10 +117,11 @@ Implement the seam-cut (preferred) or convergence-iteration fix in both `climate
 **Phase 4 — (no code) Erosion/hydrology proof. [LOW].**
 Add the flow-crosses-seam test (invariant #3). No production change; this converts a "free" claim into a guarded signal.
 
-**Phase 5 — Flip the shipping `planet()` preset + re-anchor. [MED, judgement-heavy].**
-Set `GenerateParams::planet` → `periodic:true`. Re-anchor `seed9_planet_full` and its wasm twin. Re-derive CROSSING/SUNDERED/COLONIZE from the Step-0 probe and update `mapgen-testsupport` + doc comments + `docs/CLAIMS.md`. One isolated PR. After this, planet worlds are seamless end-to-end.
+**Phase 5 — Flip the shipping `planet()` preset + re-anchor. [MED, judgement-heavy]. ✅ DONE (`443b3df`/`f426c31`/`e3c2ebc`).**
+Set `GenerateParams::planet` → `periodic:true`. Re-anchored `seed9_planet_full` and its wasm twin (native↔wasm re-verified 5/5). Re-derived from a CALIBRATED probe (it reproduced the old flat constants exactly before being trusted on periodic worlds): CROSSING `[11,19,7,4]→[11,19,26,30]`, SUNDERED `[23,42]→[23,10]` (42 became a crossing seed), COLONIZE `[2,5,9,11,18]→[18,27,32]`. **The marquee 3-strand far shore no longer occurs naturally** (no seed in 0..120 puts faith+colony+sword on one shore) → `shore.rs` weave pinned SYNTHETICALLY; the colony place tag got a new real-world guard (`colony_far_shore_claims.rs`) since the synthetic fixture can't catch a carrier regression. Also moved fixtures whose premise changed: faith_crossing/shore laneless → a SUNDERED seed, RIVER_SEED 11→26, trade_prosperity 19→11.
 
-**Phase 6 — Render + web follow-on (Section 6). [MED].**
+**Phase 6 — Render + web follow-on (Section 6). [MED]. ✅ DONE (`4f2e46a`).**
+`fadeMapEdges`→`fadePoleCaps` (seam bands dropped, poles kept); `lod.ts` longitude window WRAPS modularly (+ `sectorNearestDir` minimum-image); e2e fixtures re-derived (drill seed 4→8, exclave seed 15→26). Drilled-streaming-across-the-seam confirmed end-to-end (live patch columns straddle sx=0 and sx=span-1; screenshot). **Implementation notes vs the plan below:** (a) the graticule meridian needed no change — it's the pre-world placeholder, not the seam; (b) `refine_sector` correctly stays `periodic:false` — the seam x=0≡x=width is ALWAYS a sector boundary at every level, so no individual sector contains it in its interior (the cross-language flag concern is moot: `planet()` is unconditionally periodic, so Rust and wasm agree by construction).
 
 ---
 
