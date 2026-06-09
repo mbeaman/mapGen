@@ -34,6 +34,11 @@ pub struct GenerateParams {
     pub cell_count: usize,
     pub plate_count: usize,
     pub nation_count: usize,
+    /// Longitude-PERIODIC world (a cylinder: wraps in x, clamps at the poles) — for the
+    /// planet/globe so the sphere has no seam. `#[non_exhaustive]`-style ergonomics aren't
+    /// used; instead this defaults `false` and is set true only by [`GenerateParams::planet`],
+    /// so continental worlds (and every existing literal) stay flat & byte-identical.
+    pub periodic: bool,
 }
 
 impl Default for GenerateParams {
@@ -45,6 +50,7 @@ impl Default for GenerateParams {
             cell_count: 15_000,
             plate_count: 14,
             nation_count: 8,
+            periodic: false,
         }
     }
 }
@@ -63,6 +69,11 @@ impl GenerateParams {
             cell_count: 18_000,
             plate_count: 32,
             nation_count: 12,
+            // FLIP DEFERRED: the `periodic` field + threading are banked, but setting this
+            // `true` re-anchors the planet golden + RE-DERIVES the CROSSING/SUNDERED/COLONIZE
+            // seed taxonomies (seam-straddling continents merge). That's the focused Phase 5
+            // pass — flip to `true` there. Until then planet worlds stay flat (goldens hold).
+            periodic: false,
         }
     }
 }
@@ -106,10 +117,7 @@ pub fn generate(params: GenerateParams) -> WorldData {
             height: params.height,
             target_cells: params.cell_count,
             lloyd_iterations: 2,
-            // Phase 0: capability only. Hardcoded false → every world stays flat/
-            // byte-identical. Threading GenerateParams.periodic (so planet worlds wrap)
-            // is the next increment; the planet() flip is gated (design doc §3/§5).
-            periodic: false,
+            periodic: params.periodic, // planet worlds wrap; continental stay flat (Phase 5 flip)
         },
         &mut rng.stream(Stage::Mesh),
     );

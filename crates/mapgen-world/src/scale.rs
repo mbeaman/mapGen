@@ -164,6 +164,7 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
         cell_count: 0, // unused — the sector's density is `refine.target_cells`
         plate_count: parent.terrain.plates.len(),
         nation_count: 0, // unused — polities come from the projected society
+        periodic: false, // a drilled sector is a continental (non-wrapping) view, even of a planet
     };
 
     let root_rng = StageRng::new(params.seed);

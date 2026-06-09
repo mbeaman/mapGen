@@ -27,6 +27,7 @@ fn smoke_params(seed: u64) -> GenerateParams {
         cell_count: 4_000,
         plate_count: 12,
         nation_count: 6,
+        periodic: false,
     }
 }
 

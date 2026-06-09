@@ -13,6 +13,7 @@ fn fixed_params(seed: u64) -> GenerateParams {
         cell_count: 2000,
         plate_count: 10,
         nation_count: 6,
+        periodic: false,
     }
 }
 

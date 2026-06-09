@@ -43,6 +43,7 @@ fn ornate_render_rasterizes_to_a_sane_image() {
         cell_count: 4_000,
         plate_count: 12,
         nation_count: 6,
+        periodic: false,
     });
     let svg = render(&world, Style::OrnateAntique).expect("ornate render");
     let pixmap = rasterize(&svg);
@@ -176,6 +177,7 @@ fn every_preset_rasterizes_to_a_sane_image() {
         cell_count: 3_000,
         plate_count: 12,
         nation_count: 8,
+        periodic: false,
     });
     let base = render(&world, Style::OrnateAntique).expect("ornate render");
 

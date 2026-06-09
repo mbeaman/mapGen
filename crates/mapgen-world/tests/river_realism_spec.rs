@@ -21,6 +21,7 @@ fn params(seed: u64) -> GenerateParams {
         cell_count: 6000,
         plate_count: 14,
         nation_count: 8,
+        periodic: false,
     }
 }
 
