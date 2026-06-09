@@ -165,9 +165,19 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
     The voronoice triangulation is NOT mirror-symmetric across the seam, so cross-seam edges are added to
     BOTH endpoints (spike-proven). Differential test pins it (periodic → seam-crossing neighbours; flat → 0).
     Production caller hardcodes `periodic: false` → ALL goldens (continent + planet `seed9`) byte-identical.
-  - **NEXT phases:** P1 plates/ocean dx-wrap → P2 noise cylinder `[R·cosθ, R·sinθ, lat]` (NOT cos-only — that
-    mirrors the planet) → P3 climate upwind-march periodicity (hardest, algorithmic) → P4 erosion/hydrology
-    seam-flow proof → **P5 FLIP (gated)** → P6 render/web (remove the seam fade, WRAP not clamp the lod window).
+  - **✅ Phase 1 (plates + ocean dx-wrap) — DONE 2026-06-08, byte-identical.** `MeshData.periodic` carrier
+    (skip-serialized when false) + shared `plates::wrap_dx` (signed minimum-image, pure f32). Plates'
+    nearest-plate metric + boundary-stress normal and ocean's gyre limb delta wrap at the seam. Tests:
+    wrap_dx unit + a differential (periodic vs flat plate assignment differs — mutation-verified red).
+  - **✅ Phase 2 (noise cylinder) — DONE 2026-06-08, byte-identical.** `noise::warped_height` maps longitude
+    to a circle (R=width/TAU), sampling 3D `[R·cosθ, R·sinθ, y]` (NOT cos-only — mirrors the planet) so the
+    elevation field (the visible coastline seam) is continuous at x=0↔x=width. Seam-continuity test,
+    mutation-verified red. (All goldens — continent + planet seed9 — still byte-identical through P0–P2.)
+  - **NEXT phases:** **P3 climate upwind-march periodicity** (the HARDEST — algorithmic: the single-pass
+    march assumes an open upwind boundary, but on a cylinder east-edge feeds west-edge → a cyclic dependency;
+    needs a seam-cut OR convergence iteration, in BOTH climate.rs and climate_seasonal.rs in lockstep) →
+    P4 erosion/hydrology seam-flow proof (no code — adjacency wraps free; add the guard test) →
+    **P5 FLIP (gated on user sign-off)** → P6 render/web (remove the seam fade, WRAP not clamp the lod window).
 - **NEXT candidates:** periodic-gen P1+ (above); **1f** framing/altitude + fly-to→flight entry-ease
   (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
   OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
