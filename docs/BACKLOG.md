@@ -164,9 +164,12 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   `f426c31`, colony-tag guard `e3c2ebc`; P6 render/web `4f2e46a`.** The GROWN COST (re-deriving the
   `CROSSING/SUNDERED/COLONIZE` taxonomy because seam-straddling continents merge) was paid via a
   CALIBRATED probe (reproduced the old flat constants exactly first): CROSSING `[11,19,7,4]→[11,19,26,30]`,
-  SUNDERED `[23,42]→[23,10]`, COLONIZE `[2,5,9,11,18]→[18,27,32]`. **Headline regression:** the 3-strand
-  far shore no longer occurs naturally (no seed in 0..120 reaches one shore by faith+colony+sword) → the
-  weave is pinned synthetically; the colony far-shore tag got a new real-world guard. See `docs/CLAIMS.md`
+  SUNDERED `[23,42]→[23,10]`, COLONIZE `[2,5,9,11,18]→[18,27,32]`. **3-strand far-shore regression →
+  RECOVERED:** periodicity + the flat-tuned naming threshold left the planet's medium continents unnamed,
+  and carriers tag only named shores, so the natural 3-strand chronicle vanished (no seed 0..200). Fixed by
+  re-calibrating naming `MIN_CONTINENT_DIVISOR 40→100` (≈1% — the periodic planet was genuinely
+  under-labeled); seed 27 reaches shore "Zuk" by all 3 strands (proven in `lore_cli`). shore.rs weave LOGIC
+  stays synthetic (drift-immune); a calibration guard + colony-tag guard added. See `docs/CLAIMS.md`
   "Periodic world generation".
   - **✅ Phase 0 (mesh ghost topology) — DONE 2026-06-08, byte-identical.** `MeshBuildParams.periodic`
     + a two-pass ghost build (`mesh.rs::periodic_seam_edges`: relax real sites unchanged → re-triangulate
