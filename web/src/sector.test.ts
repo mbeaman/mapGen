@@ -5,6 +5,8 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  GLOBE_FIRST_DRILL_LEVEL,
+  globeDrillTarget,
   latLonToWorld,
   mollweideProject,
   mollweideUnproject,
@@ -20,6 +22,32 @@ import {
 
 const W = 2048;
 const H = 1280;
+
+describe("globeDrillTarget", () => {
+  it("drills to the CLICKED point — the target sector CONTAINS the click, at the fixed level", () => {
+    // The centroid-snap bug: every click loaded the continent's centre. This pins
+    // that the drill is the clicked point's sector (a fixed-centroid target would
+    // not contain an off-centre click).
+    for (const [x, y] of [
+      [300, 200],
+      [1500, 800],
+      [100, 1100],
+    ]) {
+      const t = globeDrillTarget(x, y, W, H);
+      expect(t.level).toBe(GLOBE_FIRST_DRILL_LEVEL);
+      const r = sectorRect(t, W, H);
+      expect(x >= r.x0 && x <= r.x0 + r.w).toBe(true);
+      expect(y >= r.y0 && y <= r.y0 + r.h).toBe(true);
+    }
+  });
+  it("distinct clicks in different sectors → distinct targets (a centroid-snap collapses them)", () => {
+    expect(globeDrillTarget(200, 200, W, H)).not.toEqual(globeDrillTarget(1500, 800, W, H));
+  });
+  it("never yields a hugely-curved shallow patch (level ≥ 3 ⇒ sector span ≤ 45°)", () => {
+    const span = (2 * Math.PI) / 2 ** globeDrillTarget(1000, 600, W, H).level;
+    expect(span).toBeLessThanOrEqual(Math.PI / 4 + 1e-9); // ≤ 45° longitude
+  });
+});
 
 describe("patchUvToWorld", () => {
   const sec = { level: 2, sx: 1, sy: 1 }; // rect {x0:512, y0:320, w:512, h:320}

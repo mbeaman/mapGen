@@ -55,6 +55,16 @@ export function lonLatToUnit(lon: number, lat: number): Vec3 {
   return [cl * Math.cos(lon), Math.sin(lat), -cl * Math.sin(lon)];
 }
 
+/// (lon, lat) in radians for a unit vector on the sphere — the inverse of
+/// `lonLatToUnit`. Used by the streaming LOD selector to find the camera's
+/// sub-point. (lat = asin(y); lon = atan2(-z, x), matching lonLatToUnit's signs.)
+export function unitToLonLat(u: Vec3): { lon: number; lat: number } {
+  return {
+    lat: Math.asin(Math.max(-1, Math.min(1, u[1]))),
+    lon: Math.atan2(-u[2], u[0]),
+  };
+}
+
 /// (lon, lat) in radians for an equirectangular world point — the inverse of
 /// `sector.ts` `latLonToWorld`.
 export function worldToLonLat(

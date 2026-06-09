@@ -38,6 +38,9 @@ import {
   panSubPoint,
   type PatchParams,
 } from "./camera";
+import type { CamState } from "./lod";
+import { patchKey } from "./patchcache";
+import type { Sector } from "./sector";
 
 export interface GlobeHandle {
   /** Reveal the canvas and start the render loop. */
@@ -62,12 +65,24 @@ export interface GlobeHandle {
    *  Sets `data-region="1"` and the per-frame `data-sub-lon/lat`/`data-altitude`
    *  the e2e reads. (Deeper 3D drilling + the detail patch land in later increments.) */
   enterRegion(subLon: number, subLat: number, altitude: number, name: string): void;
-  /** Lay the rasterized refined-sector render onto a curved partial-sphere patch
-   *  over the base globe (increment 1b), occupying the sector's lon/lat span
-   *  (`params` from `sectorPatchParams`). At most one patch exists; this disposes
-   *  any previous one. Sets `data-patch=<level>` + bumps `data-patch-textures`. */
-  showPatch(source: HTMLCanvasElement, params: PatchParams, level: number): void;
-  /** Return to the whole-globe overview: drop flight mode, dispose the patch, pull
+  /** Add (or replace) ONE patch in the streaming cache (ST-1): the rasterized
+   *  refined-sector render on a curved partial-sphere segment over the base globe,
+   *  occupying `sector`'s lon/lat span (`params` from `sectorPatchParams`). Keyed by
+   *  sector; bumps `data-patch`/`data-patch-textures`/`data-refines`/`data-live-patches`. */
+  showPatch(sector: Sector, source: HTMLCanvasElement, params: PatchParams, texBytes: number): void;
+  /** Evict ONE patch (by `patchKey`) and free its GPU resources (ST-1). */
+  evictPatch(key: string): void;
+  /** The live patch cache state for the pure `reconcile` policy (ST-1). */
+  liveEntries(): { key: string; lastSeen: number; texBytes: number }[];
+  /** Mark these patch keys as just-seen (in-view) so LRU eviction spares them (ST-1). */
+  markSeen(keys: string[]): void;
+  /** The camera state the LOD selector consumes (ST-1) — packs the camera in the
+   *  unit-sphere frame. The 1a-deferred streaming hook, now with its consumer. */
+  getCameraState(): CamState;
+  /** Register the settle handler (ST-1): fired once the flight camera has been
+   *  still briefly after a drill / pan / zoom — main.ts reconciles the patch set. */
+  onSettle(cb: () => void): void;
+  /** Return to the whole-globe overview: drop flight mode, dispose all patches, pull
    *  the camera back to the overview framing, re-arm the pick, clear region signals. */
   exitRegion(): void;
   /** Full teardown: stop the loop and free GPU resources. */
@@ -241,22 +256,45 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   const MAX_ALT = 2.5;
   const clampLat = (lat: number) => Math.max(-LAT_MAX, Math.min(LAT_MAX, lat));
 
-  // Curved high-detail patch (increment 1b): a partial-sphere segment over the
-  // base globe, textured with the rasterized refined-sector render. At most ONE
-  // exists (the hard line against an unbounded tile pyramid); a new drill / return
-  // disposes it. Drawn with depthTest=false + renderOrder=1 so it composites over
-  // its base region unconditionally — no z-fighting to depend on under SwiftShader.
-  let patch: Mesh | null = null;
-  let patchTexCount = 0; // bumped per patch texture upload — its OWN e2e signal
-  const disposePatch = () => {
-    if (!patch) return;
-    scene.remove(patch);
-    patch.geometry.dispose();
-    const m = patch.material as MeshBasicMaterial;
+  // STREAMING patch cache (increment ST-1): the in-view set of curved high-detail
+  // segments over the base globe, keyed by sector. Bounded by the LOD reconcile
+  // policy (the count/byte caps live in patchcache.ts; main.ts drives load/evict).
+  // globe.ts is just the GL-touching glue. Each patch is depthTest=false +
+  // renderOrder so it composites over its base region — no z-fight under SwiftShader.
+  interface PatchEntry {
+    mesh: Mesh;
+    sector: Sector;
+    texBytes: number;
+    lastSeen: number;
+  }
+  const patches = new Map<string, PatchEntry>();
+  let patchTexCount = 0; // cumulative texture uploads (data-patch-textures)
+  let refineCount = 0; // cumulative patch loads (data-refines) — streaming activity
+  const PATCH_STYLE = "globe"; // the globe always renders the fontless `globe` style
+  const writeLive = () => {
+    canvas.dataset.livePatches = String(patches.size);
+    // The live SECTOR keys (level:sx:sy). The e2e reads this to prove a PAN streamed
+    // a genuinely NEW sector — not just that the cumulative `data-refines` counter
+    // ticked up from the initial drill's still-in-flight tiles (a false-green the
+    // review caught). Sorted for a stable, diffable string.
+    canvas.dataset.patchKeys = Array.from(patches.values())
+      .map((e) => `${e.sector.level}:${e.sector.sx}:${e.sector.sy}`)
+      .sort()
+      .join(",");
+  };
+  const disposeEntry = (e: PatchEntry) => {
+    scene.remove(e.mesh);
+    e.mesh.geometry.dispose();
+    const m = e.mesh.material as MeshBasicMaterial;
     m.map?.dispose();
     m.dispose();
-    patch = null;
+  };
+  const disposePatches = () => {
+    for (const e of patches.values()) disposeEntry(e);
+    patches.clear();
     delete canvas.dataset.patch;
+    delete canvas.dataset.livePatches;
+    delete canvas.dataset.patchKeys;
   };
   // A patch texture is NOT periodic (it's a continent interior), so — unlike the
   // base sphere's `setTexture` — it skips `fadeMapEdges` and clamps both axes.
@@ -269,6 +307,33 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     t.minFilter = LinearFilter;
     t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return t;
+  };
+
+  // Camera state for the LOD selector (ST-1). The sphere sits at the origin with
+  // no pivot, so camera.position IS the unit-sphere frame.
+  const getCameraState = (): CamState => {
+    const f = new Vector3();
+    camera.getWorldDirection(f);
+    return {
+      posUnit: [camera.position.x, camera.position.y, camera.position.z],
+      forward: [f.x, f.y, f.z],
+      fovY: (camera.fov * Math.PI) / 180,
+      aspect: camera.aspect,
+      near: camera.near,
+      far: camera.far,
+    };
+  };
+
+  // Settle-driven streaming (the "detail follows on SETTLE" v1): fire `settleCb`
+  // once the flight camera has been still for SETTLE_MS after any change (drill,
+  // pan, zoom). main.ts reconciles the patch set on settle.
+  let settleCb: (() => void) | null = null;
+  let lastFlightChange = 0;
+  let settleFired = true;
+  const SETTLE_MS = 140;
+  const markFlightChanged = () => {
+    lastFlightChange = performance.now();
+    settleFired = false;
   };
 
   // Region-name billboard (1b-ii): an HTML label anchored to the drilled region's
@@ -353,6 +418,11 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
           regionLabel.hidden = true;
         }
       }
+      // Fire the streaming reconcile once the camera has SETTLED after a change.
+      if (!settleFired && performance.now() - lastFlightChange > SETTLE_MS) {
+        settleFired = true;
+        settleCb?.();
+      }
     } else {
       controls.update();
       // Overview camera-up.y, for the e2e to prove the globe returns UPRIGHT after a
@@ -388,6 +458,14 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let patchPickCb: ((u: number, v: number) => void) | null = null; // deeper drill (1c)
   let down: { x: number; y: number } | null = null;
   canvas.addEventListener("pointerdown", (e) => {
+    // The globe canvas is a CHILD of #map, where PanZoom (2D pan/zoom of the now-
+    // hidden SVG layer) binds pointerdown/wheel. Without this, a globe drag/zoom ALSO
+    // drives PanZoom and silently corrupts the hidden 2D transform — which then paints
+    // wrong on return to a same-dimension 2D map (fit() is skipped when dims are
+    // unchanged). Contain globe input at the source; OrbitControls listens on this
+    // same element, so stopPropagation (bubble-only) leaves it untouched. (Pre-existing
+    // bubbling hazard, same class as the #map drillAt double-fire.)
+    e.stopPropagation();
     down = { x: e.clientX, y: e.clientY };
     if (flight) dragLast = { x: e.clientX, y: e.clientY }; // start a flight pan
   });
@@ -403,16 +481,19 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     flight.subLon = next.subLon;
     flight.subLat = next.subLat;
     writeFlightData();
+    markFlightChanged(); // re-stream when this pan settles
   });
   // Flight-mode zoom: wheel changes altitude (OrbitControls owns the wheel only at
   // the overview). Multiplicative so each notch is a constant %.
   canvas.addEventListener(
     "wheel",
     (e) => {
+      e.stopPropagation(); // contain from #map's PanZoom (would zoom the hidden 2D layer) — see pointerdown
       if (!flight) return; // let OrbitControls handle the overview wheel
       e.preventDefault();
       flight.altitude = Math.max(MIN_ALT, Math.min(MAX_ALT, flight.altitude * Math.exp(e.deltaY * ZOOM_RATE)));
       writeFlightData();
+      markFlightChanged(); // re-stream when this zoom settles
     },
     { passive: false },
   );
@@ -428,10 +509,12 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(ndc, camera);
-    // DRILLED + a patch present: a click drills DEEPER into the patch (1c). The
-    // patch's intrinsic uv → patchUvToWorld → childSectorAt (in the callback).
-    if (flight && patch && patchPickCb) {
-      const phit = raycaster.intersectObject(patch)[0];
+    // DRILLED (a patch set is shown): a click drills DEEPER (1c). Raycast the base
+    // sphere (always present, radius 1) for the clicked surface uv → uvToWorld →
+    // childSectorAt (in the callback) — the same trusted convention the overview
+    // pick uses, independent of which streamed patch happens to cover the click.
+    if (flight && patchPickCb && patches.size > 0) {
+      const phit = raycaster.intersectObject(sphere)[0];
       if (phit?.uv) patchPickCb(phit.uv.x, phit.uv.y);
       return;
     }
@@ -470,7 +553,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       raf = 0;
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
       controls.enabled = true;
-      disposePatch(); // free the patch's GPU resources when leaving the globe
+      disposePatches(); // free all patch GPU resources when leaving the globe
       hideLabel();
     },
     setTexture(source: HTMLCanvasElement) {
@@ -503,10 +586,10 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // DEFERRED (1a, cosmetic): the fly-to end pose and this flight pose differ
       // slightly (centroid vs click, radius, roll), so there's a one-frame snap
       // here; a short entry-ease is a polish increment, not a 1a correctness gap.
-      // Drop any previous patch immediately so a re-drill doesn't leave the OLD
-      // region's patch hanging off to the side during the new refine (1b); the new
-      // patch arrives once its refine resolves (coarse base covers the gap).
-      disposePatch();
+      // Drop the previous level's patches immediately so a re-drill (or a level
+      // change) doesn't leave stale patches hanging; the new in-view set streams in
+      // on settle (the coarse base covers the gap). ST-1 is one level at a time.
+      disposePatches();
       const cl = clampLat(subLat);
       flight = { subLon, subLat: cl, altitude, heading: 0, pitch: 0 };
       flyTo = null;
@@ -519,12 +602,15 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       labelAnchor = new Vector3(a[0], a[1], a[2]);
       regionLabel.textContent = name;
       writeFlightData();
+      markFlightChanged(); // trigger the streaming reconcile once the drill settles
     },
-    showPatch(source: HTMLCanvasElement, params: PatchParams, level: number) {
-      // Lay the refined sector onto a curved segment occupying its lon/lat span on
-      // the unit sphere (radius 1.001 → just above the base skin). depthTest=false
-      // + renderOrder=1 draw it over the base region with no z-fight dependency.
-      disposePatch();
+    showPatch(sector: Sector, source: HTMLCanvasElement, params: PatchParams, texBytes: number) {
+      // Add (or replace) ONE patch in the streaming cache: a curved segment over the
+      // sector's lon/lat span on the unit sphere (radius 1.001, just above the base
+      // skin). depthTest=false + renderOrder so it composites over its base region.
+      const key = patchKey(sector, PATCH_STYLE);
+      const existing = patches.get(key);
+      if (existing) disposeEntry(existing);
       const geo = new SphereGeometry(
         1.001,
         params.segW,
@@ -535,11 +621,39 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
         params.thetaLength,
       );
       const mat = new MeshBasicMaterial({ map: patchTexture(source), depthTest: false });
-      patch = new Mesh(geo, mat);
-      patch.renderOrder = 1;
-      scene.add(patch);
-      canvas.dataset.patch = String(level);
+      const mesh = new Mesh(geo, mat);
+      mesh.renderOrder = 1 + sector.level; // finer levels composite on top
+      scene.add(mesh);
+      patches.set(key, { mesh, sector, texBytes, lastSeen: performance.now() });
+      canvas.dataset.patch = String(sector.level);
       canvas.dataset.patchTextures = String((patchTexCount += 1));
+      canvas.dataset.refines = String((refineCount += 1));
+      writeLive();
+    },
+    evictPatch(key: string) {
+      const e = patches.get(key);
+      if (!e) return;
+      disposeEntry(e);
+      patches.delete(key);
+      writeLive();
+    },
+    liveEntries() {
+      return Array.from(patches.values()).map((e) => ({
+        key: patchKey(e.sector, PATCH_STYLE),
+        lastSeen: e.lastSeen,
+        texBytes: e.texBytes,
+      }));
+    },
+    markSeen(keys: string[]) {
+      const now = performance.now();
+      for (const k of keys) {
+        const e = patches.get(k);
+        if (e) e.lastSeen = now;
+      }
+    },
+    getCameraState,
+    onSettle(cb: () => void) {
+      settleCb = cb;
     },
     exitRegion() {
       // Back to the whole-globe overview: drop flight mode and restore the canonical
@@ -547,7 +661,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // reset to world +Y, or OrbitControls' lookAt renders the returned globe
       // rolled/tilted. Snap to the home framing (0,0,3.6) so the return is
       // predictable (and so a fresh-world re-entry, which reuses this, starts clean).
-      disposePatch();
+      disposePatches();
       hideLabel();
       flight = null;
       flyTo = null;

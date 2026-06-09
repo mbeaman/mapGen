@@ -73,6 +73,21 @@ export function patchUvToWorld(
   return { x: r.x0 + u * r.w, y: r.y0 + (1 - v) * r.h };
 }
 
+/// The level a globe FIRST drill zooms to. Fixed (not continent-size-derived):
+/// the old continent-aware drill landed every click on the continent CENTROID and,
+/// for a big continent, picked a shallow level (L1 = a 180°×90° quarter-globe) —
+/// a hugely curved, texture-stretched patch. L3 (a 45° sector) is the shallowest
+/// level whose patch isn't grossly distorted; deeper clicks (1c) go +1 from there.
+export const GLOBE_FIRST_DRILL_LEVEL = 3;
+
+/// The sector a globe click drills into: the sector at the CLICKED world point —
+/// NOT the continent centroid. So you land where you clicked. Pinned by
+/// `sector.test.ts` (the target contains the click; distinct clicks → distinct
+/// sectors) so the centroid-snap regression can't return silently.
+export function globeDrillTarget(clickX: number, clickY: number, worldW: number, worldH: number): Sector {
+  return sectorAt(clickX, clickY, GLOBE_FIRST_DRILL_LEVEL, worldW, worldH);
+}
+
 /// Quadtree level to drill to for a continent occupying `cellCount` of
 /// `totalCells`. A sector at level L is `1/4^L` of the world, so matching the
 /// continent's share gives `L ≈ ½·log2(total/count)`. Clamped to `[1, maxLevel]`

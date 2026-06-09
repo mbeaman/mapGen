@@ -511,12 +511,63 @@ test("globe lens toggle re-textures the sphere", async ({ page }) => {
     .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
     .toBeGreaterThan(before);
 });
+
+// 1e: a lens toggle while DRILLED must re-texture the base sphere AND re-stream the
+// patches (they cover the surface you're looking at, with the lens baked into each
+// patch raster). Pre-1e a drilled lens toggle silently no-op'd — `setLayerState`'s
+// globe branch was gated `nav.level === 0`, so while drilled it fell through to the
+// hidden 2D SVG and nothing on the globe changed. RED on that guard (data-textures
+// never bumps while drilled); green with the broadened `if (globeScale)` + patch refresh.
+test("globe lens toggle while DRILLED re-textures the base and re-streams the patches (1e)", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+
+  // Drill to L3 and let the in-view patch set fully settle.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-live-patches")), { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(2);
+  let prevKeys = "";
+  await expect
+    .poll(
+      async () => {
+        const k = (await canvas.getAttribute("data-patch-keys")) ?? "";
+        const stable = k !== "" && k === prevKeys;
+        prevKeys = k;
+        return stable;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const tex0 = Number(await canvas.getAttribute("data-textures"));
+  const refines0 = Number(await canvas.getAttribute("data-refines"));
+
+  // Toggle a lens WHILE DRILLED (the panel checkboxes are live, not disabled, here).
+  await page.locator("#layers-panel summary").click();
+  const prosperity = page.getByRole("checkbox", { name: "Prosperity" });
+  await prosperity.check();
+  await expect(prosperity).toBeChecked();
+
+  // Base sphere re-textured AND the patches re-streamed under the new lens, in 3D.
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
+    .toBeGreaterThan(tex0);
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-refines")), { timeout: 15_000 })
+    .toBeGreaterThan(refines0);
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
+});
 // Lifecycle regressions the 1a review caught that the rest of the suite is blind
 // to: (1) an intermediate breadcrumb hop while drilled must STAY on the sphere —
 // not fall through to the (hidden) 2D refine path; (2) regenerating while drilled
 // and still on globe scale (so hide() never fires) must reset to the OVERVIEW, not
-// wedge the fresh globe in the stale region with the controls dead. seed 8 drills
-// to L2 (probed), exposing an intermediate L1 crumb.
+// wedge the fresh globe in the stale region with the controls dead. A globe click
+// drills to GLOBE_FIRST_DRILL_LEVEL = L3, exposing intermediate L1/L2 crumbs.
 test("globe drill survives an intermediate crumb hop and a regenerate", async ({ page }) => {
   await page.goto("/?scale=globe&cells=2000&seed=8");
   const status = page.locator("#status");
@@ -527,10 +578,10 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   const box = (await canvas.boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
-  await expect(page.locator("#breadcrumb")).toContainText(/L[2-6]/); // deep enough for an intermediate crumb
-  // Wait for the initial L2 patch to settle (busy clears) before the crumb hop —
+  await expect(page.locator("#breadcrumb")).toContainText(/L[3-6]/); // first drill = L3
+  // Wait for the initial L3 patch to settle (busy clears) before the crumb hop —
   // otherwise navTo's `if (busy) return` guard would silently drop the click.
-  await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
   // 1b-ii: the region-name billboard shows the drilled landmass's GROUNDED name
   // (seed 8 drills into a named continent). The name's correctness is pinned in
   // Rust (continents_spec); here we prove the consumer renders a non-empty label.
@@ -538,11 +589,11 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   await expect(label).toBeVisible();
   await expect(label).not.toHaveText("");
 
-  // (1) Click the intermediate L1 crumb → must STAY on the 3D sphere and rebuild the
-  // patch at L1; the 2D layer must NOT appear (the pre-fix guard fell through to a
-  // hidden 2D refine behind it). data-patch flipping 2→1 proves the in-3D rebuild.
-  await page.locator("#breadcrumb").getByRole("button", { name: /^L1 / }).click();
-  await expect(canvas).toHaveAttribute("data-patch", "1", { timeout: 30_000 });
+  // (1) Click the intermediate L2 crumb → must STAY on the 3D sphere and rebuild the
+  // patch at L2; the 2D layer must NOT appear (the pre-fix guard fell through to a
+  // hidden 2D refine behind it). data-patch flipping 3→2 proves the in-3D rebuild.
+  await page.locator("#breadcrumb").getByRole("button", { name: /^L2 / }).click();
+  await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
   await expect(canvas).toHaveAttribute("data-region", "1");
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
@@ -560,7 +611,7 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
 // Increment 1c: deeper drilling stays in 3D. A click on the high-detail patch
 // (not a drag) drills ONE level finer and rebuilds a smaller patch — the sphere
 // stays shown, the 2D layer never appears. Before 1c a patch click did nothing
-// (pickable was false while drilled). seed 8 drills to L2, so a patch click → L3.
+// (pickable was false while drilled). A globe click drills to L3, so a patch click → L4.
 test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async ({ page }) => {
   await page.goto("/?scale=globe&cells=2000&seed=8");
   const status = page.locator("#status");
@@ -571,9 +622,9 @@ test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async
   const box = (await canvas.boundingBox())!;
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  // First drill (continent → L2 patch).
+  // First drill (→ L3 patch at the click).
   await page.mouse.click(cx, cy);
-  await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
   // SETTLE: the fly-to + flight state must be stable so the next click takes the
   // patch-pick branch (not the overview re-pick). Poll until data-altitude holds
   // across two reads — without this the deeper drill is flaky (per the review).
@@ -590,20 +641,126 @@ test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async
     )
     .toBe(true);
 
-  // The L2 sector we're looking at — the deeper drill must NEST under THIS one.
+  // The L3 sector we're looking at — the deeper drill must NEST under THIS one.
   const crumb1 = (await page.locator("#breadcrumb").textContent()) ?? "";
-  const l2 = crumb1.match(/L2 \(\d+,\d+\)/)?.[0] ?? "";
-  expect(l2).not.toBe("");
+  const l3 = crumb1.match(/L3 \(\d+,\d+\)/)?.[0] ?? "";
+  expect(l3).not.toBe("");
 
-  // Deeper drill: a PATCH click → ONE level finer, STILL in 3D, and NESTED under
-  // the same L2. The nesting is the signal ONLY the patch-pick path produces — the
-  // pre-1c overview re-pick re-snaps to a continent and lands in a DIFFERENT L2
-  // branch (so this assertion is false-green-proof: it goes red on the old bundle).
+  // Deeper drill: a PATCH click → ONE level finer (L4), STILL in 3D, and NESTED
+  // under the same L3. The nesting is the signal ONLY the patch-pick path produces —
+  // the pre-1c overview re-pick re-snaps and lands in a DIFFERENT branch (so this
+  // assertion is false-green-proof: it goes red on the old bundle).
   await page.mouse.click(cx, cy);
-  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-patch", "4", { timeout: 30_000 });
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
-  const nested = new RegExp(`${l2.replace(/[()]/g, "\\$&")}.*L3 `);
+  const nested = new RegExp(`${l3.replace(/[()]/g, "\\$&")}.*L4 `);
   await expect(page.locator("#breadcrumb")).toContainText(nested);
+});
+
+// THE BUG YOU CAUGHT (centroid-snap): the globe drilled to the continent CENTROID,
+// so every click on a continent loaded the SAME middle region — "not what I clicked
+// on". This pins the fix: two DIFFERENT clicks load DIFFERENT regions. With the old
+// centroid-snap both collapse to the continent centroid → identical breadcrumb → red.
+test("globe drills WHERE YOU CLICK — distinct clicks on a continent load distinct regions", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8"); // a continent fills the centre
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+  const crumb = page.locator("#breadcrumb");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+
+  // Two LAND clicks on the centre continent (data-patch="3" ⇒ a continent drill, not
+  // an ocean grid-drill), offset so they fall in DIFFERENT sectors. The old centroid-
+  // snap collapsed both to the continent's centre sector → identical region → this
+  // goes red on that bug.
+  await page.mouse.click(box.x + box.width * 0.42, box.y + box.height * 0.45);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  // `?? ""` (NOT a distinct "A"/"B" sentinel): if the breadcrumb format ever changes
+  // and the regex misses, the explicit not-empty assert reds — distinct sentinels
+  // would pass the final inequality ("A" !== "B") while asserting nothing real.
+  const regionA = (await crumb.textContent())?.match(/L\d \(\d+,\d+\)/g)?.at(-1) ?? "";
+  expect(regionA).not.toBe("");
+
+  await crumb.getByRole("button", { name: "Globe" }).click();
+  await expect(canvas).not.toHaveAttribute("data-region", "1", { timeout: 15_000 });
+  await page.waitForTimeout(800); // let the overview camera settle before re-clicking
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  const regionB = (await crumb.textContent())?.match(/L\d \(\d+,\d+\)/g)?.at(-1) ?? "";
+  expect(regionB).not.toBe("");
+
+  console.log("REGION A:", regionA, "  REGION B:", regionB);
+  expect(regionA).not.toBe(regionB); // you land where you click, not on one centroid
+});
+
+// THE CONTRACT (the flaw you caught): after zooming, scrolling around must KEEP the
+// detail — patches stream in for the region you scroll to, not just the one drilled
+// sector. This is the ST-1 streaming engine. RED on the single-patch foundation
+// (no `data-live-patches`, panning loads nothing); green once streaming lands.
+test("CONTRACT: scrolling after a zoom keeps detail — patches stream as you pan", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width * 0.5;
+  const cy = box.y + box.height * 0.5;
+
+  // Zoom in.
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+
+  // The IN-VIEW area is covered by MULTIPLE detail patches, not one — and stays
+  // within the hard cap. (Single-patch foundation: this attribute is absent → red.)
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-live-patches")), { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(2);
+  // WAIT FOR THE INITIAL DRILL BATCH TO FULLY LAND before snapshotting the live
+  // sector keys. The drill's first reconcile fires up to 9 refineTile requests; if
+  // we sampled now, the still-in-flight tiles (NOT the pan) would dirty the set —
+  // exactly the false-green the review caught with the old cumulative-counter check.
+  // Poll until the key set is STABLE across two reads, then snapshot it.
+  let prevKeys = "";
+  await expect
+    .poll(
+      async () => {
+        const k = (await canvas.getAttribute("data-patch-keys")) ?? "";
+        const stable = k !== "" && k === prevKeys;
+        prevKeys = k;
+        return stable;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const before = new Set(((await canvas.getAttribute("data-patch-keys")) ?? "").split(",").filter(Boolean));
+  expect(before.size).toBeLessThanOrEqual(24); // bounded
+
+  // Scroll/pan a FULL L3 sector across (~325px crosses one 45° sector at this
+  // altitude; 450 comfortably clears it) so the post-pan window provably includes a
+  // sector OUTSIDE the initial set.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 450, cy, { steps: 18 });
+  await page.mouse.up();
+
+  // THE CONTRACT: after settling, a sector that was NOT in view at drill time has
+  // streamed in — the explored area kept its fidelity. This asserts the PAN's own
+  // streaming (a genuinely NEW key), not a counter the initial batch could bump.
+  // Disable streamReconcile on the pan settle → no new key ever appears → red.
+  await expect
+    .poll(
+      async () => {
+        const after = ((await canvas.getAttribute("data-patch-keys")) ?? "").split(",").filter(Boolean);
+        return after.some((k) => !before.has(k)); // a genuinely NEW sector streamed in
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const liveAfter = Number(await canvas.getAttribute("data-live-patches"));
+  expect(liveAfter).toBeGreaterThanOrEqual(2);
+  expect(liveAfter).toBeLessThanOrEqual(24); // still bounded
 });
 }); // test.describe.serial("3D globe")

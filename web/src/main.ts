@@ -14,9 +14,9 @@ import {
   childSectorAt,
   continentDrillLevel,
   crumbLabel,
+  globeDrillTarget,
   mollweideUnproject,
   navStyle,
-  patchUvToWorld,
   projectedBounds,
   ROOT,
   sectorAt,
@@ -25,6 +25,14 @@ import {
   type Sector,
 } from "./sector";
 import { sectorPatchParams, worldToLonLat } from "./camera";
+import { desiredSectors } from "./lod";
+import {
+  ESTIMATED_PATCH_BYTES,
+  MAX_LIVE_PATCHES,
+  MAX_TEXTURE_BYTES,
+  patchKey,
+  reconcile,
+} from "./patchcache";
 import type { Scale, WorkerRequest, WorkerResponse, StageInfo, Work } from "./worker";
 
 const $ = <T extends HTMLElement>(id: string): T => {
@@ -127,17 +135,59 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
       const { x, y } = uvToWorld(u, v, worldW, worldH);
       send({ type: "continentAt", x, y });
     });
-    // Deeper drill (1c): a click on the high-detail patch → the world point under
-    // it → the child sector one level finer → navTo (stays on the globe, rebuilds a
-    // smaller patch). navTo's globe guard handles L>0→L>0 (from the 1a fix).
+    // Deeper drill (1c): a click while drilled → the clicked surface point (base
+    // sphere uv → uvToWorld) → the child sector one level finer → navTo (stays on
+    // the globe). navTo's globe guard handles L>0→L>0 (from the 1a fix).
     globe.onPatchPick((u, v) => {
       if (busy || !hasWorld || !globeScale || nav.level === 0) return;
-      const w = patchUvToWorld(u, v, nav, worldW, worldH);
-      const child = childSectorAt(w.x, w.y, nav.level, worldW, worldH, MAX_LEVEL);
+      const { x, y } = uvToWorld(u, v, worldW, worldH);
+      const child = childSectorAt(x, y, nav.level, worldW, worldH, MAX_LEVEL);
       if (child) navTo(child);
     });
+    // Streaming (ST-1): every time the flight camera settles (after a drill / pan /
+    // zoom), reconcile the in-view patch set — load what entered view, evict what
+    // left, within the caps. THIS is "scroll around and keep the detail".
+    globe.onSettle(streamReconcile);
   }
   return globe;
+};
+
+// ---- Continuous-LOD streaming (ST-1): the in-view patch set ----
+const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 1 }; // 3×3 sectors around the sub-point
+const CACHE_CFG = { maxPatches: MAX_LIVE_PATCHES, maxBytes: MAX_TEXTURE_BYTES, estBytes: ESTIMATED_PATCH_BYTES };
+const pendingTiles = new Set<string>(); // sector keys with a refineTile in flight
+
+// Reconcile the live patch set against what the camera now sees: the pure selector
+// (lod.ts) + cache policy (patchcache.ts) decide; here we drive the worker + cache.
+const streamReconcile = (): void => {
+  if (!globe || !globeScale || nav.level === 0) return;
+  const desired = desiredSectors(globe.getCameraState(), nav.level, worldW, worldH, STREAM_CFG);
+  globe.markSeen(desired.map((s) => patchKey(s, "globe"))); // in-view → not LRU-evictable
+  const { toLoad, toEvict } = reconcile(globe.liveEntries(), desired, "globe", CACHE_CFG);
+  for (const key of toEvict) {
+    globe.evictPatch(key);
+    pendingTiles.delete(key);
+  }
+  for (const sec of toLoad) {
+    const key = patchKey(sec, "globe");
+    if (pendingTiles.has(key)) continue; // already refining
+    pendingTiles.add(key);
+    send({ type: "refineTile", level: sec.level, sx: sec.sx, sy: sec.sy, style: "globe" });
+  }
+};
+
+// 1e — lens toggle while DRILLED: the streamed patches dominate the drilled surface,
+// and each patch's raster bakes in the active lens at rasterize time (`withLayerClasses`
+// in the `tile` handler). So a lens change must FORCE the in-view set to re-stream:
+// evict the live patches + drop the in-flight reservations, then reconcile re-requests
+// the same sectors, which re-rasterize under the new lens. (The patchKey style stays
+// "globe" — a lens isn't a key dimension yet; this is the brute refresh, briefly
+// flashing the coarse base until the new patches land — the accepted 1e tradeoff.)
+const refreshGlobePatches = (): void => {
+  if (!globe || !globeScale || nav.level === 0) return;
+  for (const e of globe.liveEntries()) globe.evictPatch(e.key);
+  pendingTiles.clear();
+  streamReconcile();
 };
 // Inject the active layer classes onto the SVG root, so a rasterized `<img>` of it
 // applies the embedded lens CSS (`svg.on-faith .planet-faith{display:inline}` …) —
@@ -490,33 +540,37 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setExportEnabled(true);
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
       break;
-    case "refined":
-      setBusy(false);
-      if (globeScale && nav.level > 0) {
-        // 1b: the refined sector's fontless `globe` render lays onto a curved patch
-        // over the still-shown sphere (no 2D layer). Geometry + raster aspect both
-        // derive from the drilled sector's world rect so the texture aligns.
-        const params = sectorPatchParams(nav, worldW, worldH);
-        const rect = sectorRect(nav, worldW, worldH);
-        const aspect = rect.w / rect.h;
-        const long = 1024;
-        const tw = aspect >= 1 ? long : Math.round(long * aspect);
-        const th = aspect >= 1 ? Math.round(long / aspect) : long;
-        // Guard the async raster against a nav change DURING the rasterize window
-        // (busy is already cleared, so the user can return-to-globe / regenerate /
-        // re-drill before this resolves). navTo assigns a fresh `nav` object per hop,
-        // so reference identity discriminates any change — without this, a stale
-        // patch (incl. a wrong-region one) welds onto the overview after a return.
-        const reqNav = nav;
-        void rasterizeSvg(withLayerClasses(msg.svg), tw, th).then((raster) => {
-          if (globe && globeScale && nav === reqNav && nav.level > 0) {
-            globe.showPatch(raster, params, reqNav.level);
-          }
-        });
-        narrateBtn.disabled = true;
-        setStatus(`Region L${msg.level} — drag to pan, scroll to zoom; Globe to return.`, "ok");
+    case "tile": {
+      // ST-1 streaming: a refined patch tile arrived → rasterize at the sector aspect
+      // and add it to the cache. Drop it if we've changed level / left the globe since
+      // the request (stale), or if a deeper drill superseded this level.
+      const sec: Sector = { level: msg.level, sx: msg.sx, sy: msg.sy };
+      const key = patchKey(sec, "globe");
+      // Stale (changed level / left the globe since the request): drop AND release the key.
+      if (!globe || !globeScale || nav.level !== msg.level) {
+        pendingTiles.delete(key);
         break;
       }
+      const params = sectorPatchParams(sec, worldW, worldH);
+      const rect = sectorRect(sec, worldW, worldH);
+      const aspect = rect.w / rect.h;
+      const long = 1024;
+      const tw = aspect >= 1 ? long : Math.round(long * aspect);
+      const th = aspect >= 1 ? Math.round(long / aspect) : long;
+      const reqLevel = msg.level;
+      // Release the pending key only once the patch is actually LIVE. Releasing it
+      // here (before the async raster) left the sector in NEITHER pendingTiles nor
+      // liveEntries, so a re-settle in that window re-requested the same tile.
+      void rasterizeSvg(withLayerClasses(msg.svg), tw, th).then((raster) => {
+        pendingTiles.delete(key);
+        if (globe && globeScale && nav.level === reqLevel) {
+          globe.showPatch(sec, raster, params, tw * th * 4); // RGBA bytes
+        }
+      });
+      break;
+    }
+    case "refined":
+      setBusy(false);
       showSvg(msg.svg);
       setExportEnabled(true);
       narrateBtn.disabled = msg.level !== 0;
@@ -536,9 +590,17 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       // started meanwhile. Over sea / a speck (info null), grid-drill the click.
       if (busy || !hasWorld || nav.level !== 0) break;
       if (msg.info) {
-        const level = continentDrillLevel(msg.info.cell_count, msg.info.total_cells, MAX_LEVEL);
         regionName = msg.info.name; // the billboard reads this in enterRegion (1b-ii)
-        navTo(sectorAt(msg.info.cx, msg.info.cy, level, worldW, worldH));
+        if (globeScale) {
+          // The 3D globe zooms TOWARD THE CLICK at a fixed sane level — not the
+          // continent centroid + size (which landed every drill on the continent's
+          // middle and, for a big continent, made a ~quarter-globe distorted patch).
+          // Deeper clicks (1c) go +1 from here.
+          navTo(globeDrillTarget(msg.x, msg.y, worldW, worldH));
+        } else {
+          const level = continentDrillLevel(msg.info.cell_count, msg.info.total_cells, MAX_LEVEL);
+          navTo(sectorAt(msg.info.cx, msg.info.cy, level, worldW, worldH));
+        }
       } else {
         regionName = ""; // sea / speck grid-drill — no grounded landmass name
         const child = childSectorAt(msg.x, msg.y, nav.level, worldW, worldH, MAX_LEVEL);
@@ -591,6 +653,7 @@ const doGenerate = () => {
   setExportEnabled(false);
   hasWorld = false;
   nav = { ...ROOT };
+  pendingTiles.clear(); // a regenerate invalidates any in-flight streaming tiles
   planetScale = s.scale === "planet";
   globeScale = s.scale === "globe";
   if (!globeScale) exitGlobeView(); // leaving globe → restore the SVG layer
@@ -728,6 +791,11 @@ const navTo = (target: Sector) => {
   // otherwise fall through to the 2D refine path and render an invisible sector
   // behind the still-shown globe. So branch purely on the target level here.
   if (globeScale) {
+    // A level change (drill / crumb hop / return) invalidates every in-flight tile
+    // request for the old level. Clear the pending set so a refineTile the worker
+    // answers with `error` (no sector id to target) can't leave a key stuck forever,
+    // permanently blocking that sector's detail. The new level re-streams on settle.
+    pendingTiles.clear();
     nav = target;
     updateBreadcrumb();
     if (target.level === 0) {
@@ -743,11 +811,15 @@ const navTo = (target: Sector) => {
       // (longitude) span: deeper sectors → closer.
       const rc = sectorRect(target, worldW, worldH);
       const { lon, lat } = worldToLonLat(rc.x0 + rc.w / 2, rc.y0 + rc.h / 2, worldW, worldH);
-      const altitude = Math.max(0.12, Math.min(1.5, (2 * Math.PI) / 2 ** target.level));
+      // Frame the sector to fill the view, getting CLOSER each level so the globe
+      // visibly GROWS as you zoom in (~1.4× the sector's angular span; the previous
+      // formula clamped flat at shallow levels so zooming barely changed distance).
+      const altitude = Math.max(0.12, Math.min(2.2, 1.4 * ((2 * Math.PI) / 2 ** target.level)));
       globe?.enterRegion(lon, lat, altitude, regionName);
-      // 1b: fetch the refined sector → its fontless `globe` render lands on a curved
-      // high-detail patch (the `refined` handler routes to showPatch on the globe).
-      requestRefine();
+      narrateBtn.disabled = true; // a drilled sector has no chronicle of its own
+      setStatus(`Region L${target.level} — drag to pan, scroll to zoom; Globe to return.`, "ok");
+      // ST-1: enterRegion marks the camera changed → on settle, streamReconcile
+      // loads the in-view patch set (and pan/zoom re-stream). No single-patch refine.
     }
     return;
   }
@@ -813,10 +885,13 @@ mapEl.addEventListener("pointerup", (e) => {
   const moved = Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y);
   downPt = null;
   if (moved > 6 || busy || !hasWorld) return;
-  // At the globe ROOT the 3D canvas owns interaction (its own raycaster drill);
-  // the SVG drill path is inert. But once drilled into a 2D sector (level ≥ 1,
-  // the canvas hidden), SVG clicks drill deeper as usual.
-  if (globeScale && nav.level === 0) return;
+  // In globe mode the 3D canvas owns ALL interaction at EVERY level (1a: a globe
+  // drill stays on the sphere via its own raycaster — there is no globe→2D handoff,
+  // the canvas is never hidden). #globe-canvas is a child of #map, so its clicks
+  // bubble here; without this guard a deeper globe drill fires TWICE (the patch-pick
+  // raycaster AND this SVG path), jumping two levels to a bogus sector. So the SVG
+  // drill path is inert whenever globeScale — not only at the root.
+  if (globeScale) return;
   const c = panzoom.clientToContent(e.clientX, e.clientY);
   const cur = sectorRect(nav, worldW, worldH);
   drillAt(cur.x0 + c.x, cur.y0 + c.y);
@@ -949,11 +1024,16 @@ const setLayerState = (next: Set<string>) => {
   layerState.clear();
   for (const n of next) layerState.add(n);
   for (const [name, cb] of layerChecks) cb.checked = layerState.has(name);
-  // On the globe the lens lives in the texture, not the DOM: re-rasterize the
-  // cached `globe` SVG with the new class. On a flat map, toggle the live SVG's
-  // classes (CSS does the rest).
-  if (globeScale && nav.level === 0) {
+  // On the globe the lens lives in the TEXTURE at EVERY level, not the DOM: re-
+  // rasterize the cached `globe` SVG (the base sphere) with the new class — and when
+  // DRILLED, also refresh the streamed patches (1e), which cover the surface you're
+  // looking at and bake the lens in per-patch. Without the patch refresh a drilled
+  // lens toggle silently no-ops on the region in view (a stale `nav.level === 0`
+  // guard — the same bug class as the #map drill double-fire). On a flat map, toggle
+  // the live SVG's classes (CSS does the rest).
+  if (globeScale) {
     retextureGlobe();
+    if (nav.level !== 0) refreshGlobePatches();
     return;
   }
   const svg = contentEl.querySelector("svg");

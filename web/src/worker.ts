@@ -53,6 +53,7 @@ export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string; scale: Scale }
   | { type: "render"; style: string }
   | { type: "refine"; level: number; sx: number; sy: number; style: string }
+  | { type: "refineTile"; level: number; sx: number; sy: number; style: string }
   | { type: "continentAt"; x: number; y: number }
   | { type: "renderYear"; style: string; year: number }
   | { type: "narrate"; event: string; voice: string; sidecar: string };
@@ -71,6 +72,7 @@ export type WorkerResponse =
     }
   | { type: "rendered"; svg: string; ms: number }
   | { type: "refined"; svg: string; level: number; sx: number; sy: number; ms: number }
+  | { type: "tile"; svg: string; level: number; sx: number; sy: number; style: string }
   | { type: "continentInfo"; info: ContinentInfo | null; x: number; y: number }
   | { type: "yearFrame"; svg: string; year: number }
   | { type: "chronicle"; work: Work }
@@ -143,6 +145,19 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         sy: msg.sy,
         ms: performance.now() - t0,
       });
+    } else if (msg.type === "refineTile") {
+      if (!root) {
+        post({ type: "error", message: "no world generated yet" });
+        return;
+      }
+      // Streaming patch refine (ST-1): refine + render ONE tile WITHOUT touching the
+      // persistent `sector` slot (the legacy drill path owns that). Free the temp
+      // handle so the cache holds zero wasm handles. Same `refineSector` call the
+      // cross-platform golden pins, just a different (render-only) consumer.
+      const tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
+      const svg = tile.render(msg.style);
+      tile.free();
+      post({ type: "tile", svg, level: msg.level, sx: msg.sx, sy: msg.sy, style: msg.style });
     } else if (msg.type === "continentAt") {
       // Point→landmass for the continent-aware drill. Always against the root
       // world (drill snapping only fires at the root). Cheap; no busy state.
