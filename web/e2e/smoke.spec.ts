@@ -146,10 +146,14 @@ test("generates a planet, then drills into a continent", async ({ page }) => {
   await expect(svg).toBeVisible({ timeout: 30_000 });
   await expect(generate).toBeEnabled({ timeout: 30_000 });
 
-  // Seed 4 at 2000 cells: its largest continent "Rio" is ~1/10 of the planet, so
-  // the drill must depth-size it to level 2 (see continents_spec — a level past
-  // L1 from one root click is reachable ONLY via the continent re-center branch).
-  await page.locator("#seed").fill("4");
+  // Seed 8 at 2000 cells (periodic planet, Phase 5): its largest continent is
+  // ~1/11 of the planet AND its centroid sits on land, so a click on its label
+  // resolves via continentAt and depth-sizes the drill to level 2 (see
+  // continents_spec — a level past L1 from one root click is reachable ONLY via
+  // the continent re-center branch; an ocean-centroid continent would grid-drill
+  // to L1). (Was seed 4 pre-flip; under periodicity seed 4's largest continent
+  // merged bigger and its centroid fell in the sea → grid-drill → L1.)
+  await page.locator("#seed").fill("8");
   await page.locator("#cells").fill("2000");
   await page.locator("#scale").selectOption("planet");
 
@@ -308,7 +312,11 @@ test("scrubbing the slider reveals an overseas exclave region", async ({ page })
 
   await expect(svg).toBeVisible({ timeout: 30_000 });
   await expect(generate).toBeEnabled({ timeout: 30_000 });
-  await page.locator("#seed").fill("15");
+  // Seed 26 at 2000 cells (periodic planet, Phase 5): a crossing seed — a polity
+  // earns an overseas exclave (spans ≥2 sizable landmasses) by the present, none
+  // at gen-time. (Was seed 15 pre-flip; under periodicity seed 15 has only 2
+  // landmasses and no crossing, so it grew no exclave — re-derived to seed 26.)
+  await page.locator("#seed").fill("26");
   await page.locator("#cells").fill("2000");
   await page.locator("#scale").selectOption("planet");
   await expect(status).toContainText("Generating planet");

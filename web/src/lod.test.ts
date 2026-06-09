@@ -83,13 +83,26 @@ describe("desiredSectors", () => {
     expect(res.some((s) => s.sx === sub.sx && s.sy === sub.sy)).toBe(true);
   });
 
-  it("CLAMPS longitude/latitude at the grid edge (no wrap across the antimeridian)", () => {
-    // Just east of the antimeridian (lon ≈ -π) → sub sx ≈ 0; the window must not
-    // wrap to the east edge (sx near span-1).
+  it("WRAPS longitude across the antimeridian (periodic cylinder)", () => {
+    // Just east of the antimeridian (lon ≈ -π) → sub sx ≈ 0. The planet is a
+    // longitude-cylinder (Phase 5 periodic flip), so the window MUST stitch across
+    // the seam: the sectors immediately west of the sub-point sit at the EAST edge
+    // (sx near span-1) and are geometrically adjacent — they must appear, not be
+    // clamped away onto a faded base. (Clamping instead of wrapping → none ≥ 14.)
     const cam = camOver(-Math.PI + 0.05, 0, 0.3);
     const res = desiredSectors(cam, 4, W, H, cfg(24, 2)); // span = 16
     expect(res.length).toBeGreaterThan(0);
-    expect(res.every((s) => s.sx <= 3)).toBe(true); // clamped near 0, never 15
+    expect(res.some((s) => s.sx >= 14)).toBe(true); // wrapped to the east edge
+    expect(res.some((s) => s.sx <= 1)).toBe(true); // and the sub-point's own side
+  });
+
+  it("CLAMPS latitude at the poles (no wrap top↔bottom)", () => {
+    // Near the north pole → sub sy ≈ 0. Latitude is NOT periodic, so the window
+    // must clamp at the pole, never wrap to the south edge (sy near span-1).
+    const cam = camOver(0, Math.PI / 2 - 0.05, 0.3);
+    const res = desiredSectors(cam, 4, W, H, cfg(24, 2)); // span = 16
+    expect(res.length).toBeGreaterThan(0);
+    expect(res.every((s) => s.sy <= 3)).toBe(true); // clamped near 0, never 15
   });
 
   it("retains a near-but-clearly-visible neighbour (pins the cull is not TOO strict)", () => {

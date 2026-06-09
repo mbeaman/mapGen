@@ -9,8 +9,9 @@
 /// altitude→level snap is ST-2). The camera is pitch-0 (top-down) today, so an
 /// N×N window around the sub-point + horizon cull + clamp-to-K is correct and
 /// rigorously bounded — the frustum-corner footprint + frustum cull are the
-/// oblique-camera upgrade (deferred with pitch). Longitude AND latitude are
-/// CLAMPED at the grid edge (no wrap → the antimeridian stays on the faded base).
+/// oblique-camera upgrade (deferred with pitch). Longitude WRAPS at the
+/// antimeridian (the periodic planet is a longitude-cylinder, so the window
+/// stitches across the seam — Phase 6); latitude stays CLAMPED at the poles.
 
 import { lonLatToUnit, unitToLonLat, type Vec3, worldToLonLat } from "./camera";
 import { latLonToWorld, type Sector, sectorAt, sectorRect } from "./sector";
@@ -55,7 +56,20 @@ function sectorNearestDir(
   worldH: number,
 ): Vec3 {
   const r = sectorRect(sec, worldW, worldH);
-  const nx = Math.max(r.x0, Math.min(r.x0 + r.w, subX));
+  // Minimum-image nearest x: longitude wraps, so a sector across the seam may be
+  // reached more cheaply by going the other way around. Clamp the sub-point AND
+  // its ±worldW images into the sector's x-span, keep whichever lands closest. nx
+  // stays within [r.x0, r.x0+r.w] ⊆ [0, worldW], so worldToLonLat is in range.
+  let nx = Math.max(r.x0, Math.min(r.x0 + r.w, subX));
+  let bestErr = Math.abs(subX - nx);
+  for (const img of [subX - worldW, subX + worldW]) {
+    const c = Math.max(r.x0, Math.min(r.x0 + r.w, img));
+    const err = Math.abs(img - c);
+    if (err < bestErr) {
+      bestErr = err;
+      nx = c;
+    }
+  }
   const ny = Math.max(r.y0, Math.min(r.y0 + r.h, subY));
   const { lon, lat } = worldToLonLat(nx, ny, worldW, worldH);
   return lonLatToUnit(lon, lat);
@@ -85,10 +99,10 @@ export function desiredSectors(
   const ranked: { sec: Sector; rank: number }[] = [];
   for (let dy = -N; dy <= N; dy++) {
     for (let dx = -N; dx <= N; dx++) {
-      const sx = Math.max(0, Math.min(span - 1, subSec.sx + dx)); // CLAMP longitude
-      const sy = Math.max(0, Math.min(span - 1, subSec.sy + dy)); // CLAMP latitude
+      const sx = (((subSec.sx + dx) % span) + span) % span; // WRAP longitude (periodic)
+      const sy = Math.max(0, Math.min(span - 1, subSec.sy + dy)); // CLAMP latitude (poles)
       const key = `${sx}:${sy}`;
-      if (seen.has(key)) continue; // edge clamping creates duplicates
+      if (seen.has(key)) continue; // pole clamping (and a window ≥ span) creates duplicates
       seen.add(key);
       const sec: Sector = { level, sx, sy };
       const d = dot(sectorNearestDir(sec, sub.x, sub.y, worldW, worldH), camDir);
