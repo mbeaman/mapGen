@@ -173,11 +173,22 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
     to a circle (R=width/TAU), sampling 3D `[R·cosθ, R·sinθ, y]` (NOT cos-only — mirrors the planet) so the
     elevation field (the visible coastline seam) is continuous at x=0↔x=width. Seam-continuity test,
     mutation-verified red. (All goldens — continent + planet seed9 — still byte-identical through P0–P2.)
-  - **NEXT phases:** **P3 climate upwind-march periodicity** (the HARDEST — algorithmic: the single-pass
-    march assumes an open upwind boundary, but on a cylinder east-edge feeds west-edge → a cyclic dependency;
-    needs a seam-cut OR convergence iteration, in BOTH climate.rs and climate_seasonal.rs in lockstep) →
-    P4 erosion/hydrology seam-flow proof (no code — adjacency wraps free; add the guard test) →
-    **P5 FLIP (gated on user sign-off)** → P6 render/web (remove the seam fade, WRAP not clamp the lod window).
+  - **✅ Phase 3 (climate upwind march) — DONE 2026-06-08, byte-identical.** The one algorithmic seam
+    change. Upwind selection extracted to a shared seam-aware `climate::upwind_neighbor` (dedups the
+    climate.rs/climate_seasonal.rs duplication; wraps the x-delta) + a `done`-flag SEAM CUT: the per-band
+    march start's unprocessed cross-seam upwind reads saturated ocean inflow (like the flat west edge),
+    not stale dryness. Residual hairline at the cut is masked by the ocean-seam placement (P5) + sea
+    re-saturation; full land-at-seam continuity (convergence pass) deferred, unneeded with an ocean seam.
+    Test: `upwind_neighbor_wraps_the_seam` (mutation-verified). Lockstep in both climate modules.
+  - **✅ Phase 4 (erosion/hydrology seam-flow) — DONE 2026-06-08.** No production change (adjacency wraps
+    free since P0); a differential guard test proves flow crosses the seam ONLY on a periodic mesh.
+  - **THE SEAMLESS WORLD IS FULLY BUILT BEHIND THE `periodic` FLAG (P0–P4). Remaining:**
+    **P5 — THE FLIP (GATED on explicit user sign-off):** set `planet()`→periodic, re-anchor the
+    `seed9_planet_full` golden + its wasm twin, and RE-DERIVE the CROSSING/SUNDERED/COLONIZE seed
+    taxonomies from a fresh Step-0 lane probe (seam-straddling continents merge → the partition changes).
+    Pick the seam longitude over the emptiest ocean. This is where the seam VISIBLY disappears.
+    **P6 — render/web:** remove the `fadeMapEdges` seam band (keep the pole bands), WRAP (not clamp) the
+    `sectorAt`/`lod.ts` longitude window + the graticule meridian.
 - **NEXT candidates:** periodic-gen P1+ (above); **1f** framing/altitude + fly-to→flight entry-ease
   (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
   OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
