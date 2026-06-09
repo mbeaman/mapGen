@@ -3,18 +3,21 @@
 //! AND the sword, woven into a single chronicle that NAMES the shore from the
 //! `Event::far_shore` tags the gen carriers stamped.
 //!
-//! SYNTHETIC FIXTURE (Phase 5 — periodic planet). Before the periodic flip, seed
-//! 9 was the canonical three-strand world (faith+colony+sword on one continent).
-//! Periodicity merged the seam-straddling continents, and a scan of seeds 0..120
-//! found NO world where all three carriers converge on a single shore (the colony
-//! carrier settles unclaimed fringes; conquest seizes owned anchors; periodicity
-//! stops them landing on the same landmass). The three-strand chronicle therefore
-//! no longer occurs naturally — so the strand classifier and the 3-beat weave are
-//! pinned here against a hand-built world that tags one continent with one event
-//! of each strand. This tests the *logic* (group-by-`far_shore`, classify by
-//! kind, weave one beat per strand) directly and robustly. The 2-strand reality
-//! and the laneless guard ride real worlds below; the CLI round-trip rides a real
-//! 2-strand seed in `mapgen-cli/tests/lore_cli.rs`.
+//! SYNTHETIC FIXTURE (the weave LOGIC). The strand classifier and the 3-beat weave
+//! are pinned against a hand-built world that tags one continent with one event of
+//! each strand — testing the *logic* (group-by-`far_shore`, classify by kind, weave
+//! one beat per strand) DIRECTLY and DRIFT-IMMUNELY: it never depends on which seeds
+//! happen to converge, so a history-sim tweak can't silently weaken it.
+//!
+//! Why synthetic even though a real three-strand world exists again: under the
+//! longitude-periodic planet the three-strand far shore is RARE (the colony carrier
+//! settles unclaimed fringes while conquest seizes owned anchors, so they seldom
+//! land on the same continent) — roughly as rare as it was on the flat world (one
+//! canonical seed). The naming re-calibration (MIN_CONTINENT_DIVISOR 40→100) restored
+//! it: seed 27 reaches shore "Zuk" by all three strands, and `mapgen-cli/tests/
+//! lore_cli.rs` proves that real OCCURRENCE end-to-end through the binary. This file
+//! keeps the synthetic fixture as the robust LOGIC guard; the laneless guard below
+//! rides a real (sundered) world.
 
 use mapgen_core::{Continent, Event, EventId, EventKind, WorldData};
 use mapgen_lore::voice::{Register, VoiceCard};

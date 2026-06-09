@@ -130,7 +130,10 @@ fn linear_land_sea_world() -> WorldData {
         terrain: TerrainData::default(),
         ..Default::default()
     };
-    let n = 100;
+    // 300 cells so the 1-cell speck is 0.33% — clearly below the naming threshold
+    // (MIN_CONTINENT_DIVISOR=100 ⇒ a body must be ≥1% of the world to earn a name),
+    // while the 50-cell landmass (16.7%) is named.
+    let n = 300;
     world.mesh.sites = (0..n).map(|i| [i as f32, 0.0]).collect();
     world.mesh.neighbors = (0..n)
         .map(|i| {
@@ -148,7 +151,7 @@ fn linear_land_sea_world() -> WorldData {
     world.mesh.height = 1.0;
     let mut elev = vec![-1.0f32; n]; // sea by default
     (0..50).for_each(|i| elev[i] = 1.0); // big landmass
-    elev[99] = 1.0; // a 1-cell speck
+    elev[299] = 1.0; // a 1-cell speck (0.33% — sub-threshold)
     world.terrain.elevation = elev;
     world
 }
@@ -173,11 +176,49 @@ fn continent_at_is_none_over_sea_and_over_a_speck() {
         None,
         "sea is not a continent"
     );
-    // Over the 1-cell speck at x=99 (1 of 100 cells, < 2.5%) → None.
+    // Over the 1-cell speck at x=299 (1 of 300 cells, 0.33% < the 1% bar) → None.
     assert_eq!(
-        continent_at(&world, 99.0, 0.0),
+        continent_at(&world, 299.0, 0.0),
         None,
         "a speck is not a continent"
+    );
+}
+
+#[test]
+fn the_periodic_planet_names_every_continent_down_to_one_percent() {
+    // CALIBRATION GUARD (MIN_CONTINENT_DIVISOR=100, re-calibrated 40→100 for the
+    // periodic planet). The threshold must name the periodic planet's genuine
+    // continents down to ~1% of the world, not just the dominant few — the old
+    // flat-world 2.5% bar left real medium continents unnamed, under-labeling the
+    // primary globe view AND starving the far-shore chronicle (carriers tag only
+    // NAMED shores). This pins seed 9's named set to EXACTLY the bodies ≥1% of the
+    // world, so reverting the divisor (e.g. back to 40 ⇒ 2.5%) drops a real continent
+    // and trips here. SCOPE: this guards seed-9 NAMING COMPLETENESS only — seed 9's
+    // smallest named body is ~1.88%, so its named set is invariant for divisors in
+    // ~[54, 1000], a range that already KILLS the 3-strand chronicle (which rides
+    // seed 27's shore "Zuk" at ~1.05%, named only for divisor ≥ ~96). The chronicle's
+    // own drift guard is `mapgen-cli/tests/lore_cli.rs` (seed 27); do not treat THIS
+    // test as covering it.
+    let w = generate_full(GenerateParams::planet(9));
+    let n = w.mesh.cell_count() as f64;
+    let bodies = connected_bodies(&w.mesh, |i| w.terrain.elevation[i] > 0.0);
+    // Anti-vacuous: seed 9 must HAVE a continent in the 1–2.5% band — the band the
+    // re-calibration newly names — or this guard wouldn't discriminate the threshold.
+    let medium_band = bodies
+        .iter()
+        .filter(|b| (0.01..0.025).contains(&(b.len() as f64 / n)))
+        .count();
+    assert!(
+        medium_band >= 1,
+        "fixture: seed 9 must have a 1–2.5% medium continent to exercise the calibration"
+    );
+    // The named continents are EXACTLY the bodies ≥1% of the world. Reverting the
+    // divisor to 40 (2.5%) un-names the medium band → counts diverge → red.
+    let at_least_one_percent = bodies.iter().filter(|b| b.len() as f64 / n >= 0.01).count();
+    assert_eq!(
+        w.continents.len(),
+        at_least_one_percent,
+        "named continents must be exactly the land bodies ≥1% of the world (calibration drifted)"
     );
 }
 

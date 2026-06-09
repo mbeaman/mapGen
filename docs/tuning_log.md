@@ -303,14 +303,33 @@ artifact that justified the pick, and the commit that landed the value.
 
 ### `MIN_CONTINENT_DIVISOR` / `MIN_OCEAN_DIVISOR`
 
-* **Current:** `40` (continents) / `20` (oceans) — a body earns a name
-  when `cell_count * DIVISOR >= total_cells`, i.e. continents ≥ 2.5% of
-  the world, oceans ≥ 5%.
-* **Why this value:** `40` reproduces the planisphere's former
-  render-time speck-skip (`body.len() * 40 < n`), so the visual set of
-  labelled continents is unchanged — only the names move from positional
-  Latin to lore-grounded. Oceans use a looser `20` (≈5%) so a secondary
-  sea still earns a name; the planisphere still only draws the largest.
+* **Current:** `100` (continents) / `20` (oceans) — a body earns a name
+  when `cell_count * DIVISOR >= total_cells`, i.e. continents ≥ 1% of
+  the world, oceans ≥ 5%. **RE-CALIBRATED `40`→`100` (2026-06-09) for the
+  longitude-periodic planet.**
+* **Why this value:** the original `40` (2.5%) reproduced the planisphere's
+  former render-time speck-skip on the FLAT world, where one dominant
+  landmass set the scale. The periodic planet (the now-primary globe view)
+  packs several genuine continents into the same cell budget, each a smaller
+  fraction, so the 2.5% bar left real medium continents (1–2.5% of the world)
+  UNNAMED — under-labeling the globe and, downstream, starving the far-shore
+  chronicle: every inter-continental carrier (faith/colony/sword) tags only
+  NAMED shores, so the three strands could never converge on one continent
+  (no natural 3-strand far shore existed in seeds 0..200). Re-calibrating to
+  1% names the periodic planet's true continents (seed 9: 5→6 labels — one
+  previously-unnamed medium continent), restores the marquee three-strand
+  chronicle (seed 27 → shore "Zuk", proven end-to-end in `lore_cli`), and
+  leaves single-landmass CONTINENTAL worlds unchanged (they have no bodies in
+  the 1–2.5% band, so `seed42_*` goldens hold byte-identical — only the
+  `seed9_planet` golden re-anchored). The carrier taxonomy is unaffected (it
+  keys off `SIZABLE_BODY_MIN`, independent of this divisor). Oceans keep `20`.
+* **Guard:** `continents_spec::the_periodic_planet_names_every_continent_down_to_one_percent`
+  pins seed 9's named set to EXACTLY the bodies ≥1% of the world — reverting the
+  divisor trips it. This guards seed-9 NAMING COMPLETENESS; it is NOT the
+  chronicle's drift guard (seed 9's smallest named body is ~1.88%, so its named set
+  is invariant for divisors ~[54, 1000] — a range that already collapses the
+  3-strand chronicle, which rides seed 27's shore "Zuk" at ~1.05%). The chronicle's
+  recovery is guarded by `mapgen-cli/tests/lore_cli.rs` (seed 27).
 * **Grounding:** a continent is named in the language of the culture that
   owns the most of its cells (stable lowest-id tiebreak); an ocean by the
   dominant culture among its coastal-adjacent land cells. Uninhabited

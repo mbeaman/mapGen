@@ -225,10 +225,18 @@ pub fn name_world(world: &mut WorldData, _params: NamingParams, rng: &mut ChaCha
     world.languages = languages;
 }
 
-/// A body earns a name when `cell_count * DIVISOR >= total_cells`. 40 ≈ 2.5% of
-/// the world for continents (matching the planisphere's former speck-skip); 20
-/// ≈ 5% for oceans, so secondary seas still get a name.
-const MIN_CONTINENT_DIVISOR: usize = 40;
+/// A body earns a name when `cell_count * DIVISOR >= total_cells`. 100 ≈ 1% of
+/// the world for continents; 20 ≈ 5% for oceans, so secondary seas still get a
+/// name. RE-CALIBRATED 40→100 for the longitude-periodic planet (2026-06-09): the
+/// old 2.5% bar was tuned for the FLAT world, where one dominant landmass set the
+/// scale. The periodic planet packs several genuine continents into the same cell
+/// budget, each a smaller fraction, so 2.5% left real medium continents unnamed —
+/// under-labeling the now-primary globe view and, downstream, starving the
+/// far-shore chronicle (every carrier tags only NAMED shores, so the three strands
+/// could never converge). 1% names the periodic planet's true continents while
+/// still excluding islets (continental single-landmass worlds are unaffected —
+/// they have no bodies in the 1–2.5% band). See docs/tuning_log.md.
+const MIN_CONTINENT_DIVISOR: usize = 100;
 const MIN_OCEAN_DIVISOR: usize = 20;
 
 /// Flood-fill the land and sea into major bodies and name each via the lore
