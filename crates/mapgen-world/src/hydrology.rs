@@ -436,3 +436,63 @@ pub fn classify_river_regimes(world: &mut WorldData) {
         r.regime = reg;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mapgen_core::world_data::WorldData;
+    use mapgen_core::{fmath, Stage, StageRng};
+    use mapgen_geom::{Mesh, MeshBuildParams};
+
+    /// How many flow edges cross the antimeridian (a land cell whose steepest-descent
+    /// neighbour is on the far side of the seam).
+    fn seam_crossing_flows(periodic: bool) -> usize {
+        let mut rng = StageRng::new(5).stream(Stage::Mesh);
+        let mesh = Mesh::build(
+            MeshBuildParams {
+                width: 256.0,
+                height: 128.0,
+                target_cells: 600,
+                lloyd_iterations: 2,
+                periodic,
+            },
+            &mut rng,
+        )
+        .into_mesh_data();
+        let (w, hgt) = (mesh.width, mesh.height);
+        let margin = 3.0 * fmath::sqrt(0.7 * (w * hgt) / 600.0);
+        let mut world = WorldData::default();
+        // All land; elevation ramps UP with x → steepest descent is toward smaller x. For a
+        // cell at x≈width that wraps to its cross-seam neighbour at x≈0 (the lowest around).
+        world.terrain.elevation = mesh.sites.iter().map(|s| 0.5 + 0.0001 * s[0]).collect();
+        world.mesh = mesh;
+        let flow = flow_directions(&world);
+        let sites = &world.mesh.sites;
+        flow.iter()
+            .enumerate()
+            .filter(|&(i, d)| match d {
+                Some(j) => {
+                    let (xi, xj) = (sites[i][0], sites[*j as usize][0]);
+                    (xi < margin && xj > w - margin) || (xj < margin && xi > w - margin)
+                }
+                None => false,
+            })
+            .count()
+    }
+
+    // Phase 4: erosion/hydrology route on cell ADJACENCY, so once the mesh wraps (Phase 0)
+    // water crosses the seam for FREE — no code change. This converts that "free" claim into
+    // a guarded signal: flow crosses the antimeridian on a periodic mesh, never on a flat one.
+    #[test]
+    fn flow_crosses_the_seam_only_on_a_periodic_mesh() {
+        assert_eq!(
+            seam_crossing_flows(false),
+            0,
+            "flat mesh: no flow should cross the seam"
+        );
+        assert!(
+            seam_crossing_flows(true) > 0,
+            "periodic mesh: water should route across the seam"
+        );
+    }
+}
