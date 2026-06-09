@@ -14,6 +14,11 @@ pub struct MeshBuildParams {
     pub height: f32,
     pub target_cells: usize,
     pub lloyd_iterations: usize,
+    /// Wrap cell adjacency in x (a cylinder: the antimeridian at x=0 and x=width is
+    /// the SAME meridian; latitude still clamps at the poles). For the planet/globe
+    /// world so the sphere has no seam. `false` ⇒ the legacy flat, hard-edged mesh —
+    /// BYTE-IDENTICAL to before this field existed (no ghost rebuild, no seam edges).
+    pub periodic: bool,
 }
 
 /// Parameters for a *sub-region* mesh (Phase 7 multi-scale refinement). The
@@ -38,6 +43,10 @@ pub struct Mesh {
     /// `Some(rect)` for a sub-region mesh; `None` for a whole-world mesh.
     pub region: Option<[f32; 4]>,
     pub voronoi: Voronoi,
+    /// Cross-seam (x=0 ↔ x=width) neighbour pairs for a periodic mesh — empty unless
+    /// built with `periodic: true`. Augments the voronoi-derived adjacency; symmetric
+    /// (each pair is added to BOTH endpoints in `neighbors`/`into_mesh_data`).
+    pub seam_edges: Vec<(u32, u32)>,
 }
 
 impl Mesh {
@@ -75,11 +84,25 @@ impl Mesh {
             .build()
             .expect("voronoi build");
 
+        // Periodic mesh: re-triangulate the RELAXED sites + seam ghosts to read off
+        // cross-seam adjacency (the legacy non-periodic path is untouched → byte-identical).
+        let seam_edges = if params.periodic {
+            periodic_seam_edges(
+                voronoi.sites(),
+                params.width as f64,
+                params.height as f64,
+                min_dist as f64,
+            )
+        } else {
+            Vec::new()
+        };
+
         Self {
             width: params.width,
             height: params.height,
             region: None,
             voronoi,
+            seam_edges,
         }
     }
 
@@ -125,6 +148,9 @@ impl Mesh {
             height: params.full_height,
             region: Some(params.region),
             voronoi,
+            // A drilled sub-region is always a continental (non-wrapping) view, even from
+            // a planet parent — periodicity is root-only (see the design doc §3).
+            seam_edges: Vec::new(),
         }
     }
 
@@ -138,11 +164,21 @@ impl Mesh {
     }
 
     pub fn neighbors(&self, i: usize) -> Vec<u32> {
-        self.voronoi
+        let mut nbrs: Vec<u32> = self
+            .voronoi
             .cell(i)
             .iter_neighbors()
             .map(|n| n as u32)
-            .collect()
+            .collect();
+        for &(a, b) in &self.seam_edges {
+            if a as usize == i && !nbrs.contains(&b) {
+                nbrs.push(b);
+            }
+            if b as usize == i && !nbrs.contains(&a) {
+                nbrs.push(a);
+            }
+        }
+        nbrs
     }
 
     /// Project into the serializable `MeshData` form.
@@ -173,6 +209,17 @@ impl Mesh {
                 .collect();
             neighbors.push(nbrs);
         }
+        // Inject the cross-seam edges symmetrically (no-op when non-periodic → the
+        // serialized neighbour arrays are byte-identical to before this field existed).
+        for &(a, b) in &self.seam_edges {
+            let (a, b) = (a as usize, b as usize);
+            if !neighbors[a].contains(&(b as u32)) {
+                neighbors[a].push(b as u32);
+            }
+            if !neighbors[b].contains(&(a as u32)) {
+                neighbors[b].push(a as u32);
+            }
+        }
 
         MeshData {
             width: self.width,
@@ -187,32 +234,152 @@ impl Mesh {
     }
 }
 
+/// Cross-seam (x=0 ↔ x=width) neighbour pairs for a PERIODIC (cylinder) mesh.
+/// voronoice has no toroidal mode, so we RE-TRIANGULATE the already-relaxed sites plus
+/// GHOST copies of the seam-margin sites at x ± width (y unchanged → the poles stay hard
+/// edges) at ZERO Lloyd iterations — ghosts must NOT relax, or each drifts independently
+/// of its original and the seam stops mirroring itself. A real cell adjacent to a ghost
+/// is adjacent to that ghost's real owner ACROSS the seam. The two sides' local
+/// triangulations are NOT mirror-symmetric, so we keep only opposite-edge pairs within a
+/// few cell widths (the true wrapped neighbours; the proven `ghost_seam_adjacency` spike)
+/// and the caller adds each edge to BOTH endpoints. Draws no RNG → deterministic; pure
+/// f64 add/sub/abs/min (no transcendentals) → cross-platform stable, like the base build.
+fn periodic_seam_edges(
+    relaxed: &[Point],
+    width: f64,
+    height: f64,
+    min_dist: f64,
+) -> Vec<(u32, u32)> {
+    let margin = 3.0 * min_dist;
+    let n_real = relaxed.len();
+    let mut sites: Vec<Point> = relaxed.to_vec();
+    let mut owner: Vec<usize> = Vec::new();
+    for (i, p) in relaxed.iter().enumerate() {
+        if p.x < margin {
+            sites.push(Point {
+                x: p.x + width,
+                y: p.y,
+            });
+            owner.push(i);
+        }
+        if p.x > width - margin {
+            sites.push(Point {
+                x: p.x - width,
+                y: p.y,
+            });
+            owner.push(i);
+        }
+    }
+    if owner.is_empty() {
+        return Vec::new();
+    }
+    let bbox = BoundingBox::new(
+        Point {
+            x: width / 2.0,
+            y: height / 2.0,
+        },
+        width + 2.0 * margin,
+        height,
+    );
+    let ghosted = VoronoiBuilder::default()
+        .set_sites(sites)
+        .set_bounding_box(bbox)
+        .set_lloyd_relaxation_iterations(0)
+        .build()
+        .expect("ghost voronoi build");
+    let real_of = |n: usize| -> usize {
+        if n < n_real {
+            n
+        } else {
+            owner[n - n_real]
+        }
+    };
+
+    let mut edges: std::collections::BTreeSet<(u32, u32)> = Default::default();
+    for i in 0..n_real {
+        for n in ghosted.cell(i).iter_neighbors() {
+            let j = real_of(n);
+            if j == i {
+                continue;
+            }
+            let (xi, xj) = (relaxed[i].x, relaxed[j].x);
+            let opposite =
+                (xi < margin && xj > width - margin) || (xj < margin && xi > width - margin);
+            let dx = (xi - xj).abs();
+            let wdx = dx.min(width - dx); // wrapped longitude gap
+            if opposite && wdx < 4.0 * min_dist {
+                edges.insert((i.min(j) as u32, i.max(j) as u32));
+            }
+        }
+    }
+    edges.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use mapgen_core::{Stage, StageRng};
 
-    #[test]
-    fn neighbor_symmetry() {
+    const W: f32 = 256.0;
+    fn build(periodic: bool) -> MeshData {
         let mut rng = StageRng::new(3).stream(Stage::Mesh);
-        let mesh = Mesh::build(
+        Mesh::build(
             MeshBuildParams {
-                width: 256.0,
-                height: 256.0,
+                width: W,
+                height: W,
                 target_cells: 400,
                 lloyd_iterations: 2,
+                periodic,
             },
             &mut rng,
-        );
-        let data = mesh.into_mesh_data();
-        for i in 0..data.cell_count() {
-            for &j in &data.neighbors[i] {
-                let j = j as usize;
-                assert!(
-                    data.neighbors[j].contains(&(i as u32)),
-                    "cell {i}'s neighbor {j} doesn't list {i} as its neighbor"
-                );
+        )
+        .into_mesh_data()
+    }
+    /// Count neighbour pairs that straddle the seam (one cell near x=0, the other near
+    /// x=width) — the signal that ONLY a periodic (wrapped) mesh produces.
+    fn cross_seam_links(d: &MeshData) -> usize {
+        let margin = 3.0 * fmath::sqrt(0.7 * (W * W) / 400.0);
+        let mut c = 0;
+        for i in 0..d.cell_count() {
+            for &j in &d.neighbors[i] {
+                let (xi, xj) = (d.sites[i][0], d.sites[j as usize][0]);
+                if (xi < margin && xj > W - margin) || (xj < margin && xi > W - margin) {
+                    c += 1;
+                }
             }
         }
+        c
+    }
+
+    #[test]
+    fn neighbor_symmetry_holds_for_flat_and_periodic() {
+        for periodic in [false, true] {
+            let data = build(periodic);
+            for i in 0..data.cell_count() {
+                for &j in &data.neighbors[i] {
+                    assert!(
+                        data.neighbors[j as usize].contains(&(i as u32)),
+                        "periodic={periodic}: cell {i}'s neighbor {j} doesn't list {i} back"
+                    );
+                }
+            }
+        }
+    }
+
+    // The periodic-gen FOUNDATION (Phase 0): a periodic mesh wraps adjacency at the
+    // antimeridian (x=0 ↔ x=width); a flat mesh does NOT. The differential is the signal
+    // only the ghost-topology can produce — `cross_seam_links` is 0 on the legacy path
+    // (proving byte-identity is preserved there) and >0 only when periodic.
+    #[test]
+    fn periodic_mesh_wraps_the_seam_and_flat_does_not() {
+        assert_eq!(
+            cross_seam_links(&build(false)),
+            0,
+            "flat mesh must NOT cross the seam"
+        );
+        assert!(
+            cross_seam_links(&build(true)) > 0,
+            "periodic mesh has no seam-crossing neighbours"
+        );
     }
 }

@@ -106,6 +106,10 @@ pub fn generate(params: GenerateParams) -> WorldData {
             height: params.height,
             target_cells: params.cell_count,
             lloyd_iterations: 2,
+            // Phase 0: capability only. Hardcoded false → every world stays flat/
+            // byte-identical. Threading GenerateParams.periodic (so planet worlds wrap)
+            // is the next increment; the planet() flip is gated (design doc §3/§5).
+            periodic: false,
         },
         &mut rng.stream(Stage::Mesh),
     );
