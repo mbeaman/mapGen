@@ -8,7 +8,7 @@ import {
   sectorPatchParams,
   worldToLonLat,
 } from "./camera";
-import { latLonToWorld, ROOT, uvToWorld } from "./sector";
+import { latLonToWorld, patchUvToWorld, ROOT, sectorRect, uvToWorld } from "./sector";
 
 const W = 2048;
 const H = 1280;
@@ -167,6 +167,37 @@ describe("sectorPatchParams", () => {
     expect(north.y).toBeGreaterThan(0.5); // north quarter → upper half
     const west = hitUv(p.phiStart + p.phiLength * 0.25, p.thetaStart + p.thetaLength * 0.5);
     expect(west.x).toBeLessThan(0.5); // west quarter → left half
+  });
+
+  it("deeper-drill (1c): a patch hit.uv → patchUvToWorld recovers the aimed world point", () => {
+    // The end-to-end pin for deeper drilling: a ray at a known interior param point
+    // of the patch → hit.uv → patchUvToWorld must land on that point's world coords.
+    // Catches a uv-convention mismatch between three.js and patchUvToWorld.
+    const sec = { level: 2, sx: 2, sy: 1 };
+    const p = sectorPatchParams(sec, W, H);
+    const patch = new Mesh(
+      new SphereGeometry(1.001, p.segW, p.segH, p.phiStart, p.phiLength, p.thetaStart, p.thetaLength),
+    );
+    patch.updateMatrixWorld(true);
+    const u = 0.7;
+    const vParam = 0.3; // fraction along theta (north→south)
+    const phi = p.phiStart + u * p.phiLength;
+    const theta = p.thetaStart + vParam * p.thetaLength;
+    const d: [number, number, number] = [
+      -Math.cos(phi) * Math.sin(theta),
+      Math.cos(theta),
+      Math.sin(phi) * Math.sin(theta),
+    ];
+    const ray = new Raycaster();
+    ray.set(
+      new Vector3(d[0] * 3, d[1] * 3, d[2] * 3),
+      new Vector3(-d[0], -d[1], -d[2]).normalize(),
+    );
+    const hit = ray.intersectObject(patch)[0]!;
+    const w = patchUvToWorld(hit.uv!.x, hit.uv!.y, sec, W, H);
+    const r = sectorRect(sec, W, H);
+    expect(w.x).toBeCloseTo(r.x0 + u * r.w, 0); // u → west→east
+    expect(w.y).toBeCloseTo(r.y0 + vParam * r.h, 0); // vParam → north→south
   });
 });
 

@@ -51,6 +51,10 @@ export interface GlobeHandle {
   /** Register a click handler: fired with the surface UV (u,v ∈ [0,1]) of a
    *  near-stationary click on the sphere (a drag rotates instead). */
   onPick(cb: (u: number, v: number) => void): void;
+  /** Register the DEEPER-drill handler (increment 1c): fired with the patch's
+   *  surface uv on a click while drilled (a patch is shown). The caller maps it
+   *  via `patchUvToWorld` → `childSectorAt` → `navTo` to drill one level deeper. */
+  onPatchPick(cb: (u: number, v: number) => void): void;
   /** Drill stays on the globe (increment 1a): enter free-fly mode framing the
    *  drilled region (sub-point `subLon`/`subLat` in radians, `altitude` above the
    *  unit sphere). The camera is then driven from this state — drag pans across
@@ -381,6 +385,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   // hemisphere convention can't flip.
   const raycaster = new Raycaster();
   let pickCb: ((u: number, v: number) => void) | null = null;
+  let patchPickCb: ((u: number, v: number) => void) | null = null; // deeper drill (1c)
   let down: { x: number; y: number } | null = null;
   canvas.addEventListener("pointerdown", (e) => {
     down = { x: e.clientX, y: e.clientY };
@@ -416,21 +421,28 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     down = null;
-    if (moved > 6 || !pickCb || !pickable) return; // a drag, or already drilled
+    if (moved > 6) return; // a drag (pan / rotate), not a click
     const rect = canvas.getBoundingClientRect();
     const ndc = new Vector2(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(ndc, camera);
+    // DRILLED + a patch present: a click drills DEEPER into the patch (1c). The
+    // patch's intrinsic uv → patchUvToWorld → childSectorAt (in the callback).
+    if (flight && patch && patchPickCb) {
+      const phit = raycaster.intersectObject(patch)[0];
+      if (phit?.uv) patchPickCb(phit.uv.x, phit.uv.y);
+      return;
+    }
+    // OVERVIEW: a click flies to the clicked point + drills from the base sphere
+    // (1a). Gated on pickable (false while drilled) and not already flying.
+    if (!pickCb || !pickable || flyTo) return;
     const hit = raycaster.intersectObject(sphere)[0];
     if (!hit?.uv || !hit.point) return; // clicked the backdrop, not the sphere
     const u = hit.uv.x;
     const v = hit.uv.y;
-    // Fly the camera to face the clicked point (its direction from the globe
-    // centre) and zoom partway in, then drill. Reading `hit.point` (world space)
-    // is independent of the UV → no hemisphere flip. Skip if already flying.
-    if (flyTo) return;
+    // Reading `hit.point` (world space) is independent of the UV → no hemisphere flip.
     const dir = hit.point.clone().normalize();
     const dist = Math.max(controls.minDistance + 0.3, camera.position.length() * 0.55);
     controls.enabled = false; // hand the camera to the fly animation
@@ -479,6 +491,9 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     resize,
     onPick(cb: (u: number, v: number) => void) {
       pickCb = cb;
+    },
+    onPatchPick(cb: (u: number, v: number) => void) {
+      patchPickCb = cb;
     },
     enterRegion(subLon: number, subLat: number, altitude: number, name: string) {
       // Enter free-fly mode over the drilled region: the camera is driven from

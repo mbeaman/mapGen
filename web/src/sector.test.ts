@@ -9,6 +9,7 @@ import {
   mollweideProject,
   mollweideUnproject,
   navStyle,
+  patchUvToWorld,
   ROOT,
   sectorAt,
   sectorRect,
@@ -19,6 +20,28 @@ import {
 
 const W = 2048;
 const H = 1280;
+
+describe("patchUvToWorld", () => {
+  const sec = { level: 2, sx: 1, sy: 1 }; // rect {x0:512, y0:320, w:512, h:320}
+  it("centre → sector centre; u maps west→east, v maps south→north (top)", () => {
+    expect(patchUvToWorld(0.5, 0.5, sec, W, H)).toEqual({ x: 768, y: 480 });
+    expect(patchUvToWorld(0, 0.5, sec, W, H).x).toBe(512); // u=0 → west edge
+    expect(patchUvToWorld(1, 0.5, sec, W, H).x).toBe(1024); // u=1 → east edge
+    expect(patchUvToWorld(0.5, 1, sec, W, H).y).toBe(320); // v=1 → north (top, y0)
+    expect(patchUvToWorld(0.5, 0, sec, W, H).y).toBe(640); // v=0 → south (y0+h)
+  });
+  it("a patch click drills to a child INSIDE the parent sector", () => {
+    const w = patchUvToWorld(0.5, 0.5, sec, W, H);
+    const child = childSectorAt(w.x, w.y, sec.level, W, H, 6)!;
+    expect(child.level).toBe(3);
+    const pr = sectorRect(sec, W, H);
+    const cr = sectorRect(child, W, H);
+    expect(cr.x0).toBeGreaterThanOrEqual(pr.x0);
+    expect(cr.x0 + cr.w).toBeLessThanOrEqual(pr.x0 + pr.w);
+    expect(cr.y0).toBeGreaterThanOrEqual(pr.y0);
+    expect(cr.y0 + cr.h).toBeLessThanOrEqual(pr.y0 + pr.h);
+  });
+});
 
 describe("sectorRect", () => {
   it("root covers the whole world", () => {

@@ -16,6 +16,7 @@ import {
   crumbLabel,
   mollweideUnproject,
   navStyle,
+  patchUvToWorld,
   projectedBounds,
   ROOT,
   sectorAt,
@@ -125,6 +126,15 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
       if (busy || !hasWorld || !globeScale || nav.level !== 0) return;
       const { x, y } = uvToWorld(u, v, worldW, worldH);
       send({ type: "continentAt", x, y });
+    });
+    // Deeper drill (1c): a click on the high-detail patch → the world point under
+    // it → the child sector one level finer → navTo (stays on the globe, rebuilds a
+    // smaller patch). navTo's globe guard handles L>0→L>0 (from the 1a fix).
+    globe.onPatchPick((u, v) => {
+      if (busy || !hasWorld || !globeScale || nav.level === 0) return;
+      const w = patchUvToWorld(u, v, nav, worldW, worldH);
+      const child = childSectorAt(w.x, w.y, nav.level, worldW, worldH, MAX_LEVEL);
+      if (child) navTo(child);
     });
   }
   return globe;

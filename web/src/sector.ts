@@ -55,6 +55,24 @@ export function childSectorAt(
   return sectorAt(wx, wy, fromLevel + 1, worldW, worldH);
 }
 
+/// World-space point under a raycast hit on a sector's curved patch (increment
+/// 1c). The patch (a partial `SphereGeometry` from `sectorPatchParams`) has
+/// intrinsic uv running `u` 0→1 west→east across its longitude span and `uv.y`
+/// 1→0 north→south across its latitude span (the three.js `uv = (u, 1-v)`
+/// convention, pinned by `camera.test.ts`'s patch orientation raycast). So a hit
+/// `(u, v)` maps into the sector's world rect: `x` lerps west→east, `y` lerps
+/// north(top)→south as `v` falls. Feeds `childSectorAt` to drill deeper in 3D.
+export function patchUvToWorld(
+  u: number,
+  v: number,
+  sector: Sector,
+  worldW: number,
+  worldH: number,
+): { x: number; y: number } {
+  const r = sectorRect(sector, worldW, worldH);
+  return { x: r.x0 + u * r.w, y: r.y0 + (1 - v) * r.h };
+}
+
 /// Quadtree level to drill to for a continent occupying `cellCount` of
 /// `totalCells`. A sector at level L is `1/4^L` of the world, so matching the
 /// continent's share gives `L ≈ ½·log2(total/count)`. Clamped to `[1, maxLevel]`

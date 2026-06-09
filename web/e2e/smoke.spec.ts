@@ -556,4 +556,54 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
   await expect(page.locator("#map-content")).toBeHidden();
   await expect(label).toBeHidden(); // the billboard cleared with the region on reset
 });
+
+// Increment 1c: deeper drilling stays in 3D. A click on the high-detail patch
+// (not a drag) drills ONE level finer and rebuilds a smaller patch — the sphere
+// stays shown, the 2D layer never appears. Before 1c a patch click did nothing
+// (pickable was false while drilled). seed 8 drills to L2, so a patch click → L3.
+test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  // First drill (continent → L2 patch).
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-patch", "2", { timeout: 30_000 });
+  // SETTLE: the fly-to + flight state must be stable so the next click takes the
+  // patch-pick branch (not the overview re-pick). Poll until data-altitude holds
+  // across two reads — without this the deeper drill is flaky (per the review).
+  let prevAlt = "";
+  await expect
+    .poll(
+      async () => {
+        const a = (await canvas.getAttribute("data-altitude")) ?? "";
+        const stable = a !== "" && a === prevAlt;
+        prevAlt = a;
+        return stable;
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+
+  // The L2 sector we're looking at — the deeper drill must NEST under THIS one.
+  const crumb1 = (await page.locator("#breadcrumb").textContent()) ?? "";
+  const l2 = crumb1.match(/L2 \(\d+,\d+\)/)?.[0] ?? "";
+  expect(l2).not.toBe("");
+
+  // Deeper drill: a PATCH click → ONE level finer, STILL in 3D, and NESTED under
+  // the same L2. The nesting is the signal ONLY the patch-pick path produces — the
+  // pre-1c overview re-pick re-snaps to a continent and lands in a DIFFERENT L2
+  // branch (so this assertion is false-green-proof: it goes red on the old bundle).
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
+  const nested = new RegExp(`${l2.replace(/[()]/g, "\\$&")}.*L3 `);
+  await expect(page.locator("#breadcrumb")).toContainText(nested);
+});
 }); // test.describe.serial("3D globe")
