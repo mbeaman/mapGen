@@ -70,11 +70,16 @@ pub const SUNDERED_SEEDS: &[u64] = &[23, 10];
 ///
 /// RE-DERIVED for the periodic planet: the flat colonizers (2/5/9/11) stop
 /// settling an unclaimed far shore once continents merge; only 18 carried over.
-/// The probe (colony present on ≥2 landmasses) picked 14/18/27/32. The absent
-/// direction — crossing seeds 19/26/30 and the [`SUNDERED_SEEDS`] — colonizes
-/// nothing: their far anchors are owned, or unclaimed but behind a naval *wall*
-/// the owner can't sail. So this set also guards the `min_naval` gate.
-pub const COLONIZE_SEEDS: &[u64] = &[14, 18, 27, 32];
+/// These are the seeds whose colony lands on a NAMED far continent — so they pin
+/// BOTH the `overseas_colonizations` (`from:None` `BorderChange`) carrier signal
+/// (`sundered_lanes_claims`) AND the colony place tag (`CityFounded.far_shore`,
+/// `colony_far_shore_claims`). (Seed 14 colonizes a *sizable but unnamed* body —
+/// it fires the carrier but carries no far_shore tag — so it is excluded: the set
+/// must satisfy the tag claim too.) The absent direction — crossing seeds 19/26/30
+/// and the [`SUNDERED_SEEDS`] — colonizes nothing: their far anchors are owned, or
+/// unclaimed but behind a naval *wall* the owner can't sail. So this set also
+/// guards the `min_naval` gate.
+pub const COLONIZE_SEEDS: &[u64] = &[18, 27, 32];
 
 /// A connected land body must hold at least this many cells to count as a
 /// "sizable landmass"; smaller bodies are islets. Matches the threshold used

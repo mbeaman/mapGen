@@ -113,15 +113,19 @@ fn select_shore_picks_a_three_strand_far_shore_on_the_diverse_seed() {
 
 #[test]
 fn the_far_shore_chronicle_weaves_all_three_strands_each_naming_the_shore() {
-    // End-to-end MULTI-STRAND consumer of `Event::far_shore`. `narrate_shore` picks
-    // the three-strand shore and must weave ONE beat per strand, EACH naming the
-    // shore. The anti-false-green discriminator: the shore name is in NONE of the
-    // strand events' summaries (the FaithCrossed / CityFounded / Siege summaries all
-    // say only "...the water" / carry no place), so each beat's "...upon the shore of
-    // {shore}" could ONLY come from the weaver reading the tags. Each beat is a
-    // distinct phrase gated on its strand, so dropping ANY of the three tags (faith
-    // in diffusion.rs, colony in colonization.rs, sword in mearsheimer.rs) removes
-    // exactly that beat → trips.
+    // MULTI-STRAND consumer of `Event::far_shore`. `narrate_shore` picks the
+    // three-strand shore and must weave ONE beat per strand, EACH naming the shore.
+    // The anti-false-green discriminator: the shore name is in NONE of the strand
+    // events' summaries (this fixture's summaries say only "...the water" / carry no
+    // place), so each beat's "...upon the shore of {shore}" could ONLY come from the
+    // weaver reading the tags. What this SYNTHETIC test covers is the weave LOGIC:
+    // group-by-`far_shore`, kind→strand classification, one named beat per present
+    // strand. It does NOT exercise the carriers (the events are hand-built with the
+    // tag set inline), so it cannot catch a regression in the carriers' tagging —
+    // those guards ride real worlds: faith in `faith_crossing_claims`, colony in
+    // `colony_far_shore_claims`, sword in `mapgen-cli/tests/lore_cli.rs` (seed 9).
+    // (Mutation: drop a strand event from `three_strand_world()` → distinct_strands
+    // falls to 2, that beat vanishes → trips.)
     let mut w = three_strand_world();
     let pick = select_shore(&w).expect("the synthetic world reaches a far shore");
     assert_eq!(
