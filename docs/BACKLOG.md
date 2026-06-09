@@ -137,12 +137,34 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   interaction-model tradeoff. e2e pins it (drilled lens toggle bumps `data-textures` + `data-refines`),
   mutation-verified RED on the stale guard. `doRestyle`'s twin stale guard is harmless (style select
   disabled on the globe — review-refuted as a defect). Render-only, no Rust/golden change. CLAIMS row added.
-- **NEXT — the streaming foundation (1a–1c, ST-1, 1e) is in; candidates from here:**
-  1. **ST-2 — settle-fill polish / prefetch ring**: widen the window or pre-warm the next ring so
-     a settle reveals detail with less visible pop; tune `SETTLE_MS` + window vs the worker budget.
-     (Would also shrink the 1e re-stream flash + the C5 far-patch window.)
-  2. **1f framing/altitude tuning + fly-to→flight entry-ease** (the deferred 1a/1b cosmetic snap);
-     revisit the "globe should feel like it GROWS as you zoom" judgment with the user.
+- **ST-2 (prefetch ring) — DONE 2026-06-08** (user-requested: "scroll without waiting for render").
+  `STREAM_CFG.window` 1→2 (5×5 = in-view + a one-sector ring beyond the view edge, horizon-culled
+  to the visible hemisphere); `desiredSectors` now returns NEAREST-FIRST so the worker rasterizes
+  under-camera sectors before the ring (breadth-first). Caps raised to hold the ring (MAX_LIVE_PATCHES
+  24→32, ~128MB est / ~67MB real). The CONTRACT e2e bound now tracks the cap. LIMIT: one worker, one
+  tile at a time (~100ms) — a fast fling past the ring still lags; full during-motion streaming is the
+  ST-5 OffscreenCanvas spike. Render-only.
+- **Globe breadcrumb — jumped ancestors muted 2026-06-08** (user: "breadcrumbs jump from globe to L3").
+  A globe click lands at L3 in one hop; the shallower L1/L2 ancestors (quadtree path stops, never a
+  distinct globe view) now render muted (`.crumb.via`) so the bar reads "Globe › ⟨zoom path⟩ › L3".
+  Labels/clicks unchanged (up-nav + crumb-hop invariant intact). A LIGHT pass — if the *jump itself*
+  should feel more gradual, options are fewer levels (accept L2 curvature) or continuous altitude-LOD.
+- **⚖️ SEAM (#1) — DECISION PENDING (do NOT build both).** The antimeridian "vertical blur line" is
+  the flat, non-periodic world's left/right coastlines not meeting at lon ±180° (the `fadeMapEdges`
+  ocean wash is the visible band). Two real fixes, ONE should be chosen:
+  - **Rotate-to-ocean**: roll the equirect so the seam falls through the emptiest-ocean meridian.
+    Golden-NEUTRAL (WorldData unchanged; renders unhashed) BUT a coordinated, DATA-DERIVED longitude
+    offset shared across `render_globe_texture` + the patch render/placement + the web `uvToWorld`
+    drill mapping (+ plumbing the per-world offset to the web). Medium, drill-correctness risk. Hides
+    the seam where the chosen meridian is ocean; useless if land genuinely wraps.
+  - **Periodic world gen** (the proper fix): make the mesh wrap in longitude so noise/plates/erosion/
+    climate/hydrology are seam-free — seamless globe AND better 2D edges. But RE-ANCHORS EVERY
+    cross-platform WorldData golden and rethreads wrap-awareness through the whole pipeline — it
+    touches the determinism contract this project is built on. Multi-session.
+  - **Accept**: keep the fade. Fine unless the globe becomes a primary view.
+- **NEXT candidates:** the SEAM decision above; **1f** framing/altitude + fly-to→flight entry-ease
+  (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
+  OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
