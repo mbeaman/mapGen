@@ -94,17 +94,55 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   `hit.uv` → world point) pinned by corner/containment units + a `camera.test.ts` raycast
   round-trip; `globe.ts` got `onPatchPick` + a pointerup restructure (drilled click → patch
   raycast → deeper drill; overview click → the 1a base-sphere flyTo); `main.ts` wires
-  `onPatchPick`→`patchUvToWorld`→`childSectorAt`→`navTo` (the 1a `if(globeScale)` guard
-  already handles L>0→L>0). Render-only, no Rust/golden change. CLAIMS row added.
-- **NEXT — the foundation (1a–1c) is complete; two paths from here:**
-  1. **Streaming engine ST-1 (multi-patch cache)** — the big next step per the locked
-     continuous-LOD addendum: a bounded LRU of in-view patches over the base globe, the pure
-     `desiredSectors` selector (consuming the deferred `getCameraState` hook), reconcile +
-     dispose. This is where the "detail follows on settle" v1 begins. See the streaming addendum.
-  2. **Foundation polish first (smaller):** 1e lenses-on-patch (a lens toggle re-textures the
-     patch — currently a dead path at level≥1), 1f framing/altitude tuning + the fly-to→flight
-     entry-ease (the deferred 1a/1b cosmetic snap). 1d up-nav is already largely covered (the
-     intermediate-crumb hop rebuilds the patch).
+  `onPatchPick`→`patchUvToWorld`→`childSectorAt`→`navTo`. **First drill is now L3, so deeper
+  goes L3→L4 (not L2→L3).** ⚠️ 1c shipped a LATENT double-fire: `#globe-canvas` is a child of
+  `#map`, so a drilled click bubbled to `#map`'s pointerup → a SECOND `drillAt` — but it was
+  masked because 1c's drill set `busy` (the old `requestRefine`), and `drillAt` early-returns on
+  `busy`. ST-1 (below) dropped that busy-setting refine for non-blocking streaming, UNMASKING it
+  (one click jumped two levels to a pole sector). Fixed in ST-1: the `#map` drill is inert for
+  ALL globe levels (`if (globeScale) return`, not just `nav.level===0`). Render-only. CLAIMS row added.
+- **Streaming engine ST-1 (multi-patch cache) — DONE 2026-06-08.** "Scroll around after zooming
+  and keep the map data" — the user's contract. A bounded multi-patch cache over the base globe:
+  pure `desiredSectors` selector (`lod.ts`: N×N window around the sub-point, horizon-culled,
+  clamped to the patch cap — consumes the 1a-deferred `getCameraState` hook) + pure `reconcile`
+  cache policy (`patchcache.ts`: count cap 24 + byte cap 96MB BOTH bound `toLoad`; in-view never
+  evicted; out-of-view LRU). `worker.ts` gained `refineTile` (refine+render ONE tile WITHOUT
+  touching the persistent `sector` slot — non-blocking, no `busy`); `globe.ts` got the multi-patch
+  `Map` + settle detection (`onSettle` fires 140ms after the flight camera stills) + `markSeen`/
+  `evictPatch`/`liveEntries`; `main.ts` `streamReconcile` drives worker+cache on every settle
+  (drill/pan/zoom). Contract e2e + pure units for the selector & cache (red-first: caps mutation-
+  verified). Also fixed the 1c double-fire (above). Render-only, no Rust/golden change. CLAIMS rows added.
+- **ST-1 ADVERSARIAL REVIEW (45 agents, 7 dims; judge-panel + double-skeptic verify) — 8 confirmed,
+  fixed 2026-06-08.** TWO real MAJOR correctness bugs the first pass shipped: (1) `desiredSectors`
+  culled each sector on its CENTRE → at L3 + a wheel-zoom to MIN_ALT the detail set went EMPTY where
+  the user was looking; fixed to cull/rank on each sector's NEAREST point to the sub-point (the
+  sub-point's own sector clamps to itself → never dropped). (2) the CONTRACT e2e was FALSE-GREEN —
+  `data-refines > refines0` was satisfied by the drill's still-in-flight tiles, so a pan that streamed
+  NOTHING still passed; fixed by exposing the live sector-key SET (`data-patch-keys`) and asserting a
+  genuinely NEW key after the pan (mutation-verified: reds when pan-streaming is disabled). Plus:
+  `pendingTiles` held until the raster lands + cleared on lifecycle resets (an `error` reply can't
+  brick a sector); byte-cap-on-load + nearest-keeps-rank tests added (mutation-pinned); WHERE-YOU-CLICK
+  shared-`""` sentinel; **C1 (pre-existing, separate subsystem):** globe wheel/drag bubbled to #map's
+  PanZoom and corrupted the hidden 2D transform → fixed with `stopPropagation` at the globe canvas.
+  **WON'T-FIX (intended):** patches are `depthTest:false` (anti-z-fight); a far-hemisphere patch can
+  bleed through during ONE long uninterrupted drag, self-correcting on settle — `depthTest:true` would
+  reintroduce z-fight on every patch (net regression). Recurring lesson: the stale `globeScale &&
+  nav.level === 0` guard appeared in THREE places (drillAt, setLayerState, doRestyle) — grep the class.
+- **1e (lens-on-patch while drilled) — DONE 2026-06-08.** The review-confirmed MAJOR no-op: a lens
+  toggle while DRILLED silently did nothing (`setLayerState`'s globe branch was gated `nav.level===0`,
+  falling through to the hidden 2D SVG). Fixed: broadened to `if (globeScale)` → `retextureGlobe()`
+  (base sphere) + `refreshGlobePatches()` (evict the live patches + clear `pendingTiles` + re-stream,
+  so each re-rasterizes with `withLayerClasses` under the new lens — the wash group is in the refined
+  sector's `render_globe_texture`). Brief coarse-base flash while the new patches land — the accepted
+  interaction-model tradeoff. e2e pins it (drilled lens toggle bumps `data-textures` + `data-refines`),
+  mutation-verified RED on the stale guard. `doRestyle`'s twin stale guard is harmless (style select
+  disabled on the globe — review-refuted as a defect). Render-only, no Rust/golden change. CLAIMS row added.
+- **NEXT — the streaming foundation (1a–1c, ST-1, 1e) is in; candidates from here:**
+  1. **ST-2 — settle-fill polish / prefetch ring**: widen the window or pre-warm the next ring so
+     a settle reveals detail with less visible pop; tune `SETTLE_MS` + window vs the worker budget.
+     (Would also shrink the 1e re-stream flash + the C5 far-patch window.)
+  2. **1f framing/altitude tuning + fly-to→flight entry-ease** (the deferred 1a/1b cosmetic snap);
+     revisit the "globe should feel like it GROWS as you zoom" judgment with the user.
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or

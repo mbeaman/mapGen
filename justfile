@@ -83,12 +83,14 @@ web-test:
 
 # Frontend e2e smoke (Playwright) — load → generate → toggle a lens → narrate.
 # Needs the wasm pkg built (just web-build) and a Chromium (npx playwright
-# install chromium). Builds the bundle first, since `vite preview` serves dist/.
-# On a Linux distro Playwright doesn't yet ship a browser build for (e.g. Ubuntu
-# 26.04), install + run with: PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64
-# (the 24.04 build is binary-compatible).
+# install chromium). The Playwright webServer now builds the JS/TS bundle itself
+# (it serves dist/), so no separate build here — a bare `npx playwright test` is
+# equally safe from stale JS/TS-bundle bugs. (It does NOT rebuild wasm — run
+# `just web-build` after a Rust change.) On a Linux distro Playwright doesn't yet
+# ship a browser build for (e.g. Ubuntu 26.04), install + run with:
+# PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 (the 24.04 build is binary-compatible).
 web-e2e:
-    cd web && npm run build && npm run e2e
+    cd web && npm run e2e
 
 # Rebuild the wasm package the frontend consumes (run after Rust changes).
 web-build:

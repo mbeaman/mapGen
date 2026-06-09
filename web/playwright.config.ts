@@ -2,8 +2,14 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Smoke-only e2e: serve the production bundle and drive a real browser through
 // the interactive path (worker + wasm + DOM) the Vitest unit tests can't reach.
-// `vite preview` serves the built `dist/`, so a build must have run first — the
-// `just web-e2e` recipe and the CI job both build before invoking this.
+// `vite preview` serves the built `dist/`, so the JS/TS bundle MUST be fresh. The
+// webServer command builds first (`npm run build &&`) so a COLD-start `npx playwright
+// test` (nothing serving :4173) can't silently test a stale JS/TS `dist/` — the exact
+// trap that hid a globe double-fire bug behind a passing suite. TWO caveats, both
+// local-only: (1) `reuseExistingServer` skips this build entirely if something is
+// ALREADY serving :4173 — kill a lingering `vite preview` after a rebuild; (2)
+// `npm run build` is `tsc && vite build`, which does NOT rebuild the wasm in
+// `web/pkg` — after a Rust change run `just web-build` / `npm run build:wasm` first.
 export default defineConfig({
   testDir: "e2e",
   timeout: 60_000,
@@ -39,7 +45,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run preview -- --port 4173 --strictPort",
+    command: "npm run build && npm run preview -- --port 4173 --strictPort",
     url: "http://localhost:4173",
     timeout: 120_000,
     reuseExistingServer: !process.env.CI,
