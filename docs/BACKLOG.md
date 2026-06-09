@@ -149,20 +149,26 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   distinct globe view) now render muted (`.crumb.via`) so the bar reads "Globe › ⟨zoom path⟩ › L3".
   Labels/clicks unchanged (up-nav + crumb-hop invariant intact). A LIGHT pass — if the *jump itself*
   should feel more gradual, options are fewer levels (accept L2 curvature) or continuous altitude-LOD.
-- **⚖️ SEAM (#1) — DECISION PENDING (do NOT build both).** The antimeridian "vertical blur line" is
-  the flat, non-periodic world's left/right coastlines not meeting at lon ±180° (the `fadeMapEdges`
-  ocean wash is the visible band). Two real fixes, ONE should be chosen:
-  - **Rotate-to-ocean**: roll the equirect so the seam falls through the emptiest-ocean meridian.
-    Golden-NEUTRAL (WorldData unchanged; renders unhashed) BUT a coordinated, DATA-DERIVED longitude
-    offset shared across `render_globe_texture` + the patch render/placement + the web `uvToWorld`
-    drill mapping (+ plumbing the per-world offset to the web). Medium, drill-correctness risk. Hides
-    the seam where the chosen meridian is ocean; useless if land genuinely wraps.
-  - **Periodic world gen** (the proper fix): make the mesh wrap in longitude so noise/plates/erosion/
-    climate/hydrology are seam-free — seamless globe AND better 2D edges. But RE-ANCHORS EVERY
-    cross-platform WorldData golden and rethreads wrap-awareness through the whole pipeline — it
-    touches the determinism contract this project is built on. Multi-session.
-  - **Accept**: keep the fade. Fine unless the globe becomes a primary view.
-- **NEXT candidates:** the SEAM decision above; **1f** framing/altitude + fly-to→flight entry-ease
+- **⚖️ SEAM (#1) — DECIDED: PERIODIC WORLD GEN (the globe is now the primary view; geography genuinely
+  doesn't align at the seam, so hiding it isn't enough). Rotate-to-ocean is DROPPED.** Full plan:
+  **`docs/design/periodic-world-generation.md`** (mapped by a 7-reader understand-workflow + synthesized).
+  Make the mesh a CYLINDER (wrap x at lon ±180°, clamp y at the poles); adjacency-driven stages
+  (erosion/hydrology/continents) wrap for FREE, coordinate stages (noise/plates/climate/ocean) need
+  minimum-image dx. Phased 0–6. **GROWN COST (beyond the generic "re-anchor goldens"):** `connected_bodies`
+  walks `mesh.neighbors`, so a continent straddling the seam MERGES → the `CROSSING/SUNDERED/COLONIZE`
+  seed taxonomies must be RE-DERIVED (re-run the Step-0 lane probe), not re-anchored — a judgment-heavy
+  cost on `trade_claims`/`diffusion_claims`/`faith_crossing_claims`/etc. The Phase 5 FLIP
+  (`planet()`→periodic + golden re-anchor + seed re-derivation) is GATED on explicit user sign-off.
+  - **✅ Phase 0 (mesh ghost topology) — DONE 2026-06-08, byte-identical.** `MeshBuildParams.periodic`
+    + a two-pass ghost build (`mesh.rs::periodic_seam_edges`: relax real sites unchanged → re-triangulate
+    with seam ghosts at x±width, lloyd=0 → keep opposite-edge pairs within a few cell-widths → symmetrise).
+    The voronoice triangulation is NOT mirror-symmetric across the seam, so cross-seam edges are added to
+    BOTH endpoints (spike-proven). Differential test pins it (periodic → seam-crossing neighbours; flat → 0).
+    Production caller hardcodes `periodic: false` → ALL goldens (continent + planet `seed9`) byte-identical.
+  - **NEXT phases:** P1 plates/ocean dx-wrap → P2 noise cylinder `[R·cosθ, R·sinθ, lat]` (NOT cos-only — that
+    mirrors the planet) → P3 climate upwind-march periodicity (hardest, algorithmic) → P4 erosion/hydrology
+    seam-flow proof → **P5 FLIP (gated)** → P6 render/web (remove the seam fade, WRAP not clamp the lod window).
+- **NEXT candidates:** periodic-gen P1+ (above); **1f** framing/altitude + fly-to→flight entry-ease
   (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
   OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
 
