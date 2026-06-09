@@ -69,10 +69,10 @@ fn colonization_settles_unclaimed_far_shores_and_nowhere_else() {
     // conquest of an OWNED anchor. The signal ONLY colonization produces: a
     // `BorderChange{from:None, to:Some(P)}`. Pinned both directions: it fires where
     // a lane pairs an owner-who-can-sail-it with a persistently-unclaimed far
-    // anchor (COLONIZE_SEEDS), and NOT on 4/7/19 or the sundered seeds — which
-    // colonize nothing because no such pairing exists there (the far anchor is
-    // owned, OR unclaimed but behind a naval wall its owner can't sail — seed 4's
-    // cell 7719 — OR the lane is itself a sundered wall). The absent half guards
+    // anchor (COLONIZE_SEEDS), and NOT on the crossing seeds 19/26/30 or the
+    // sundered seeds — which colonize nothing because no such pairing exists there
+    // (the far anchor is owned, OR unclaimed but behind a naval wall its owner
+    // can't sail, OR the lane is itself a sundered wall). The absent half guards
     // against a carrier that colonizes owned land or ignores the naval gate.
     for &seed in COLONIZE_SEEDS {
         let world = generate_full(planet_params(seed));
@@ -81,7 +81,7 @@ fn colonization_settles_unclaimed_far_shores_and_nowhere_else() {
             "colonize seed {seed}: expected a from:None overseas settlement, found none"
         );
     }
-    for &seed in [4u64, 7, 19].iter().chain(SUNDERED_SEEDS.iter()) {
+    for &seed in [19u64, 26, 30].iter().chain(SUNDERED_SEEDS.iter()) {
         let world = generate_full(planet_params(seed));
         let colonies = overseas_colonizations(&world);
         assert!(

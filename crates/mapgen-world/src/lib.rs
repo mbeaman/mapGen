@@ -69,11 +69,13 @@ impl GenerateParams {
             cell_count: 18_000,
             plate_count: 32,
             nation_count: 12,
-            // FLIP DEFERRED: the `periodic` field + threading are banked, but setting this
-            // `true` re-anchors the planet golden + RE-DERIVES the CROSSING/SUNDERED/COLONIZE
-            // seed taxonomies (seam-straddling continents merge). That's the focused Phase 5
-            // pass — flip to `true` there. Until then planet worlds stay flat (goldens hold).
-            periodic: false,
+            // THE FLIP (Phase 5): the planet/globe is longitude-PERIODIC — a cylinder that
+            // wraps in x and clamps at the poles — so the sphere has no antimeridian seam.
+            // This re-anchored the planet golden (`seed9_planet_full`) and re-derived the
+            // CROSSING/SUNDERED/COLONIZE seed taxonomies (periodicity merges seam-straddling
+            // continents): see `mapgen-testsupport`'s seed constants. Continental worlds
+            // (`reference_params`, every other literal) stay flat (`periodic: false`).
+            periodic: true,
         }
     }
 }

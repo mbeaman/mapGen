@@ -7,10 +7,12 @@ use mapgen_render::{render, style::Style};
 use mapgen_testsupport::planet_params;
 use mapgen_world::generate_full;
 
-/// Seed 11 is the canonical multi-continent fixture and the only canonical planet
-/// seed with Strahler≥4 rivers (12 of them, 183 raw cells) — so the overview
-/// actually draws major rivers to simplify.
-const RIVER_SEED: u64 = 11;
+/// A canonical multi-continent crossing fixture (8 landmasses) whose periodic
+/// planet grows Strahler≥4 rivers (16 of them, 329 raw cells) — so the overview
+/// actually draws major rivers to simplify. (Was seed 11 pre-flip; under the
+/// periodic planet seed 11's drainage no longer reaches Strahler 4, so this moved
+/// to seed 26, which does — both `raw>0` and `drawn<raw` are re-confirmed.)
+const RIVER_SEED: u64 = 26;
 
 /// Raw vertex count the major rivers WOULD draw with no simplification: the sum of
 /// cells over Strahler≥4 rivers (cells ≥ 2), matching `render_major_rivers`' filter.
@@ -112,7 +114,7 @@ fn overview_major_rivers_are_visvalingam_simplified() {
     let raw = raw_river_points(&world);
     assert!(
         raw > 0,
-        "fixture precondition: seed 11 must have major rivers to simplify"
+        "fixture precondition: RIVER_SEED must have major rivers to simplify"
     );
 
     let svg = render(&world, Style::Planet).expect("planet renders");

@@ -31,20 +31,36 @@ pub const REFERENCE_SEED: u64 = 42;
 
 /// Planet seeds on which the beachhead carrier produces *earned* overseas
 /// holdings — a polity ends up controlling cells on ≥2 sizable landmasses,
-/// reached by a war crossing a sea lane its naval tech can sail. Earned-crossing
-/// counts observed when the carrier shipped: 11→4, 19→3, 7→2, 4→1.
+/// reached by a war crossing a sea lane its naval tech can sail.
+///
+/// RE-DERIVED for the periodic planet (Phase 5 flip): the planet is now a
+/// longitude-cylinder, so seam-straddling continents merge and the taxonomy
+/// shifts. A calibrated probe (reproduced the old flat constants exactly, then
+/// scanned the periodic worlds for the full conjunction — a `from:Some` conquest
+/// whose seized cell BORDERS A FOREIGN REALM, a faith crossing, AND an
+/// opened+severed trade route, all on ≥2 landmasses) kept 11/19 and replaced
+/// 4 (no longer conquers under periodicity) and 7 (its lone seizure is an
+/// isolated exclave bordering no foreign realm — the legibility check would be
+/// vacuous) with 26 (8 landmasses) and 30 (faith=3, trade=6). 19 is load-bearing
+/// for `trade_prosperity` (hardcoded fixture); 11 must stay first
+/// (`prosperity_overlay` uses `CROSSING_SEEDS[0]`).
 ///
 /// Asserted by the data-layer claim tests. If a seed here stops producing an
 /// earned crossing, that test goes red — which is the point.
-pub const CROSSING_SEEDS: &[u64] = &[11, 19, 7, 4];
+pub const CROSSING_SEEDS: &[u64] = &[11, 19, 26, 30];
 
-/// Planet seeds the Step-0 probe proved are *sundered*: no inter-continental
-/// lane is crossable at the world's naval tech, so no earned crossing can form.
-/// The deliberate complement of [`CROSSING_SEEDS`] — together they pin the lane
-/// gate in *both* directions. (A carrier that only ever fires is
-/// indistinguishable from one that always fires; the sundered set is what makes
-/// "earned" mean something.)
-pub const SUNDERED_SEEDS: &[u64] = &[23, 42];
+/// Planet seeds proved *sundered*: no inter-continental lane is crossable at the
+/// world's naval tech, so no earned crossing can form. The deliberate complement
+/// of [`CROSSING_SEEDS`] — together they pin the lane gate in *both* directions.
+/// (A carrier that only ever fires is indistinguishable from one that always
+/// fires; the sundered set is what makes "earned" mean something.)
+///
+/// RE-DERIVED for the periodic planet: 23 stays sundered (and must stay first —
+/// `trade_prosperity` uses `SUNDERED_SEEDS[0]`); 42 became a *crossing* seed
+/// under periodicity (a continent that was split at the old seam now merges into
+/// a reachable shore), so it was replaced by 10 (5 landmasses, full negation:
+/// no conquest, colony, faith crossing, or trade route).
+pub const SUNDERED_SEEDS: &[u64] = &[23, 10];
 
 /// Planet seeds on which the colonization carrier settles an UNCLAIMED far-shore
 /// anchor across a sea lane — a `from:None` overseas `BorderChange` (vs the
@@ -52,13 +68,13 @@ pub const SUNDERED_SEEDS: &[u64] = &[23, 42];
 /// an owner-who-can-sail-it with a *persistently* unclaimed far anchor (gen-time
 /// floor-drops never filled), so over the sim colonization reliably claims it.
 ///
-/// The absent direction — crossing seeds 4/7/19 and the [`SUNDERED_SEEDS`] —
-/// colonizes nothing, but NOT (only) because their far anchors are owned: a seed
-/// can have an unclaimed far anchor that simply sits behind a naval *wall* its
-/// owner can't sail (seed 4's cell 7719 is exactly this). What they lack is a
-/// lane that pairs an unclaimed far anchor with an owner whose naval clears the
-/// gate. So this set also guards the `min_naval` gate, not just "all owned".
-pub const COLONIZE_SEEDS: &[u64] = &[2, 5, 9, 11, 18];
+/// RE-DERIVED for the periodic planet: the flat colonizers (2/5/9/11) stop
+/// settling an unclaimed far shore once continents merge; only 18 carried over.
+/// The probe (colony present on ≥2 landmasses) picked 14/18/27/32. The absent
+/// direction — crossing seeds 19/26/30 and the [`SUNDERED_SEEDS`] — colonizes
+/// nothing: their far anchors are owned, or unclaimed but behind a naval *wall*
+/// the owner can't sail. So this set also guards the `min_naval` gate.
+pub const COLONIZE_SEEDS: &[u64] = &[14, 18, 27, 32];
 
 /// A connected land body must hold at least this many cells to count as a
 /// "sizable landmass"; smaller bodies are islets. Matches the threshold used

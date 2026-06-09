@@ -103,13 +103,16 @@ fn lane_avg_prosperity(world: &mapgen_core::WorldData) -> Vec<Option<f32>> {
 
 #[test]
 fn the_trade_lens_tints_each_lane_by_the_prosperity_it_connects() {
-    // Fixture: seed 19 (probe-picked) grows 4 crossable lanes whose connected-realm
-    // prosperity spans ~0.13→0.97 — wide enough that the richest and poorest lane
-    // land on visibly different ramp colours. Asserted for BOTH render styles: the
-    // planet `planet-trade` wash and the ornate `layer-trade` layer each tint via
-    // the SAME prosperity ramp their own wash uses (different stops, both pale→deep,
-    // so the *direction* holds across styles even though the exact hex differs).
-    let seed = 19u64;
+    // Fixture: seed 11 (probe-picked for the periodic planet) grows the most
+    // crossable lanes of any crossing seed, whose connected-realm prosperity spans
+    // wide enough that the richest and poorest lane land on visibly different ramp
+    // colours. Asserted for BOTH render styles: the planet `planet-trade` wash and
+    // the ornate `layer-trade` layer each tint via the SAME prosperity ramp their
+    // own wash uses (different stops, both pale→deep, so the *direction* holds
+    // across styles even though the exact hex differs). (Was seed 19 pre-flip;
+    // under the periodic planet seed 19's two lanes connect equally-prosperous
+    // realms — one ramp colour — so the fixture moved to the wider-spread seed 11.)
+    let seed = 11u64;
     assert!(
         CROSSING_SEEDS.contains(&seed),
         "fixture must be a crossing seed"

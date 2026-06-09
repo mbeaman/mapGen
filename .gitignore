@@ -5,6 +5,7 @@ Cargo.lock.bak
 # WASM build output
 /web/pkg
 /web/node_modules
+/node_modules
 /web/dist
 
 # Generated worlds & maps

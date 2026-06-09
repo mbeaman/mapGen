@@ -113,12 +113,13 @@ fn full_pipeline_golden_hash_matches_native_under_wasm() {
 /// A LANED planet seed pins the `Event::far_shore` tag byte-identical native↔wasm.
 /// seed 42 above is the laneless continental default — no carrier crosses water, so
 /// every `far_shore` stays `None` and is byte-invisible (`skip_serializing_if`), and
-/// that golden never actually exercises the tag. seed 9 is the canonical THREE-strand
-/// far shore (faith + colony + sword; the `mapgen-lore/tests/shore.rs` fixture), so
-/// its `far_shore` values fire from every gen carrier. Hashing the whole 18k-cell,
-/// divide-heavy planet world pins those tag values identical to the native golden
-/// (`seed9_planet_full.blake3.txt`) — closing the far_shore native↔wasm pin that was
-/// previously only structural.
+/// that golden never actually exercises the tag. seed 9 reaches a far shore by faith
+/// AND the sword (a two-strand shore under the periodic planet), so its `far_shore`
+/// values fire from those gen carriers. Hashing the whole 18k-cell, divide-heavy
+/// PERIODIC planet world (a longitude-cylinder — its mesh ghost topology + noise
+/// cylinder route every transcendental through `mapgen_core::fmath`, the very thing
+/// this test proves holds end-to-end) pins those tag values identical to the native
+/// golden (`seed9_planet_full.blake3.txt`).
 #[wasm_bindgen_test]
 fn planet_seed9_far_shore_golden_matches_native_under_wasm() {
     let world = generate_full(GenerateParams::planet(9));
