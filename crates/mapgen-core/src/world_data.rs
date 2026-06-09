@@ -297,6 +297,19 @@ pub struct MeshData {
     /// level-0 worlds serialize byte-identically (no golden change).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region: Option<[f32; 4]>,
+    /// True on a longitude-PERIODIC (cylinder) world: the mesh wraps in x — the
+    /// antimeridian (x=0 ↔ x=width) is one continuous meridian; latitude still clamps
+    /// at the poles. Coordinate-sampling stages (plates / noise / climate / ocean) read
+    /// this to wrap their x-deltas (`period = width`). Elided when false, so non-periodic
+    /// worlds serialize byte-identically (no golden change) — same trick as `region`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub periodic: bool,
+}
+
+/// `skip_serializing_if` predicate: a `false` bool is elided (keeps the byte stream — and
+/// the golden hash — identical for non-periodic worlds).
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl MeshData {

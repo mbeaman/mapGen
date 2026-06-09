@@ -47,6 +47,9 @@ pub struct Mesh {
     /// built with `periodic: true`. Augments the voronoi-derived adjacency; symmetric
     /// (each pair is added to BOTH endpoints in `neighbors`/`into_mesh_data`).
     pub seam_edges: Vec<(u32, u32)>,
+    /// Longitude-periodic (cylinder) mesh — carried into `MeshData.periodic` so the
+    /// coordinate stages know to wrap their x-deltas. `false` for sub-region meshes.
+    pub periodic: bool,
 }
 
 impl Mesh {
@@ -103,6 +106,7 @@ impl Mesh {
             region: None,
             voronoi,
             seam_edges,
+            periodic: params.periodic,
         }
     }
 
@@ -151,6 +155,7 @@ impl Mesh {
             // A drilled sub-region is always a continental (non-wrapping) view, even from
             // a planet parent — periodicity is root-only (see the design doc §3).
             seam_edges: Vec::new(),
+            periodic: false,
         }
     }
 
@@ -230,6 +235,7 @@ impl Mesh {
             neighbors,
             coast: vec![false; n],
             region: self.region,
+            periodic: self.periodic,
         }
     }
 }

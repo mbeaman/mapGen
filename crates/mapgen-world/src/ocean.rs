@@ -35,6 +35,10 @@ pub fn run(world: &mut WorldData) {
     let neighbors = &world.mesh.neighbors;
     let h = world.mesh.height.max(1.0);
     let half_h = h * 0.5;
+    // Periodic world → wrap the sea↔land x-delta at the seam (else a coast straddling
+    // the antimeridian reads as ~width away, flipping the warm/cold limb sign). `None`
+    // on a flat world → byte-identical legacy path.
+    let period = world.mesh.periodic.then_some(world.mesh.width);
 
     // Per sea-cell anomaly first: scaled by latitude band + which limb
     // of the gyre it sits on.
@@ -56,7 +60,11 @@ pub fn run(world: &mut WorldData) {
         let mut land_count = 0;
         for &j in &neighbors[i] {
             if elev[j as usize] > 0.0 && coast[j as usize] {
-                land_dx_sum += sites[j as usize][0] - sites[i][0];
+                let dx = sites[j as usize][0] - sites[i][0];
+                land_dx_sum += match period {
+                    Some(p) => crate::plates::wrap_dx(dx, p),
+                    None => dx,
+                };
                 land_count += 1;
             }
         }

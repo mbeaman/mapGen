@@ -55,6 +55,10 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
         });
     }
 
+    // Periodic (cylinder) world → wrap x-deltas at the antimeridian (the shorter way
+    // around). `None` on a flat world → byte-identical legacy path. `period = width`.
+    let period = mesh.periodic.then_some(mesh.width);
+
     // 3. Assign each cell to nearest plate center.
     let plate_id: Vec<PlateId> = mesh
         .sites
@@ -63,7 +67,7 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
             let (idx, _) = centers
                 .iter()
                 .enumerate()
-                .map(|(i, &c)| (i, sq_dist(s, c)))
+                .map(|(i, &c)| (i, sq_dist(s, c, period)))
                 .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
                 .unwrap();
             PlateId(idx as u32)
@@ -86,10 +90,16 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
             if pi == pj {
                 continue;
             }
-            // Normal points from j → i. Approximate with site delta.
+            // Normal points from j → i. Approximate with site delta. On a periodic
+            // world the x-component takes the wrapped (minimum-image) delta, or a
+            // seam-straddling pair (x≈width vs x≈0) gets a huge, sign-INVERTED normal
+            // → the stress sign flips at the antimeridian.
             let si = mesh.sites[i];
             let sj = mesh.sites[j];
-            let nx = si[0] - sj[0];
+            let nx = match period {
+                Some(p) => wrap_dx(si[0] - sj[0], p),
+                None => si[0] - sj[0],
+            };
             let ny = si[1] - sj[1];
             let nlen = fmath::hypot(nx, ny).max(1e-6);
             let nx = nx / nlen;
@@ -127,10 +137,27 @@ pub fn generate(mesh: &MeshData, plate_count: usize, rng: &mut ChaCha8Rng) -> Te
 }
 
 #[inline]
-fn sq_dist(a: [f32; 2], b: [f32; 2]) -> f32 {
-    let dx = a[0] - b[0];
+fn sq_dist(a: [f32; 2], b: [f32; 2], period: Option<f32>) -> f32 {
+    let dx = match period {
+        Some(p) => wrap_dx(a[0] - b[0], p),
+        None => a[0] - b[0],
+    };
     let dy = a[1] - b[1];
     dx * dx + dy * dy
+}
+
+/// Minimum-image SIGNED x-delta on a periodic (cylinder) world — the shorter way around
+/// (`dx ± period` once it's more than half a turn away), direction preserved. Identity on
+/// a flat world (reached only when `period` is `Some`). Pure f32 add/sub/compare (no
+/// transcendentals) → cross-platform stable, like the rest of the seam-wrap arithmetic.
+pub(crate) fn wrap_dx(dx: f32, period: f32) -> f32 {
+    if dx > period * 0.5 {
+        dx - period
+    } else if dx < -period * 0.5 {
+        dx + period
+    } else {
+        dx
+    }
 }
 
 fn smooth(neighbors: &[Vec<u32>], values: &[f32], passes: usize, weight: f32) -> Vec<f32> {
@@ -153,4 +180,52 @@ fn smooth(neighbors: &[Vec<u32>], values: &[f32], passes: usize, weight: f32) ->
         std::mem::swap(&mut current, &mut next);
     }
     current
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mapgen_core::{Stage, StageRng};
+    use mapgen_geom::{Mesh, MeshBuildParams};
+    use rand::SeedableRng;
+
+    #[test]
+    fn wrap_dx_is_signed_minimum_image() {
+        let p = 100.0;
+        assert_eq!(wrap_dx(10.0, p), 10.0); // within half a turn → unchanged
+        assert_eq!(wrap_dx(-10.0, p), -10.0);
+        assert_eq!(wrap_dx(99.0, p), -1.0); // near +width → the short way is -1
+        assert_eq!(wrap_dx(-99.0, p), 1.0);
+        assert_eq!(wrap_dx(60.0, p), -40.0); // past half a turn → wraps negative
+    }
+
+    fn mesh(periodic: bool) -> mapgen_core::world_data::MeshData {
+        let mut rng = StageRng::new(7).stream(Stage::Mesh);
+        Mesh::build(
+            MeshBuildParams {
+                width: 256.0,
+                height: 128.0,
+                target_cells: 600,
+                lloyd_iterations: 2,
+                periodic,
+            },
+            &mut rng,
+        )
+        .into_mesh_data()
+    }
+
+    // Phase 1: on a periodic world the nearest-plate metric wraps the seam, so a cell
+    // near x=width can join a plate centered near x=0. The two meshes have IDENTICAL
+    // sites (the ghost rebuild draws no RNG) and the same plate centers (same seed), so
+    // the ONLY difference is the wrapped metric — any plate_id difference is caused by
+    // periodicity alone. Drop `period` from sq_dist → the two become equal → this reds.
+    #[test]
+    fn periodic_plate_assignment_wraps_the_seam() {
+        let periodic = generate(&mesh(true), 12, &mut ChaCha8Rng::seed_from_u64(7));
+        let flat = generate(&mesh(false), 12, &mut ChaCha8Rng::seed_from_u64(7));
+        assert_ne!(
+            periodic.plate_id, flat.plate_id,
+            "wrapped metric changed no assignment"
+        );
+    }
 }
