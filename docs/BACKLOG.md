@@ -88,12 +88,23 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   real, ≥2 distinct); e2e pins the consumer (label visible+named on drill, hidden on reset);
   the projection/positioning is screenshot-verified (a sepia pill for contrast). CLAIMS row
   added.
-- **NEXT: 1c — deeper drilling in 3D.** From a patch, a click should drill DEEPER and stay
-  in 3D: patch raycast → `patchLocalUvToWorld` (pure, new in `sector.ts`/`camera.ts`) →
-  `childSectorAt` → `navTo(child)` → rebuild a smaller patch. The `navTo` globe guard
-  already handles L>0→L>0 (1a fix), and `pickable` must re-arm via an `onPatchPick`
-  callback at level≥1 (1a left a single drill, pickable=false while drilled). See the
-  design doc's "Increment 1c".
+- **1c (deeper 3D drilling) — DONE 2026-06-08.** Clicking the high-detail patch drills one
+  level finer and rebuilds a smaller patch, staying in 3D (verified L0→L2→L3 with the chained
+  breadcrumb + the billboard persisting). New pure `patchUvToWorld` (`sector.ts`; patch
+  `hit.uv` → world point) pinned by corner/containment units + a `camera.test.ts` raycast
+  round-trip; `globe.ts` got `onPatchPick` + a pointerup restructure (drilled click → patch
+  raycast → deeper drill; overview click → the 1a base-sphere flyTo); `main.ts` wires
+  `onPatchPick`→`patchUvToWorld`→`childSectorAt`→`navTo` (the 1a `if(globeScale)` guard
+  already handles L>0→L>0). Render-only, no Rust/golden change. CLAIMS row added.
+- **NEXT — the foundation (1a–1c) is complete; two paths from here:**
+  1. **Streaming engine ST-1 (multi-patch cache)** — the big next step per the locked
+     continuous-LOD addendum: a bounded LRU of in-view patches over the base globe, the pure
+     `desiredSectors` selector (consuming the deferred `getCameraState` hook), reconcile +
+     dispose. This is where the "detail follows on settle" v1 begins. See the streaming addendum.
+  2. **Foundation polish first (smaller):** 1e lenses-on-patch (a lens toggle re-textures the
+     patch — currently a dead path at level≥1), 1f framing/altitude tuning + the fly-to→flight
+     entry-ease (the deferred 1a/1b cosmetic snap). 1d up-nav is already largely covered (the
+     intermediate-crumb hop rebuilds the patch).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
