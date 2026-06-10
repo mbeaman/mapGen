@@ -221,6 +221,20 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   prefetch STAY GATED; the unlock is now precisely known: **worker-side wasm rasterization**
   (resvg/tiny-skia, fontless for globe tiles) shipping RGBA instead of SVG strings — a fair-sized arc,
   revival-triggered by motion-jank becoming the top complaint.
+- **✅ DRILL PRECISION + SECTOR SEAMS — DONE 2026-06-10 (user-reported, both reproduced + measured).**
+  (1) "Zooming into the wrong spots": the camera centred on the containing SECTOR's centre, not the click
+  — measured 25.2° off at L3 (fly to your click, then lurch to the sector centre; a label floating over
+  open ocean with the clicked land at the screen edge). Fixed: `navTo(target, focus)` threads the click's
+  world point to the camera (sector keeps level/breadcrumb/altitude only) + picks use the exact `hit.point`
+  (`unitToUv`) instead of the barycentric `hit.uv` (~4° off mid-triangle). Standing e2e precision contract:
+  land within 1° (mutation-verified red at 22.5°). (2) "Sharp straight lines where nature shifts": TWO
+  mechanisms — (a) DOMINANT: the 5×5 stream window was smaller than L3's visible cap, so the crisp-patch /
+  blurry-base boundary cut across the view → window 3 (7×7), caps 52/208MB; (b) DATA: climate fields were
+  unpinned across sector seams (elevation was) → biomes quantized the disagreement into straight-line class
+  swaps → `scale.rs::pin_climate_to_parent` (87%→92% worst-seam agreement, mutation-verified;
+  `seed42_sector` golden re-anchored, wasm 5/5). Screenshot-verified continuous terrain. RESIDUAL (named):
+  half-texel edge fringes at patch boundaries (LinearFilter+ClampToEdge, no bleed gutter) — hairlines only;
+  revival trigger: visible grid lines at high zoom after the above two fixes.
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
