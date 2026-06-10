@@ -143,7 +143,7 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
       if (busy || !hasWorld || !globeScale || nav.level === 0) return;
       const { x, y } = uvToWorld(u, v, worldW, worldH);
       const child = childSectorAt(x, y, nav.level, worldW, worldH, MAX_LEVEL);
-      if (child) navTo(child);
+      if (child) navTo(child, { x, y }); // centre on the click, not the child sector centre
     });
     // Streaming (ST-1): every time the flight camera settles (after a drill / pan /
     // zoom), reconcile the in-view patch set — load what entered view, evict what
@@ -159,7 +159,7 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
 // the ring too, and a subsequent pan lands on already-rendered detail instead of waiting
 // for it. The single worker still rasterizes one tile at a time (~100ms), so a fast fling
 // past the ring lags until it catches up — full during-motion streaming is the ST-5 spike.
-const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 2 };
+const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 3 }; // 7×7: cover the L3 visible cap (see patchcache.ts caps note)
 const CACHE_CFG = { maxPatches: MAX_LIVE_PATCHES, maxBytes: MAX_TEXTURE_BYTES, estBytes: ESTIMATED_PATCH_BYTES };
 const pendingTiles = new Set<string>(); // sector keys with a refineTile in flight
 
@@ -601,8 +601,9 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
           // The 3D globe zooms TOWARD THE CLICK at a fixed sane level — not the
           // continent centroid + size (which landed every drill on the continent's
           // middle and, for a big continent, made a ~quarter-globe distorted patch).
-          // Deeper clicks (1c) go +1 from here.
-          navTo(globeDrillTarget(msg.x, msg.y, worldW, worldH));
+          // The click point is the camera focus too (the sector centre snap put the
+          // camera up to half a sector from the click). Deeper clicks (1c) go +1.
+          navTo(globeDrillTarget(msg.x, msg.y, worldW, worldH), { x: msg.x, y: msg.y });
         } else {
           const level = continentDrillLevel(msg.info.cell_count, msg.info.total_cells, MAX_LEVEL);
           navTo(sectorAt(msg.info.cx, msg.info.cy, level, worldW, worldH));
@@ -610,7 +611,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       } else {
         regionName = ""; // sea / speck grid-drill — no grounded landmass name
         const child = childSectorAt(msg.x, msg.y, nav.level, worldW, worldH, MAX_LEVEL);
-        if (child) navTo(child);
+        if (child) navTo(child, { x: msg.x, y: msg.y });
       }
       break;
     }
@@ -798,7 +799,13 @@ const requestRefine = () => {
 
 // Navigate to an explicit sector (breadcrumb / up). Re-refines from the seed —
 // sectors are stateless, so this never needs the parent to be cached.
-const navTo = (target: Sector) => {
+// `focus` is the WORLD-SPACE point the user actually clicked (when the nav came
+// from a click): the globe camera centres on IT, not the containing sector's
+// geometric centre. Without it (breadcrumb hops, programmatic nav) the sector
+// centre is the only sensible target. THE CONTRACT: click = zoom toward exactly
+// that point — a sector-centre snap at L3 put the camera up to ~25° (half a
+// sector) from the click, marooning the view over the wrong content.
+const navTo = (target: Sector, focus?: { x: number; y: number }) => {
   if (busy || !hasWorld) return;
   // Globe mode: EVERY navigation stays on the sphere (1a) — there is no globe→2D
   // path. The guard must catch all globe-mode hops, not just those touching level 0:
@@ -822,10 +829,17 @@ const navTo = (target: Sector) => {
       setStatus("Globe.", "ok");
     } else {
       // Drill STAYS on the globe: fly into a free-fly camera over the region on the
-      // same sphere — no 2D handoff. Altitude frames the sector by its angular
-      // (longitude) span: deeper sectors → closer.
+      // same sphere — no 2D handoff. The camera centres on the CLICK POINT when the
+      // nav came from one (focus), falling back to the sector centre for clickless
+      // navs (crumb hops). The sector still defines the refine level, breadcrumb,
+      // and framing altitude — but where you LOOK is where you POINTED. Streaming
+      // doesn't care: desiredSectors windows around whatever sub-point the camera
+      // has. Altitude frames the sector by its angular (longitude) span: deeper
+      // sectors → closer.
       const rc = sectorRect(target, worldW, worldH);
-      const { lon, lat } = worldToLonLat(rc.x0 + rc.w / 2, rc.y0 + rc.h / 2, worldW, worldH);
+      const fx = focus?.x ?? rc.x0 + rc.w / 2;
+      const fy = focus?.y ?? rc.y0 + rc.h / 2;
+      const { lon, lat } = worldToLonLat(fx, fy, worldW, worldH);
       // Frame the sector to fill the view, getting CLOSER each level so the globe
       // visibly GROWS as you zoom in (~1.4× the sector's angular span; the previous
       // formula clamped flat at shallow levels so zooming barely changed distance).
@@ -878,7 +892,7 @@ const drillAt = (wx: number, wy: number) => {
     return;
   }
   const child = childSectorAt(wx, wy, nav.level, worldW, worldH, MAX_LEVEL);
-  if (child) navTo(child);
+  if (child) navTo(child, { x: wx, y: wy }); // centre the camera on the click, not the sector
 };
 
 // Treat a near-stationary pointer press as a click (drill in); a drag pans.

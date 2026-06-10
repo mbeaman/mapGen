@@ -65,6 +65,19 @@ export function unitToLonLat(u: Vec3): { lon: number; lat: number } {
   };
 }
 
+/// Texture (u,v) for a unit direction on the sphere, in the SAME convention as
+/// the three.js `SphereGeometry` uv that `uvToWorld` consumes (u wraps longitude
+/// from lon -π at u=0; v=1 at the north pole). EXACT — used by the click picks in
+/// place of the raycaster's `hit.uv`, which is BARYCENTRICALLY INTERPOLATED
+/// across the sphere mesh's flat triangles (64×48 segments ⇒ 5.6°×3.75° faces)
+/// and deviated up to ~4° from the true surface point. `hit.point.normalize()`
+/// is geometrically exact; this converts it to the trusted uv space. Pinned by
+/// the round-trip test against `lonLatToUnit` + `uvToWorld`.
+export function unitToUv(p: Vec3): { u: number; v: number } {
+  const { lon, lat } = unitToLonLat(p);
+  return { u: (lon + Math.PI) / (2 * Math.PI), v: (lat + Math.PI / 2) / Math.PI };
+}
+
 /// (lon, lat) in radians for an equirectangular world point — the inverse of
 /// `sector.ts` `latLonToWorld`.
 export function worldToLonLat(

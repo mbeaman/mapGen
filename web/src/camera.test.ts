@@ -8,6 +8,7 @@ import {
   lonLatToUnit,
   panSubPoint,
   sectorPatchParams,
+  unitToUv,
   worldToLonLat,
 } from "./camera";
 import { latLonToWorld, patchUvToWorld, ROOT, sectorRect, uvToWorld } from "./sector";
@@ -296,5 +297,22 @@ describe("lerpPose (1f entry-ease)", () => {
     near(over.position[0], 1.2);
     const under = lerpPose(a, b, -0.3);
     near(under.position[2], 3.6);
+  });
+});
+
+describe("unitToUv (precision pick)", () => {
+  it("round-trips lonLatToUnit → unitToUv → uvToWorld ≡ latLonToWorld", () => {
+    for (const [lon, lat] of [
+      [-Math.PI / 2, 0],
+      [0.7, 0.4],
+      [-2.8, -0.9],
+      [3.0, 1.1],
+    ]) {
+      const { u, v } = unitToUv(lonLatToUnit(lon, lat));
+      const viaUv = uvToWorld(u, v, W, H);
+      const direct = latLonToWorld(lat, lon, W, H);
+      near(viaUv.x, direct.x, 1e-3);
+      near(viaUv.y, direct.y, 1e-3);
+    }
   });
 });

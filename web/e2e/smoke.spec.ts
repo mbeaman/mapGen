@@ -404,6 +404,9 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // Remove the entryEase capture in enterRegion → never set → red.
   expect(Number(await canvas.getAttribute("data-entry-eases"))).toBeGreaterThan(0);
 
+  // (The drill-precision contract lives in its own test below — this test's
+  // earlier drag-rotate makes the click ray camera-orientation-dependent here.)
+
   // 1b: the refined sector lands on a curved high-detail patch over the base globe
   // — `data-patch=<level>` is set ONLY by globe.showPatch, and `data-patch-textures`
   // is its own upload counter (not the base sphere's `data-textures`). This restores
@@ -443,6 +446,32 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // ...AND narrate is re-enabled (a drill disables it — no sector chronicle; the
   // 1b patch path left it stuck disabled on return until this was fixed).
   await expect(page.locator("#narrate")).toBeEnabled();
+});
+
+// THE DRILL-PRECISION CONTRACT: the camera centres on the CLICK POINT, not the
+// containing sector's centre. Fresh page (NO prior drag — the camera must be at
+// the default overview pose (0,0,3.6)→origin, where a dead-centre click rays to
+// exactly the sphere point (0,0,1) = lon -π/2, lat 0). The flight sub-point must
+// land there within 1°. The old behaviour quantized the camera to the L3 sector
+// centre — measured 25.2° off (lon -67.5°, lat -11.2°), marooning the view over
+// the wrong content with the clicked land shoved to the screen edge. Revert
+// navTo's focus to the sector centre → ~25° → red; a barycentric-uv pick
+// (hit.uv instead of the exact hit.point) drifts mid-triangle clicks too.
+test("a globe drill lands WHERE you clicked — within a degree, not a sector-centre away", async ({
+  page,
+}) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  const subLon = Number(await canvas.getAttribute("data-sub-lon"));
+  const subLat = Number(await canvas.getAttribute("data-sub-lat"));
+  const dLon = Math.abs(((subLon + Math.PI / 2 + Math.PI) % (2 * Math.PI)) - Math.PI);
+  expect((dLon * 180) / Math.PI).toBeLessThan(1);
+  expect((Math.abs(subLat) * 180) / Math.PI).toBeLessThan(1);
 });
 
 // Increment 5: the style control is locked on the globe (the sphere wears the

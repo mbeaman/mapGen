@@ -38,6 +38,7 @@ import {
   lerpPose,
   lonLatToUnit,
   panSubPoint,
+  unitToUv,
   type PatchParams,
 } from "./camera";
 import type { CamState } from "./lod";
@@ -520,23 +521,30 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     );
     raycaster.setFromCamera(ndc, camera);
     // DRILLED (a patch set is shown): a click drills DEEPER (1c). Raycast the base
-    // sphere (always present, radius 1) for the clicked surface uv → uvToWorld →
-    // childSectorAt (in the callback) — the same trusted convention the overview
-    // pick uses, independent of which streamed patch happens to cover the click.
+    // sphere (always present, radius 1) and derive the surface uv from the EXACT
+    // hit point (`unitToUv`) — NOT the raycaster's `hit.uv`, which is interpolated
+    // across the mesh's flat triangles and lands up to ~4° off (a click is a
+    // precision contract). Same trusted convention the overview pick uses,
+    // independent of which streamed patch happens to cover the click.
     if (flight && patchPickCb && patches.size > 0) {
       const phit = raycaster.intersectObject(sphere)[0];
-      if (phit?.uv) patchPickCb(phit.uv.x, phit.uv.y);
+      if (phit?.point) {
+        const pd = phit.point.clone().normalize();
+        const { u: pu, v: pv } = unitToUv([pd.x, pd.y, pd.z]);
+        patchPickCb(pu, pv);
+      }
       return;
     }
     // OVERVIEW: a click flies to the clicked point + drills from the base sphere
     // (1a). Gated on pickable (false while drilled) and not already flying.
     if (!pickCb || !pickable || flyTo) return;
     const hit = raycaster.intersectObject(sphere)[0];
-    if (!hit?.uv || !hit.point) return; // clicked the backdrop, not the sphere
-    const u = hit.uv.x;
-    const v = hit.uv.y;
-    // Reading `hit.point` (world space) is independent of the UV → no hemisphere flip.
+    if (!hit?.point) return; // clicked the backdrop, not the sphere
+    // `hit.point` (world space) is geometrically exact; `hit.uv` is barycentric
+    // across flat triangles (up to ~4° off on the 64×48 sphere) — derive uv from
+    // the point so the drill lands precisely where the user clicked.
     const dir = hit.point.clone().normalize();
+    const { u, v } = unitToUv([dir.x, dir.y, dir.z]);
     const dist = Math.max(controls.minDistance + 0.3, camera.position.length() * 0.55);
     controls.enabled = false; // hand the camera to the fly animation
     flyTo = {
