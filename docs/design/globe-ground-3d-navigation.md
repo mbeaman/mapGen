@@ -381,12 +381,21 @@ worker pool — see Recommended scope reduction.
 > main-thread stall ceiling the settle-fill design absorbs.
 >
 > **Consequence:** continuous-follow + prefetch STAY GATED — but the unlock is now
-> known precisely: **worker-side wasm rasterization** (resvg/tiny-skia compiled to
-> wasm in the worker — pure-Rust crates this repo already uses natively in
-> `visual_regression.rs`; the globe tile style is FONTLESS so no fontdb is needed),
-> shipping RGBA pixels / ImageBitmaps across the worker boundary instead of SVG
-> strings, leaving the main thread only the GPU texture upload. That is a fair-sized
-> arc (a raster path in the worker bundle + a transfer protocol), not a flag-flip.
+> known precisely: **worker-side rasterization**, in one of two forms (NB the NO-GO
+> above is specifically SVG-BLOB DECODE; `OffscreenCanvas` 2D itself works in
+> workers — the PNG control proved the path):
+> (a) **wasm raster** — resvg/tiny-skia compiled into the worker wasm (pure-Rust
+> crates already used natively in `mapgen-cli/tests/visual_regression.rs`; the globe
+> tile style is FONTLESS so no fontdb) — keeps rendering in Rust, ~1MB+ bundle;
+> (b) **OffscreenCanvas-2D primitive painting** — the worker paints the globe
+> style's primitive set (cell polygons, coast/river strokes, washes) directly via
+> Canvas2D calls, zero bundle cost, but a SECOND implementation of the style (drift
+> risk — would need a cross-renderer pin, the Mollweide-vector-grid lesson) and an
+> UNTESTED raster cost (worker Canvas2D fill of ~2k polys may approach the same
+> 312ms — but off the main thread, which is the actual point).
+> Either way the transfer protocol becomes RGBA/ImageBitmap instead of SVG strings,
+> leaving the main thread only the GPU texture upload. A one-afternoon spike timing
+> (b) on the real primitive set is the cheap decider before committing to either.
 > Revival trigger: continuous-follow/prefetch get prioritized, or profiling shows
 > settle-fill jank degrading the primary navigation experience.
 
