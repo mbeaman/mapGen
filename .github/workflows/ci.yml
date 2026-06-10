@@ -32,6 +32,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+  perf-gate:
+    # The perf budget gate (quality hunt #4): perf_baseline --check existed since
+    # Phase 6 but NO CI step ever ran it — perf could regress 50% per component,
+    # silently, forever. Budgets are anchored to the dev box × 1.5; CI runners are
+    # slower and noisier, so the gate runs with PERF_BUDGET_SCALE=2.0 (a real
+    # regression still trips it; hardware variance doesn't).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Perf budget check (scaled for CI hardware)
+        run: PERF_BUDGET_SCALE=2.0 cargo run --release -p mapgen-world --example perf_baseline -- --check
+
   build-wasm:
     runs-on: ubuntu-latest
     steps:

@@ -86,33 +86,40 @@ fn ornate_render_rasterizes_to_a_sane_image() {
         mean
     );
 
-    // Generous thresholds: catch catastrophic regressions, never flake on AA.
+    // BASELINE BANDS (quality hunt #5): the original floors only caught
+    // CATASTROPHIC failure — a renderer that lost 99% of its water (0.0213 →
+    // 0.004) still passed `water > 0.003`. These bands pin each metric to its
+    // RECORDED value ± a generous relative tolerance (±40–50%, far beyond any
+    // cross-machine AA/font-hinting wobble on million-pixel aggregates, well
+    // inside a real layer loss). Recorded on seed 42 @ 4000 cells:
+    // opaque=1.000 warm=0.698 dark=0.0597 water=0.0213 var=1424 mean=148.
+    // A legitimate art-direction change re-records the constants.
     assert!(
-        frac(opaque) > 0.8,
+        frac(opaque) > 0.95,
         "image is not opaque ({:.3}) — render or rasterize failed",
         frac(opaque)
     );
     assert!(
-        variance > 300.0,
-        "image is ~uniform (variance {variance:.0}) — likely blank"
+        (700.0..=2900.0).contains(&variance),
+        "variance {variance:.0} outside the recorded band (~1424 ±~2×) — blank or noise-bombed"
     );
     assert!(
-        (80.0..=200.0).contains(&mean),
-        "mean luminance {mean:.0} outside the parchment midtone band — wrong palette?"
+        (110.0..=190.0).contains(&mean),
+        "mean luminance {mean:.0} outside the recorded parchment band (~148 ±25%)"
     );
     assert!(
-        frac(warm) > 0.4,
-        "parchment (warm-toned) background appears missing ({:.3} warm pixels)",
+        (0.40..=0.95).contains(&frac(warm)),
+        "warm-pixel fraction {:.3} outside the recorded band (~0.70 ±40%) — parchment lost or flooded",
         frac(warm)
     );
     assert!(
-        frac(dark) > 0.005,
-        "no ink / linework rendered ({:.4} dark pixels)",
+        (0.030..=0.120).contains(&frac(dark)),
+        "ink fraction {:.4} outside the recorded band (~0.060 ±50%) — linework lost or smeared",
         frac(dark)
     );
     assert!(
-        frac(water) > 0.003,
-        "no water rendered ({:.4} blue pixels)",
+        (0.010..=0.045).contains(&frac(water)),
+        "water fraction {:.4} outside the recorded band (~0.021 ±50%+) — the ocean layer regressed",
         frac(water)
     );
 }

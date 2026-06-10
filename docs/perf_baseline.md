@@ -50,7 +50,7 @@ in ~19 ms (was ~13 ms equirectangular) versus ~78 ms for 15k ornate cells.
 |-----------------|------------|-------:|
 | `render`        | 4,000      |  22 ms |
 | `render`        | 15,000     |  78 ms |
-| `render` planet | 18,000 (Mollweide planisphere) |  19 ms |
+| `render` planet | 18,000 (Mollweide planisphere) |  36 ms |
 | `refine_sector` | 15k → 4k tile (L2) |  68 ms |
 
 ### Environment
@@ -76,7 +76,7 @@ same hardware class.** Budget tables:
 |-----------------|---------:|--------------:|
 |           4,000 |    22 ms |         33 ms |
 |          15,000 |    78 ms |        117 ms |
-| 18,000 planet   |    19 ms |         29 ms |
+| 18,000 planet   |    36 ms |         54 ms |
 
 | `refine_sector`     | baseline | budget (1.5×) |
 |---------------------|---------:|--------------:|

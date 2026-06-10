@@ -247,6 +247,20 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   (mutation-verified red at 55%). Visual: mid-streaming vs settled drill screenshots near-identical
   (content sharpens in place); ornate 2D drill keeps mountains/forest/coast character. `seed42_sector`
   golden re-anchored; wasm 5/5; tiles also stream FASTER (no per-tile erosion).
+- **✅ QUALITY-HUNT BATCH (13 findings) — DONE 2026-06-10.** Systematic audit (26-agent hunt + empirical
+  probes, all adversarially verified; 7 candidates refuted) then fixed ALL verified findings: (1) temporal
+  snap — drilling from a scrubbed past year re-textures to the present (tiles render the present; mixed-era
+  content + lying label before); (2) antimeridian DRILLED seam — parent sampling is wrap-aware
+  (min-image x + unclamped sampling halo; 0%→≥85% biome agreement at the wrap); (3) polar cap — rows
+  centred beyond ±75° never stream (wedge-streak tiles → faded base instead); (4) CI perf gate (NEW
+  ci.yml job, PERF_BUDGET_SCALE=2.0; first run caught the intrinsic periodic+naming planet-render
+  19→36ms — re-anchored with causes); (5) visual-regression floors → recorded bands; (6) timeout-audit
+  (suite has ONE justified bare sleep; ready-race fixed by #8); (7) patch aspect tolerance → derived
+  quantization bound (~3%, was 0.25); (8) "Globe ready" only after the texture lands (race-free e2e read);
+  (9) re-drill round-trip contract e2e; (10) drill progress affordance ("Loading detail… N tiles" +
+  `data-pending-tiles`, drains-to-zero e2e); (11) lens "Applying lens…" affordance; (12) end-to-end
+  periodic continuity covered by the wrap-seam test (12≈#2); (13) nested-refinement reproducibility = (9).
+  All mutation- or review-verified; goldens: `seed42_sector` unchanged (flat parents byte-identical).
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in

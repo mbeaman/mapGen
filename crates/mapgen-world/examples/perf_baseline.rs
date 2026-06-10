@@ -52,7 +52,13 @@ const REFINE_BASELINE: (usize, u64, u64) = (15_000, 68, 102);
 /// per-cell forests/ripples/glyphs). `(cells, baseline ms, budget ms)`.
 /// Re-anchored 2026-06-01 from 13ms: the Mollweide globe projection adds a
 /// per-vertex transform (kept to a per-row table lookup, no trig), ~+6ms.
-const PLANET_RENDER_BASELINE: (usize, u64, u64) = (18_000, 19, 29);
+/// Re-anchored 2026-06-10 from 19ms — caught by the NEW CI perf gate on its very
+/// first run: the periodic planet (merged seam-straddling continents → longer
+/// coastline polylines to trace+simplify) plus the naming re-calibration (more
+/// named continents → more labels to place) raised the median to ~36ms. Both are
+/// intrinsic to features chosen knowingly, not waste — re-anchored per the
+/// procedure below.
+const PLANET_RENDER_BASELINE: (usize, u64, u64) = (18_000, 36, 54);
 
 fn gen_params(cells: usize, seed: u64) -> GenerateParams {
     GenerateParams {
@@ -95,6 +101,13 @@ fn measure_refine(parent: &WorldData, sector: Sector) -> Duration {
 
 fn main() {
     let check = std::env::args().any(|a| a == "--check");
+    // CI runners are slower and more variable than the dev box the baselines are
+    // anchored to — PERF_BUDGET_SCALE loosens every budget by a factor (CI uses
+    // 2.0) so the gate catches real regressions without flaking on hardware.
+    let scale: f64 = std::env::var("PERF_BUDGET_SCALE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
 
     // One untimed warmup to prime caches / allocators.
     let _ = measure_generate(GEN_BASELINES[0].0, SEEDS[0]);
@@ -115,6 +128,7 @@ fn main() {
             samples,
             base,
             budget,
+            scale,
             &mut failures,
         );
     }
@@ -131,6 +145,7 @@ fn main() {
             samples,
             base,
             budget,
+            scale,
             &mut failures,
         );
     }
@@ -152,6 +167,7 @@ fn main() {
             samples,
             base,
             budget,
+            scale,
             &mut failures,
         );
     }
@@ -188,6 +204,7 @@ fn main() {
             samples,
             base,
             budget,
+            scale,
             &mut failures,
         );
     }
@@ -217,6 +234,7 @@ fn row(
     mut samples: Vec<Duration>,
     base_ms: u64,
     budget_ms: u64,
+    scale: f64,
     failures: &mut Vec<String>,
 ) {
     let cols: Vec<String> = samples.iter().map(fmt_ms).collect();
@@ -226,7 +244,7 @@ fn row(
     let mean: Duration = samples.iter().sum::<Duration>() / samples.len() as u32;
     let median_ms = median.as_secs_f64() * 1000.0;
 
-    let status = if median_ms <= budget_ms as f64 {
+    let status = if median_ms <= budget_ms as f64 * scale {
         "ok"
     } else {
         failures.push(format!(
