@@ -370,6 +370,26 @@ under headless SwiftShader before commitment** (not reliably supported
 cross-engine). This is the same evidence-gated, anti-Refinery shape as the
 worker pool — see Recommended scope reduction.
 
+> **ST-5 SPIKE VERDICT (2026-06-09, Chromium 148 / Playwright + SwiftShader, the
+> e2e environment): NO-GO on the OffscreenCanvas path.** `createImageBitmap(svgBlob)`
+> throws `InvalidStateError: The source image could not be decoded` on BOTH the main
+> thread and a worker (a PNG control blob decodes fine in the worker, so the missing
+> capability is specifically SVG ImageBitmap decode — Chromium has never implemented
+> it; the harness exercised a realistic 212 KB / 2000-polygon tile SVG). The current
+> main-thread path was timed in the same run: `img.decode()` 19.5 ms (lazy for SVG)
+> + **312 ms in `drawImage`** — the actual rasterization, and the per-texture
+> main-thread stall ceiling the settle-fill design absorbs.
+>
+> **Consequence:** continuous-follow + prefetch STAY GATED — but the unlock is now
+> known precisely: **worker-side wasm rasterization** (resvg/tiny-skia compiled to
+> wasm in the worker — pure-Rust crates this repo already uses natively in
+> `visual_regression.rs`; the globe tile style is FONTLESS so no fontdb is needed),
+> shipping RGBA pixels / ImageBitmaps across the worker boundary instead of SVG
+> strings, leaving the main thread only the GPU texture upload. That is a fair-sized
+> arc (a raster path in the worker bundle + a transfer protocol), not a flag-flip.
+> Revival trigger: continuous-follow/prefetch get prioritized, or profiling shows
+> settle-fill jank degrading the primary navigation experience.
+
 **In scope (v1):** view-driven LOD selection, a bounded patch cache,
 settle-driven scheduling with single-worker serialization, inter-patch seams
 (geometric free, coast measured + contingently stitched), pixel-free

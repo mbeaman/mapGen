@@ -207,9 +207,25 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
     seed 4→8, exclave seed 15→26). Drilled-seam stitch confirmed end-to-end. The graticule needed no
     change (it's the placeholder, not the seam); `refine_sector` correctly stays `periodic:false` (the seam
     is always a sector boundary, so no sector contains it in its interior).
-- **NEXT candidates** (periodic-gen / the seam is DONE): **1f** framing/altitude + fly-to→flight entry-ease
-  (the deferred 1a/1b snap) + the "globe should feel like it GROWS as you zoom" judgment; **ST-5**
-  OffscreenCanvas spike (during-motion streaming — removes the fast-fling lag + the 1e/C5 windows).
+- **✅ 1f entry-ease — DONE 2026-06-09.** A drill now GLIDES from the camera's current pose into the
+  flight pose over 350ms (pure `camera.ts::lerpPose`, nlerp'd up; `globe.ts entryEase` interpolates toward
+  the LIVE flight pose so a pan mid-glide still converges) instead of the deferred 1a/1b one-frame snap.
+  Also smooths the 1c deeper-drill re-frame. Unit-tested (endpoints/midpoint/clamp, 3 tests) +
+  `data-entry-eases` e2e signal (mutation-verified: signal never written → drill e2e red). The "globe
+  GROWS as you zoom" half was already shipped (the altitude formula scales ~1.4× the sector's angular
+  span per level — see main.ts:830); remaining feel-tuning is screenshot/judgment-bound.
+- **✅ ST-5 spike — DONE 2026-06-09, verdict NO-GO** (full verdict in
+  `docs/design/globe-ground-3d-navigation.md`): `createImageBitmap(svgBlob)` is unsupported in Chromium
+  148 (main thread AND worker — PNG control works, so the gap is specifically SVG ImageBitmap decode);
+  the current main-thread path costs ~312ms `drawImage` per 2k-polygon texture. Continuous-follow +
+  prefetch STAY GATED; the unlock is now precisely known: **worker-side wasm rasterization**
+  (resvg/tiny-skia, fontless for globe tiles) shipping RGBA instead of SVG strings — a fair-sized arc,
+  revival-triggered by motion-jank becoming the top complaint.
+- **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
+  event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
+  app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
+  the primary globe view; **relief displacement** (evidence-gated, unchanged); **wasm rasterizer**
+  (the ST-5 unlock, evidence-gated).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or
