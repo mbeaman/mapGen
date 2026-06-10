@@ -157,8 +157,11 @@ pub fn render_globe_texture(world: &WorldData) -> String {
 /// CSS for the Faith lens. The political wash + realms legend are the always-on
 /// baseline; under the root `on-faith` class (set by the frontend layer toggle)
 /// they hide and the faith wash + faiths legend appear. `planet-faith` /
-/// `faith-legend` carry `display="none"` so a class-less rasterize (the CLI /
-/// resvg, which ignores selectors) shows the political baseline by default.
+/// `faith-legend` carry `display="none"` so a class-LESS rasterize shows the
+/// political baseline by default. (usvg/resvg DO honor these class selectors when
+/// the `on-faith` class is injected — verified by `visual_regression`'s
+/// `globe_texture_rasterizes_and_its_lens_class_is_honored`; that is what lets
+/// the worker rasterize a lensed globe off-thread via `with_root_class`.)
 const FAITH_LENS_STYLE: &str = r##"<style>svg.on-faith .planet-political,svg.on-faith .nation-legend{display:none}svg.on-faith .planet-faith,svg.on-faith .faith-legend{display:inline}</style>"##;
 
 /// CSS for the Prosperity lens — the exact mirror of [`FAITH_LENS_STYLE`]. Under
@@ -199,8 +202,9 @@ fn prosperity_color(t: f32) -> [u8; 3] {
 /// per-cell wash. Mirrors [`FAITH_LENS_STYLE`]: under the root `on-trade` class
 /// (set by the frontend layer toggle) the political wash + realms legend hide and
 /// the `planet-trade` lane group appears. `planet-trade` carries `display="none"`
-/// so a class-less rasterize (resvg, which ignores selectors) keeps the political
-/// baseline by default. No companion legend — the lanes carry their own meaning.
+/// so a class-LESS rasterize keeps the political baseline by default (usvg honors
+/// the class selector when `on-trade` is injected — see [`FAITH_LENS_STYLE`]).
+/// No companion legend — the lanes carry their own meaning.
 const TRADE_LENS_STYLE: &str = r##"<style>svg.on-trade .planet-political,svg.on-trade .nation-legend{display:none}svg.on-trade .planet-trade{display:inline}</style>"##;
 
 /// Per-cell fill: land in its biome colour (matching the ornate detailed view),

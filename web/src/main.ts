@@ -25,8 +25,8 @@ import {
   uvToWorld,
   type Sector,
 } from "./sector";
-import { sectorPatchParams, worldToLonLat } from "./camera";
-import { desiredSectors } from "./lod";
+import { sectorPatchParams, type Vec3, worldToLonLat } from "./camera";
+import { desiredSectors, predictedAhead } from "./lod";
 import {
   ESTIMATED_PATCH_BYTES,
   MAX_LIVE_PATCHES,
@@ -148,37 +148,112 @@ const ensureGlobe = async (): Promise<GlobeHandle> => {
     // Streaming (ST-1): every time the flight camera settles (after a drill / pan /
     // zoom), reconcile the in-view patch set — load what entered view, evict what
     // left, within the caps. THIS is "scroll around and keep the detail".
-    globe.onSettle(streamReconcile);
+    globe.onSettle(() => streamReconcile(true)); // pump/settle: sample the camera velocity
   }
   return globe;
 };
 
-// ---- Continuous-LOD streaming (ST-1): the in-view patch set ----
-// window 2 = a 5×5 candidate set = the in-view sectors PLUS a one-sector PREFETCH RING
-// beyond the view edge (horizon-culled to the visible hemisphere). So a settle streams
-// the ring too, and a subsequent pan lands on already-rendered detail instead of waiting
-// for it. The single worker still rasterizes one tile at a time (~100ms), so a fast fling
-// past the ring lags until it catches up — full during-motion streaming is the ST-5 spike.
-const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 3 }; // 7×7: cover the L3 visible cap (see patchcache.ts caps note)
+// ---- Continuous-LOD streaming: the in-view patch set + during-motion follow ----
+// window 3 = a 7×7 candidate set sized to cover the L3 visible cap (patchcache.ts
+// caps note). Phase B (off-main-thread raster unlock): detail now fills DURING
+// motion, not only on settle — globe.ts pumps `streamReconcile` every ~PUMP_MS
+// while the camera moves. Two disciplines keep the SERIAL, non-preemptible worker
+// from thrashing on a fast pan: an in-flight BUDGET (only STREAM_BUDGET tiles
+// outstanding, nearest-first) and discard-stale on arrival (a tile the camera
+// already passed is dropped, not uploaded-then-LRU-evicted). A velocity-predictive
+// ring extends the desired set one tick AHEAD of the camera so the next sectors are
+// warm on arrival — naturally idle-priority (the prediction sits AFTER the in-view
+// set in nearest-first order, so the budget feeds in-view first).
+const STREAM_CFG = { maxPatches: MAX_LIVE_PATCHES, window: 3 };
 const CACHE_CFG = { maxPatches: MAX_LIVE_PATCHES, maxBytes: MAX_TEXTURE_BYTES, estBytes: ESTIMATED_PATCH_BYTES };
+// At most this many refineTile requests outstanding in the serial worker at once.
+// Bounds a fast pan's wasted work: the worker can't be preempted, so a deep queue
+// of already-passed sectors would delay the one under the camera. Re-prioritised
+// nearest-first every pump; stale RESULTS are also discarded on arrival.
+const STREAM_BUDGET = 3;
 const pendingTiles = new Set<string>(); // sector keys with a refineTile in flight
+// Discard-stale + predictive-prefetch state (all JS-ephemeral — no dataset, no
+// session, no WorldHandle; a drill/return is a discontinuity, so prevPosUnit resets
+// on a level change, never extrapolating a camera jump into garbage prefetches).
+let currentDesiredKeys = new Set<string>(); // in-view ∪ predicted, this pump
+let prevPosUnit: Vec3 | null = null; // finite-difference camera-velocity source
+let reconcileLevel = -1; // detect the level discontinuity that resets the velocity
+let tilesDiscarded = 0; // results dropped as stale (camera moved past) — e2e signal
 
-// Reconcile the live patch set against what the camera now sees: the pure selector
-// (lod.ts) + cache policy (patchcache.ts) decide; here we drive the worker + cache.
-const streamReconcile = (): void => {
+// Tile raster size: long edge 1024, the short edge scaled by the sector's aspect
+// so the cartography isn't anisotropically squashed on the curved patch. Computed
+// here (worldW/H live on the main thread) and sent to the worker, which rasterizes
+// to exactly this size — the SVG never crosses the boundary.
+const tileDims = (sec: Sector): { w: number; h: number } => {
+  const rect = sectorRect(sec, worldW, worldH);
+  const aspect = rect.w / rect.h;
+  const long = 1024;
+  return aspect >= 1
+    ? { w: long, h: Math.round(long / aspect) }
+    : { w: Math.round(long * aspect), h: long };
+};
+
+// Reconcile the live patch set against what the camera now sees (+ where it is
+// heading): the pure selector (lod.ts) + cache policy (patchcache.ts) decide; here
+// we drive the worker + cache. Fired on every flight pump (during motion) and on
+// settle — cheap now the raster is off-thread (no main-thread work but the bounded
+// selector + cache diff + ≤ BUDGET message posts).
+// `sampleVelocity` advances the finite-difference window (prevPosUnit ← now). ONLY
+// the pump/settle (line ~151) passes true, so the camera-velocity is sampled at the
+// fixed ~PUMP_MS cadence. The tile-completion REFILLS (and the lens refresh) call
+// this with the default false: they fire at the worker's irregular, faster cadence,
+// and re-sampling prevPosUnit there would shrink the (pos − prev) delta toward zero
+// — collapsing the prefetch lead. Refills still reconcile + feed the budget; they
+// just don't disturb the velocity window.
+const streamReconcile = (sampleVelocity = false): void => {
   if (!globe || !globeScale || nav.level === 0) return;
-  const desired = desiredSectors(globe.getCameraState(), nav.level, worldW, worldH, STREAM_CFG);
-  globe.markSeen(desired.map((s) => patchKey(s, "globe"))); // in-view → not LRU-evictable
+  const cam = globe.getCameraState();
+  // A level change (drill / deeper-drill / re-drill) is a camera DISCONTINUITY, not
+  // motion — drop the velocity so the predictor doesn't extrapolate the jump.
+  if (nav.level !== reconcileLevel) {
+    reconcileLevel = nav.level;
+    prevPosUnit = null;
+  }
+  const inView = desiredSectors(cam, nav.level, worldW, worldH, STREAM_CFG);
+  const inViewKeys = inView.map((s) => patchKey(s, "globe"));
+  // Velocity-predictive prefetch: extend the desired set one tick AHEAD of the camera
+  // (constant-velocity extrapolation; EMPTY when stationary). The ahead sectors sit
+  // AFTER the in-view set, so the nearest-first budget feeds in-view first (idle-
+  // priority prefetch). The extrapolation lives in the pure `predictedAhead` so it is
+  // unit-tested off-GPU (`lod.test.ts`), not just exercised.
+  const ahead = prevPosUnit
+    ? predictedAhead(cam, prevPosUnit, inView, nav.level, worldW, worldH, STREAM_CFG)
+    : [];
+  const desired = [...inView, ...ahead];
+  if (sampleVelocity) prevPosUnit = cam.posUnit; // advance the window ONLY on the pump cadence
+  currentDesiredKeys = new Set(desired.map((s) => patchKey(s, "globe"))); // discard-stale set
+  globe.markSeen(inViewKeys); // protect the IN-VIEW set (not the prediction) as freshest
   const { toLoad, toEvict } = reconcile(globe.liveEntries(), desired, "globe", CACHE_CFG);
   for (const key of toEvict) {
     globe.evictPatch(key);
     pendingTiles.delete(key);
   }
+  // In-flight budget: feed the serial worker a bounded NEAREST-first head. toLoad is
+  // already nearest-first (desiredSectors ranks by closeness), so stopping at BUDGET
+  // gives don't-start-if-stale for free — a queued-but-unsent far sector is simply
+  // re-evaluated next pump against the live camera.
   for (const sec of toLoad) {
+    if (pendingTiles.size >= STREAM_BUDGET) break;
     const key = patchKey(sec, "globe");
     if (pendingTiles.has(key)) continue; // already refining
     pendingTiles.add(key);
-    send({ type: "refineTile", level: sec.level, sx: sec.sx, sy: sec.sy, style: "globe" });
+    const { w, h } = tileDims(sec);
+    // Bake the active lens into the worker raster (off-main-thread); see render_rgba.
+    send({
+      type: "refineTile",
+      level: sec.level,
+      sx: sec.sx,
+      sy: sec.sy,
+      style: "globe",
+      w,
+      h,
+      lens: activeLensClass(),
+    });
   }
   updateStreamProgress();
 };
@@ -189,8 +264,14 @@ const streamReconcile = (): void => {
 // queue: a live "Loading detail… N tiles" status while tiles are outstanding,
 // the region prompt once the in-view set is filled, and `data-pending-tiles` so
 // the e2e can pin the affordance (appears > 0, then drains to 0).
+let lastPendingShown = -1;
 const updateStreamProgress = (): void => {
   if (!globeScale || nav.level === 0) return;
+  // Debounce: the ~PUMP_MS during-motion pump (Phase B) calls this many times a
+  // second — only rewrite the dataset + status when the count actually changes, so
+  // a pan doesn't thrash the DOM / the e2e signal.
+  if (pendingTiles.size === lastPendingShown) return;
+  lastPendingShown = pendingTiles.size;
   globeCanvas.dataset.pendingTiles = String(pendingTiles.size);
   if (pendingTiles.size > 0) {
     setStatus(`Loading detail… ${pendingTiles.size} tile${pendingTiles.size === 1 ? "" : "s"}`, "busy");
@@ -200,8 +281,9 @@ const updateStreamProgress = (): void => {
 };
 
 // 1e — lens toggle while DRILLED: the streamed patches dominate the drilled surface,
-// and each patch's raster bakes in the active lens at rasterize time (`withLayerClasses`
-// in the `tile` handler). So a lens change must FORCE the in-view set to re-stream:
+// and each patch's raster bakes in the active lens IN THE WORKER (render_rgba →
+// with_root_class; the `tile` handler verifies `msg.lens === activeLensClass()` before
+// applying). So a lens change must FORCE the in-view set to re-stream:
 // evict the live patches + drop the in-flight reservations, then reconcile re-requests
 // the same sectors, which re-rasterize under the new lens. (The patchKey style stays
 // "globe" — a lens isn't a key dimension yet; this is the brute refresh, briefly
@@ -217,8 +299,16 @@ const refreshGlobePatches = (): void => {
 // the same swap the 2D map does live, but baked in before rasterizing. Only the
 // overlay `on-*` classes affect the globe texture (it carries no `off-*` feature
 // CSS); the rest are harmless no-ops.
+// The active lens class string (e.g. "on-faith"), or "" for the political
+// baseline. The streaming tile path passes THIS to the worker, which bakes it
+// into the SVG root before rasterizing (`render_rgba` → `with_root_class`), so
+// the off-main-thread raster carries the same lens the live 2D map shows.
+const activeLensClass = (): string => svgLayerClasses(layerState).join(" ");
+// Inject those classes onto an SVG root before a MAIN-THREAD rasterize (the base
+// sphere + PNG export still rasterize here). The globe tile path no longer uses
+// this — it passes `activeLensClass()` to the worker instead.
 const withLayerClasses = (svg: string): string => {
-  const classes = svgLayerClasses(layerState).join(" ");
+  const classes = activeLensClass();
   return classes ? svg.replace("<svg ", `<svg class="${classes}" `) : svg;
 };
 
@@ -579,33 +669,71 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       setStatus(`Re-styled in ${(msg.ms / 1000).toFixed(2)}s`, "ok");
       break;
     case "tile": {
-      // ST-1 streaming: a refined patch tile arrived → rasterize at the sector aspect
-      // and add it to the cache. Drop it if we've changed level / left the globe since
-      // the request (stale), or if a deeper drill superseded this level.
+      // ST-1 streaming: a refined patch tile arrived as RGBA (rasterized in the
+      // worker — Phase A). Build the texture source and add it to the cache,
+      // SYNCHRONOUSLY (no main-thread rasterize). Drop it if we've changed level /
+      // left the globe since the request (stale), or if a deeper drill superseded
+      // this level.
       const sec: Sector = { level: msg.level, sx: msg.sx, sy: msg.sy };
       const key = patchKey(sec, "globe");
-      // Stale (changed level / left the globe since the request): drop AND release the key.
+      // Stale (changed level / left the globe since the request): drop AND release the
+      // key, then refill the freed budget slot for the current view.
       if (!globe || !globeScale || nav.level !== msg.level) {
         pendingTiles.delete(key);
+        streamReconcile();
+        break;
+      }
+      // Lens-echo (verify-before-apply): the lens is now baked in the worker raster,
+      // so the main thread can't re-apply the current lens. A tile rasterized under a
+      // now-stale lens (a toggle landed mid-flight) must be dropped, not welded onto a
+      // base re-textured under the new lens — the 1e refresh race. Do NOT delete the
+      // key: a lens toggle ran `refreshGlobePatches` (clear + re-stream under the new
+      // lens), so this same key is now reserving a LIVE new-lens request — deleting it
+      // would un-reserve a real in-flight tile and let the budget overshoot. The
+      // new-lens tile's show/discard path releases it.
+      if (msg.lens !== activeLensClass()) {
+        break;
+      }
+      // Discard-stale (Phase B): the camera moved past this sector since it was
+      // requested — it's no longer in the in-view ∪ predicted set. Drop it rather
+      // than upload-then-immediately-LRU-evict (the wasted-upload stutter Phase B
+      // exists to kill), then refill the freed slot with what IS now in view.
+      if (!currentDesiredKeys.has(key)) {
+        pendingTiles.delete(key);
+        globeCanvas.dataset.tilesDiscarded = String((tilesDiscarded += 1));
+        streamReconcile();
         break;
       }
       const params = sectorPatchParams(sec, worldW, worldH);
-      const rect = sectorRect(sec, worldW, worldH);
-      const aspect = rect.w / rect.h;
-      const long = 1024;
-      const tw = aspect >= 1 ? long : Math.round(long * aspect);
-      const th = aspect >= 1 ? Math.round(long / aspect) : long;
-      const reqLevel = msg.level;
-      // Release the pending key only once the patch is actually LIVE. Releasing it
-      // here (before the async raster) left the sector in NEITHER pendingTiles nor
-      // liveEntries, so a re-settle in that window re-requested the same tile.
-      void rasterizeSvg(withLayerClasses(msg.svg), tw, th).then((raster) => {
-        pendingTiles.delete(key);
-        if (globe && globeScale && nav.level === reqLevel) {
-          globe.showPatch(sec, raster, params, tw * th * 4); // RGBA bytes
-        }
-        updateStreamProgress(); // live "Loading detail… N tiles" countdown (#10)
-      });
+      // The ONLY synchronous main-thread cost now: a putImageData blit + the patch-mesh
+      // build (geometry/material/scene.add). The GPU `texImage2D` is DEFERRED by three.js
+      // to the next `renderer.render()` and is NOT in this span. The ~300 ms SVG drawImage
+      // moved into the worker; `data-last-blit-ms` proves the synchronous paint-thread cost
+      // is now single-digit (vs ~300 ms before).
+      const t0 = performance.now();
+      const cv = document.createElement("canvas");
+      cv.width = msg.w;
+      cv.height = msg.h;
+      cv.getContext("2d")!.putImageData(
+        new ImageData(new Uint8ClampedArray(msg.rgba), msg.w, msg.h),
+        0,
+        0,
+      );
+      pendingTiles.delete(key);
+      globe.showPatch(sec, cv, params, msg.w * msg.h * 4);
+      globeCanvas.dataset.lastBlitMs = (performance.now() - t0).toFixed(1);
+      // Refill the budget slot this completion freed — drains the full in-view set at
+      // STREAM_BUDGET-outstanding even on a STATIC drill (the pump dies after settle, so
+      // without this only ~BUDGET tiles ever load and the rest stay coarse forever).
+      streamReconcile();
+      break;
+    }
+    case "tileFailed": {
+      // A single tile's rasterize failed in the worker — release its budget slot (so it
+      // doesn't wedge 1/STREAM_BUDGET of throughput) and refill. No UI banner: one
+      // dropped tile leaves the coarse base showing there, no worse than not-yet-loaded.
+      pendingTiles.delete(patchKey({ level: msg.level, sx: msg.sx, sy: msg.sy }, "globe"));
+      streamReconcile();
       break;
     }
     case "refined":
@@ -858,6 +986,12 @@ const navTo = (target: Sector, focus?: { x: number; y: number }) => {
       // overview. The sphere was never hidden on drill (1a stays in 3D), so no
       // re-show / re-texture / regenerate.
       globe?.exitRegion();
+      // A return is a camera DISCONTINUITY: drop the velocity source so the next drill
+      // doesn't extrapolate a stale jump. The `reconcileLevel` guard alone misses this —
+      // streamReconcile early-returns at level 0, so a return→re-drill to the SAME depth
+      // would skip the level-change reset and predict from the pre-return position.
+      prevPosUnit = null;
+      reconcileLevel = -1;
       narrateBtn.disabled = false; // the globe root has a chronicle again (1b drill disabled it)
       setStatus("Globe.", "ok");
     } else {

@@ -30,6 +30,16 @@ serde_json = { workspace = true }
 # deps (roughr → rand → getrandom) build. getrandom otherwise errors
 # out on `wasm*-unknown-unknown` per its compile-time check.
 getrandom = { version = "0.2", features = ["js"] }
+# Worker-side RGBA rasterizer (off-main-thread globe tiles — `render_rgba`).
+# `default-features = false` drops usvg's text/system-fonts/memmap-fonts and
+# resvg's raster-images: globe tiles are FONTLESS and vector-only, so this keeps
+# fontdb/memmap2 (which don't build on wasm32) out and shrinks the bundle. These
+# can't use `workspace = true` — the workspace pins default features ON (mapgen-cli
+# needs text for its labelled PNG export); resolver-2 keeps this crate's wasm32
+# graph text-free without affecting mapgen-cli's native build.
+resvg = { version = "0.47", default-features = false }
+usvg = { version = "0.47", default-features = false }
+tiny-skia = "0.12"
 
 [dev-dependencies]
 # 6.2 cross-platform golden: run the full pipeline compiled to wasm32 (in Node)

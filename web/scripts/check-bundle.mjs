@@ -30,6 +30,16 @@ const ENTRY_LIMIT = 120_000;
 // (which would mean a broken globe).
 const LAZY_MIN = 300_000;
 
+// The wasm module (worker-fetched, NOT in the eager JS graph, so the ENTRY_LIMIT
+// above doesn't weigh it). It carries the whole generation pipeline + the
+// worker-side resvg/usvg/tiny-skia rasterizer (`render_rgba`), ~2.13 MB at
+// wasm-opt-off. Band it: the ceiling catches a future heavy dep or an accidental
+// usvg `text`/fontdb re-enable (~+0.5 MB+); the floor catches the rasterizer (or
+// the pipeline) getting tree-shaken away / a truncated build. Same spirit as the
+// three-isolation guard — a drifted size fails loudly instead of rotting.
+const WASM_MAX = 2_800_000;
+const WASM_MIN = 1_500_000;
+
 function fail(msg) {
   console.error(`✗ bundle guard: ${msg}`);
   process.exit(1);
@@ -81,4 +91,25 @@ if (large.length === 0) {
   );
 }
 
-console.log(`✓ bundle guard: entry ${(entrySize / 1000).toFixed(1)}KB, three isolated in a lazy chunk (${large.map((f) => f.name).join(", ")})`);
+// Wasm-size band (worker-fetched module).
+const wasmFiles = readdirSync(assets)
+  .filter((f) => f.endsWith(".wasm"))
+  .map((f) => ({ name: f, size: statSync(join(assets, f)).size }));
+if (wasmFiles.length === 0) fail("no .wasm in dist/assets — the wasm-pack build is missing");
+const wasm = wasmFiles.sort((a, b) => b.size - a.size)[0];
+console.log(`wasm module: ${wasm.name} = ${(wasm.size / 1e6).toFixed(2)}MB (band ${WASM_MIN / 1e6}–${WASM_MAX / 1e6}MB)`);
+if (wasm.size > WASM_MAX) {
+  fail(
+    `wasm ${wasm.name} is ${(wasm.size / 1e6).toFixed(2)}MB > ${WASM_MAX / 1e6}MB — ` +
+      `a heavy dep crept in (or usvg's \`text\`/fontdb got re-enabled). Globe tiles are ` +
+      `fontless: keep resvg/usvg \`default-features = false\`.`,
+  );
+}
+if (wasm.size < WASM_MIN) {
+  fail(
+    `wasm ${wasm.name} is ${(wasm.size / 1e6).toFixed(2)}MB < ${WASM_MIN / 1e6}MB — ` +
+      `the rasterizer or pipeline may have been tree-shaken away / the build truncated.`,
+  );
+}
+
+console.log(`✓ bundle guard: entry ${(entrySize / 1000).toFixed(1)}KB, three isolated in a lazy chunk (${large.map((f) => f.name).join(", ")}), wasm ${(wasm.size / 1e6).toFixed(2)}MB`);

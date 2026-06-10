@@ -31,6 +31,23 @@ pub const FONTS_TTF: &[(&str, &[u8])] = &[
     ),
 ];
 
+/// Inject a `class` attribute on the root `<svg>` element — the lens-overlay
+/// switch. The globe/planet styles emit every lens group up front, gated by
+/// root-class CSS selectors (`svg.on-faith .planet-political{display:none}`,
+/// see [`style::planet`]); injecting `class="on-faith"` swaps which lens shows.
+/// usvg HONORS these selectors, so this is how off-main-thread worker
+/// rasterization (`mapgen-wasm`'s `render_rgba`) preserves the frontend's lens
+/// without baking it per-variant. First-match-only, mirroring the JS frontend's
+/// `String.replace("<svg ", …)`. An empty `class` returns the SVG unchanged (the
+/// political baseline) — the same default a class-less rasterize already shows.
+pub fn with_root_class(svg: &str, class: &str) -> String {
+    if class.is_empty() {
+        svg.to_string()
+    } else {
+        svg.replacen("<svg ", &format!("<svg class=\"{class}\" "), 1)
+    }
+}
+
 /// Render a world to an SVG string in the requested style.
 ///
 /// Every style currently in the enum is implemented; the `Result`

@@ -133,3 +133,31 @@ export function desiredSectors(
   const cap = Math.max(0, Math.floor(Number.isFinite(cfg.maxPatches) ? cfg.maxPatches : 0));
   return ranked.slice(0, cap).map((o) => o.sec);
 }
+
+/// Velocity-predictive prefetch ring (Phase B): the sectors one tick AHEAD of the
+/// camera — constant-velocity extrapolation `pos + (pos - prevPos)` = `2·pos −
+/// prevPos` — that the in-view window omits, so the next sectors are warm on
+/// arrival. EMPTY when stationary (prevPos == pos ⇒ predicted == pos ⇒ the ahead
+/// window equals the in-view window ⇒ everything is filtered). Calls `desiredSectors`
+/// VERBATIM at the predicted sub-point, inheriting the horizon-cull, polar-cap, and
+/// antimeridian wrap, then drops anything already in `inView`. Pure → unit-testable
+/// off-GPU (the production extrapolation was inline + untestable before).
+export function predictedAhead(
+  cam: CamState,
+  prevPosUnit: Vec3,
+  inView: Sector[],
+  level: number,
+  worldW: number,
+  worldH: number,
+  cfg: LodConfig,
+): Sector[] {
+  const predicted: Vec3 = [
+    2 * cam.posUnit[0] - prevPosUnit[0],
+    2 * cam.posUnit[1] - prevPosUnit[1],
+    2 * cam.posUnit[2] - prevPosUnit[2],
+  ];
+  const have = new Set(inView.map((s) => `${s.level}:${s.sx}:${s.sy}`));
+  return desiredSectors({ ...cam, posUnit: predicted }, level, worldW, worldH, cfg).filter(
+    (s) => !have.has(`${s.level}:${s.sx}:${s.sy}`),
+  );
+}

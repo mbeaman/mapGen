@@ -323,7 +323,15 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   let settleCb: (() => void) | null = null;
   let lastFlightChange = 0;
   let settleFired = true;
+  let lastPumpAt = 0;
+  let streamPumps = 0; // during-motion pump count (Phase B e2e witness)
   const SETTLE_MS = 140;
+  // Phase B (continuous-follow): now the tile raster is off the main thread, fill
+  // DURING motion — pump the reconcile every PUMP_MS while the camera moves, not
+  // only after it settles. Each pump is cheap on the main thread (a bounded pure
+  // selector + cache diff + ≤ BUDGET worker posts); the heavy raster is in the
+  // worker. The settle fire still runs as the final, complete high-res reconcile.
+  const PUMP_MS = 90;
   const markFlightChanged = () => {
     lastFlightChange = performance.now();
     settleFired = false;
@@ -429,10 +437,23 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
           regionLabel.hidden = true;
         }
       }
-      // Fire the streaming reconcile once the camera has SETTLED after a change.
-      if (!settleFired && performance.now() - lastFlightChange > SETTLE_MS) {
-        settleFired = true;
-        settleCb?.();
+      // Stream the in-view (+ predicted-ahead) detail. Phase B: pump DURING motion
+      // every PUMP_MS so detail follows the camera, then fire once more on SETTLE as
+      // the final complete pass. (Pre-Phase-B this fired only on settle — main-thread
+      // rasterize made during-motion fill a frame-stall; off-thread raster lifts that.)
+      if (!settleFired) {
+        const now = performance.now();
+        if (now - lastPumpAt > PUMP_MS) {
+          lastPumpAt = now;
+          // Count ONLY during-motion pumps (not the settle fire below) — the e2e
+          // witness that the reconcile follows the camera while it is still moving.
+          canvas.dataset.streamPumps = String((streamPumps += 1));
+          settleCb?.();
+        }
+        if (now - lastFlightChange > SETTLE_MS) {
+          settleFired = true;
+          settleCb?.();
+        }
       }
     } else {
       controls.update();

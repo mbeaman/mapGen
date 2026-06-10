@@ -53,7 +53,19 @@ export type WorkerRequest =
   | { type: "generate"; seed: string; cells: number; nations: number; style: string; scale: Scale }
   | { type: "render"; style: string }
   | { type: "refine"; level: number; sx: number; sy: number; style: string }
-  | { type: "refineTile"; level: number; sx: number; sy: number; style: string }
+  | {
+      type: "refineTile";
+      level: number;
+      sx: number;
+      sy: number;
+      style: string;
+      // Off-main-thread rasterize (Phase A): the worker renders the tile to RGBA
+      // at this exact size, with `lens` (e.g. "on-faith", "" = political baseline)
+      // injected on the SVG root so the lens is baked in before rasterizing.
+      w: number;
+      h: number;
+      lens: string;
+    }
   | { type: "continentAt"; x: number; y: number }
   | { type: "renderYear"; style: string; year: number }
   | { type: "narrate"; event: string; voice: string; sidecar: string };
@@ -72,13 +84,29 @@ export type WorkerResponse =
     }
   | { type: "rendered"; svg: string; ms: number }
   | { type: "refined"; svg: string; level: number; sx: number; sy: number; ms: number }
-  | { type: "tile"; svg: string; level: number; sx: number; sy: number; style: string }
+  | {
+      // Off-main-thread rasterize (Phase A): RGBA pixels, not an SVG string. The
+      // `rgba` ArrayBuffer is TRANSFERRED (zero-copy), so it is neutered in the
+      // worker after the post. `lens` is echoed for the main thread's
+      // verify-before-apply (drop a tile rasterized under a now-stale lens).
+      type: "tile";
+      rgba: ArrayBuffer;
+      w: number;
+      h: number;
+      level: number;
+      sx: number;
+      sy: number;
+      style: string;
+      lens: string;
+    }
+  | { type: "tileFailed"; level: number; sx: number; sy: number }
   | { type: "continentInfo"; info: ContinentInfo | null; x: number; y: number }
   | { type: "yearFrame"; svg: string; year: number }
   | { type: "chronicle"; work: Work }
   | { type: "error"; message: string };
 
-const post = (msg: WorkerResponse) => (self as DedicatedWorkerGlobalScope).postMessage(msg);
+const post = (msg: WorkerResponse, transfer: Transferable[] = []) =>
+  (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 
 const ensureReady = async () => {
   if (!ready) {
@@ -150,14 +178,42 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         post({ type: "error", message: "no world generated yet" });
         return;
       }
-      // Streaming patch refine (ST-1): refine + render ONE tile WITHOUT touching the
-      // persistent `sector` slot (the legacy drill path owns that). Free the temp
+      // Streaming patch refine (ST-1): refine + RASTERIZE ONE tile WITHOUT touching
+      // the persistent `sector` slot (the legacy drill path owns that). Free the temp
       // handle so the cache holds zero wasm handles. Same `refineSector` call the
-      // cross-platform golden pins, just a different (render-only) consumer.
+      // cross-platform golden pins, just a different (raster-only) consumer.
+      //
+      // Phase A: rasterize to RGBA HERE (off the main thread) and transfer the bytes,
+      // instead of shipping the ~200 KB SVG string for the main thread to drawImage
+      // (~300 ms on the paint thread). `renderRgba` returns a Uint8Array copied out
+      // of wasm memory, so its `.buffer` is a private ArrayBuffer safe to transfer.
       const tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
-      const svg = tile.render(msg.style);
-      tile.free();
-      post({ type: "tile", svg, level: msg.level, sx: msg.sx, sy: msg.sy, style: msg.style });
+      try {
+        const rgba = tile.renderRgba(msg.style, msg.lens, msg.w, msg.h);
+        const buf = rgba.buffer as ArrayBuffer;
+        post(
+          {
+            type: "tile",
+            rgba: buf,
+            w: msg.w,
+            h: msg.h,
+            level: msg.level,
+            sx: msg.sx,
+            sy: msg.sy,
+            style: msg.style,
+            lens: msg.lens,
+          },
+          [buf], // transfer (zero-copy); `buf`/`rgba` are neutered after this
+        );
+      } catch {
+        // A rasterize failure for ONE tile must not flash a UI error banner NOR leak
+        // its pendingTiles reservation (the generic outer catch posts a sector-less
+        // `error` → the budget slot wedges). Echo the sector so the main thread frees
+        // exactly this key.
+        post({ type: "tileFailed", level: msg.level, sx: msg.sx, sy: msg.sy });
+      } finally {
+        tile.free(); // free even on throw — keep the "cache holds zero wasm handles" invariant
+      }
     } else if (msg.type === "continentAt") {
       // Point→landmass for the continent-aware drill. Always against the root
       // world (drill snapping only fires at the root). Cheap; no busy state.

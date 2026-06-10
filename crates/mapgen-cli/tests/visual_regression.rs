@@ -18,7 +18,7 @@ use mapgen_render::{
     layers::{bake_layer_state_pruned, PRESETS},
     render,
     style::Style,
-    FONTS_TTF,
+    with_root_class, FONTS_TTF,
 };
 use mapgen_world::{generate_full, GenerateParams};
 
@@ -166,6 +166,84 @@ fn planet_render_rasterizes_to_a_sane_image() {
         water as f64 / total > 0.05,
         "planet has no sea ({} blue px)",
         water
+    );
+}
+
+/// The globe-texture render (the sphere skin streamed onto the 3D globe) must
+/// rasterize SANE — and its lens CSS class selectors must be HONORED by
+/// usvg/resvg. This is the load-bearing fact behind off-main-thread worker
+/// rasterization (`mapgen-wasm::WorldHandle::render_rgba`): the frontend injects
+/// `class="on-faith"` on the root `<svg>` ([`with_root_class`]) and usvg applies
+/// the `svg.on-faith .planet-political{display:none}` rules
+/// (`planet.rs` `FAITH_LENS_STYLE`), so the faith raster MUST differ from the
+/// political baseline. A `with_root_class` that no-ops — or a usvg that ignored
+/// selectors (the stale `planet.rs` comment claimed it did) — makes the two
+/// rasters identical → RED. Guards the worker-side lens path off-GPU.
+#[test]
+fn globe_texture_rasterizes_and_its_lens_class_is_honored() {
+    let world = generate_full(GenerateParams::planet(42));
+    let baseline_svg = render(&world, Style::GlobeTexture).expect("globe texture render");
+    let base = rasterize(&baseline_svg);
+    let total = (base.width() * base.height()) as f64;
+    assert!(total > 0.0, "empty globe pixmap");
+
+    let (mut opaque, mut sum, mut sumsq, mut water, mut warm) = (0u64, 0.0f64, 0.0f64, 0u64, 0u64);
+    for px in base.data().chunks_exact(4) {
+        if px[3] > 200 {
+            opaque += 1;
+        }
+        let (r, g, b) = (px[0] as f64, px[1] as f64, px[2] as f64);
+        let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        sum += lum;
+        sumsq += lum * lum;
+        if b > r + 8.0 {
+            water += 1; // the sea reads blue-grey
+        }
+        if r > b + 8.0 {
+            warm += 1; // biome-coloured land reads warm
+        }
+    }
+    let mean = sum / total;
+    let variance = (sumsq / total - mean * mean).max(0.0);
+    // The opaque deep-sea backdrop (planet.rs render_globe_texture) makes EVERY
+    // texel opaque — a sphere skin must be land-or-sea at every point, so this is
+    // a near-1.0 floor, not the 0.8 the parchment renders use.
+    assert!(
+        opaque as f64 / total > 0.99,
+        "globe texture not fully opaque ({:.3}) — the deep-sea backdrop should cover every texel",
+        opaque as f64 / total
+    );
+    assert!(variance > 150.0, "globe ~uniform (variance {variance:.0})");
+    assert!(
+        water as f64 / total > 0.05,
+        "globe has no sea ({water} blue px)"
+    );
+    assert!(
+        warm as f64 / total > 0.02,
+        "globe has no land ({warm} warm px)"
+    );
+
+    // LENS HONORED — the discriminating signal. Inject the on-faith root class
+    // (exactly what the frontend does before rasterizing) and re-raster: usvg
+    // applies the selector, the faith wash replaces the political wash, the
+    // pixels diverge. The spike measured ~12% byte divergence on a sector tile;
+    // hiding the political wash over all land moves well past the 1% floor here.
+    let faith = rasterize(&with_root_class(&baseline_svg, "on-faith"));
+    assert_eq!(faith.width(), base.width(), "lens raster size drifted");
+    assert_eq!(faith.height(), base.height(), "lens raster size drifted");
+    let differing = base
+        .data()
+        .iter()
+        .zip(faith.data().iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    let diff_frac = differing as f64 / base.data().len() as f64;
+    assert!(
+        diff_frac > 0.01,
+        "faith-lens raster barely differs from the baseline ({diff_frac:.4}) — the \
+         `svg.on-faith` class selector was NOT honored (usvg ignored it, or \
+         `with_root_class` no-ops). Off-main-thread worker rasterization would \
+         silently lose every lens."
     );
 }
 

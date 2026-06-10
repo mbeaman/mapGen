@@ -416,6 +416,18 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await expect(canvas).toHaveAttribute("data-patch", /^[1-6]$/, { timeout: 30_000 });
   expect(Number(await canvas.getAttribute("data-patch-textures"))).toBeGreaterThan(0);
 
+  // PHASE A (off-main-thread rasterize): the patch was rasterized in the WORKER and
+  // shipped as RGBA, so the main thread only blits it (putImageData) + builds the patch
+  // mesh; the GPU texImage2D is DEFERRED to the next RAF render (not in this span).
+  // `data-last-blit-ms` is that synchronous paint-thread cost. The old path (main-thread
+  // SVG drawImage of ~12k shapes) measured ~300 ms HERE and stalled the paint thread;
+  // off-thread it's single-digit. A discriminating contract: reverting to the SVG +
+  // main-thread `rasterizeSvg` path either never writes the signal (null) or blows past
+  // 50 ms — both RED. Not `data-textures`, which bumps identically on both paths.
+  const blitMs = await canvas.getAttribute("data-last-blit-ms");
+  expect(blitMs).not.toBeNull(); // the synchronous RGBA→patch blit ran
+  expect(Number(blitMs)).toBeLessThan(50); // NOT the ~300 ms on-paint-thread rasterize
+
   // Free-fly (1a step 2): the camera is now driven by a flight state over the
   // region. A drag PANS the sub-point across the surface (OrbitControls is
   // disabled while drilled, so it can't rotate the whole globe), and the camera
@@ -702,6 +714,16 @@ test("drill detail fill shows live progress and drains to zero", async ({ page }
     })
     .toBe(0);
   await expect(page.locator("#status")).toContainText("Region L", { timeout: 10_000 });
+
+  // REGRESSION (Phase B in-flight budget refill): a STATIC drill (no pan) must still
+  // fill the WHOLE in-view set, not just STREAM_BUDGET tiles. The during-motion pump
+  // dies once the camera settles, so the budget slots are refilled on each tile
+  // COMPLETION — without that refill only ~3 patches ever load and the rest stay coarse
+  // forever (the count would still drain to 0, at 3). This asserts the fill COVERS the
+  // view (» the budget of 3) and stays bounded.
+  const liveFilled = Number(await canvas.getAttribute("data-live-patches"));
+  expect(liveFilled).toBeGreaterThanOrEqual(8); // » STREAM_BUDGET=3 → the refill drained the in-view set
+  expect(liveFilled).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // still bounded by the hard cap
 });
 
 // #9 (quality hunt): RE-DRILL REPRODUCIBILITY — drill, return, drill the same
@@ -905,5 +927,66 @@ test("CONTRACT: scrolling after a zoom keeps detail — patches stream as you pa
   const liveAfter = Number(await canvas.getAttribute("data-live-patches"));
   expect(liveAfter).toBeGreaterThanOrEqual(2);
   expect(liveAfter).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // still bounded by the hard cap
+});
+
+test("CONTRACT (Phase B): detail follows DURING a pan — the reconcile pumps before the drag is released", async ({
+  page,
+}) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const status = page.locator("#status");
+  const canvas = page.locator("#globe-canvas");
+  await expect(status).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-rendered", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width * 0.5;
+  const cy = box.y + box.height * 0.5;
+
+  // Drill, then let the initial batch settle so the camera is at rest before the pan.
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-patch", "3", { timeout: 30_000 });
+  let prevKeys = "";
+  await expect
+    .poll(
+      async () => {
+        const k = (await canvas.getAttribute("data-patch-keys")) ?? "";
+        const stable = k !== "" && k === prevKeys;
+        prevKeys = k;
+        return stable;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  const before = new Set(((await canvas.getAttribute("data-patch-keys")) ?? "").split(",").filter(Boolean));
+  const pumpsBefore = Number((await canvas.getAttribute("data-stream-pumps")) ?? "0");
+
+  // THE PHASE-B CONTRACT: hold the drag DOWN and pan — the during-motion pump runs the
+  // streaming reconcile WHILE the camera is still moving. Any pointermove keeps the
+  // camera un-settled for SETTLE_MS (140 ms) and the pump fires every PUMP_MS (90 ms),
+  // so a single drag deterministically climbs `data-stream-pumps` BEFORE the release.
+  // The pre-Phase-B engine reconciled ONLY on settle (after mouse.up), so this counter
+  // could never move mid-drag (disable the during-motion pump branch in globe.ts → it
+  // stays at pumpsBefore → red). It counts the reconcile FIRE, not a tile landing, so
+  // it does not flake on slow CI raster.
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx - 450, cy, { steps: 12 });
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-stream-pumps")) ?? "0"), { timeout: 5_000 })
+    .toBeGreaterThan(pumpsBefore);
+  await page.mouse.up();
+
+  // ...AND detail actually FILLED as the camera moved: a sector not in view at drill
+  // time streamed in, and the live set stayed within the hard cap (continuous-follow
+  // AND the predictive prefetch both route through reconcile's count/byte firewall).
+  await expect
+    .poll(
+      async () => {
+        const after = ((await canvas.getAttribute("data-patch-keys")) ?? "").split(",").filter(Boolean);
+        return after.some((k) => !before.has(k));
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  expect(Number(await canvas.getAttribute("data-live-patches"))).toBeLessThanOrEqual(MAX_LIVE_PATCHES);
 });
 }); // test.describe.serial("3D globe")

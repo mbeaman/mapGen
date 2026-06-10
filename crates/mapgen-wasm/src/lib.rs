@@ -112,6 +112,31 @@ impl WorldHandle {
         mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e))
     }
 
+    /// Render the world to RGBA pixels — the off-main-thread globe path. Renders
+    /// the SVG (same `mapgen_render::render` as [`render`](Self::render)), injects
+    /// the active lens class onto the root `<svg>` (`lens` e.g. `"on-faith"`, `""`
+    /// for the political baseline — usvg honors the lens CSS selectors), then
+    /// rasterizes to a `w×h` RGBA buffer with resvg/tiny-skia. The browser worker
+    /// calls this and transfers the bytes to the main thread, so the ~300 ms SVG
+    /// rasterize the page used to pay on the paint thread now runs off-thread; the
+    /// main thread only uploads the texture. Globe tiles are fontless, so
+    /// `usvg::Options::default()` (no fontdb) is the complete parse path.
+    #[wasm_bindgen(js_name = renderRgba)]
+    pub fn render_rgba(&self, style: &str, lens: &str, w: u32, h: u32) -> Result<Vec<u8>, JsError> {
+        let style = Style::from_str(style).map_err(|e| JsError::new(&e))?;
+        let svg = mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e))?;
+        let svg = mapgen_render::with_root_class(&svg, lens);
+        let tree = usvg::Tree::from_str(&svg, &usvg::Options::default())
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let mut pixmap = tiny_skia::Pixmap::new(w, h)
+            .ok_or_else(|| JsError::new("invalid raster dimensions"))?;
+        let size = tree.size();
+        let transform =
+            tiny_skia::Transform::from_scale(w as f32 / size.width(), h as f32 / size.height());
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+        Ok(pixmap.take())
+    }
+
     /// Serialize the world to JSON — the body the narration sidecar
     /// (`mapgen serve`) deserializes for `POST /narrate`. Same shape as the CLI's
     /// `.json.gz`, just uncompressed.

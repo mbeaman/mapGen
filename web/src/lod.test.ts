@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lonLatToUnit, type Vec3, worldToLonLat } from "./camera";
-import { type CamState, desiredSectors, type LodConfig } from "./lod";
+import { type CamState, desiredSectors, type LodConfig, predictedAhead } from "./lod";
 import { latLonToWorld, sectorAt, sectorRect } from "./sector";
 
 const W = 2048;
@@ -120,6 +120,31 @@ describe("desiredSectors", () => {
       const res = desiredSectors(cam, 5, W, H, cfg(bad, 6));
       expect(res.length).toBeLessThanOrEqual(30); // bounded — not the 156-sector pool
     }
+  });
+
+  it("predictedAhead (Phase B prefetch): stationary ⇒ empty; moving ⇒ a leading sector the in-view window omits", () => {
+    // The production prefetch (main.ts streamReconcile) calls THIS pure helper with the
+    // constant-velocity extrapolation `2·pos − prevPos`. Pin both halves of its contract,
+    // so deleting the prediction (or collapsing `predicted = pos`) goes RED here — the old
+    // inline version shipped with NO test that could catch its removal.
+    const cam = camOver(0.0, 0.0, 0.3);
+    const inView = desiredSectors(cam, 4, W, H, cfg(24, 3));
+
+    // STATIONARY: prevPos == cam.posUnit ⇒ predicted == pos ⇒ ahead == in-view ⇒ []. (A
+    // `predicted = pos` mutation makes the MOVING case below also return [] → that asserts red.)
+    expect(predictedAhead(cam, cam.posUnit, inView, 4, W, H, cfg(24, 3))).toEqual([]);
+
+    // MOVING EAST: prevPos sits WEST of pos, so predicted = 2·pos − prevPos OVERSHOOTS east
+    // — the ahead window must surface eastern sectors the in-view window omits, and ONLY
+    // those (ahead-only by construction).
+    const prevWest = camOver(-0.5, 0.0, 0.3).posUnit;
+    const ahead = predictedAhead(cam, prevWest, inView, 4, W, H, cfg(24, 3));
+    const inViewKeys = new Set(inView.map((s) => `${s.sx}:${s.sy}`));
+    expect(ahead.length).toBeGreaterThan(0); // genuine leading sectors (deleting the prefetch → [])
+    expect(ahead.every((s) => !inViewKeys.has(`${s.sx}:${s.sy}`))).toBe(true); // ahead-ONLY (deduped vs in-view)
+    // The overshoot is EASTWARD: every ahead sector sits east of the in-view centre column.
+    const subSec = sectorAt(latLonToWorld(0, 0, W, H).x, latLonToWorld(0, 0, W, H).y, 4, W, H);
+    expect(ahead.some((s) => s.sx > subSec.sx)).toBe(true); // leads in the motion direction, not behind
   });
 
   it("POLAR CAP: rows centred beyond ±75° never stream (wedge-streak band)", () => {

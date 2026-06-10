@@ -983,9 +983,12 @@ dependencies = [
  "mapgen-core",
  "mapgen-render",
  "mapgen-world",
+ "resvg",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
+ "tiny-skia",
+ "usvg",
  "wasm-bindgen",
  "wasm-bindgen-test",
 ]
