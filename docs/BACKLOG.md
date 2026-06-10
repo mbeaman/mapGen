@@ -214,13 +214,22 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   `data-entry-eases` e2e signal (mutation-verified: signal never written → drill e2e red). The "globe
   GROWS as you zoom" half was already shipped (the altitude formula scales ~1.4× the sector's angular
   span per level — see main.ts:830); remaining feel-tuning is screenshot/judgment-bound.
-- **✅ ST-5 spike — DONE 2026-06-09, verdict NO-GO** (full verdict in
-  `docs/design/globe-ground-3d-navigation.md`): `createImageBitmap(svgBlob)` is unsupported in Chromium
-  148 (main thread AND worker — PNG control works, so the gap is specifically SVG ImageBitmap decode);
-  the current main-thread path costs ~312ms `drawImage` per 2k-polygon texture. Continuous-follow +
-  prefetch STAY GATED; the unlock is now precisely known: **worker-side wasm rasterization**
-  (resvg/tiny-skia, fontless for globe tiles) shipping RGBA instead of SVG strings — a fair-sized arc,
-  revival-triggered by motion-jank becoming the top complaint.
+- **✅ ST-5 OffscreenCanvas spike — DONE 2026-06-09, verdict NO-GO; then THE UNLOCK SHIPPED 2026-06-10.**
+  The spike (`docs/design/globe-ground-3d-navigation.md`): `createImageBitmap(svgBlob)` is unsupported in
+  Chromium 148 (main thread AND worker — PNG control works, so the gap is specifically SVG ImageBitmap
+  decode); the old main-thread path cost ~312ms `drawImage` per tile. The unlock was precisely known —
+  **worker-side wasm rasterization** — and is now BUILT: `WorldHandle::render_rgba` (resvg/usvg/tiny-skia,
+  fontless, `default-features = false`) renders globe tiles to RGBA IN THE WORKER and transfers the bytes;
+  the main thread only blits + uploads (`data-last-blit-ms < 50` vs ~300 ms). A pre-build spike measured
+  ~135 ms/tile off-thread and proved usvg HONORS the lens class selector (so `with_root_class` bakes the
+  lens, no per-variant render). On that foundation, **continuous-follow + velocity-predictive prefetch
+  SHIPPED** (during-motion pump + in-flight budget + discard-stale, bounded by the cache firewall). Wasm
+  +1 MB (banded by `check-bundle.mjs`). DEFERRED follow-up: **base-globe off-thread** — the base sphere
+  still rasterizes on main on enter/lens-toggle/year-scrub (OFF the navigation hot path; needs its own
+  year-aware `render_rgba_at_year` + an `enterGlobeView`/`yearFrame` round-trip). **Revival trigger:** the
+  ~300 ms `retextureGlobe` hitch on a lens-toggle or year-scrub becomes a top complaint, or year-scrub
+  animation jank is profiled as the dominant globe stall. See `docs/CLAIMS.md`
+  "Planet & globe presentation" (the off-main-thread + continuous-follow rows).
 - **✅ DRILL PRECISION + SECTOR SEAMS — DONE 2026-06-10 (user-reported, both reproduced + measured).**
   (1) "Zooming into the wrong spots": the camera centred on the containing SECTOR's centre, not the click
   — measured 25.2° off at L3 (fly to your click, then lurch to the sector centre; a label floating over
@@ -261,11 +270,18 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   `data-pending-tiles`, drains-to-zero e2e); (11) lens "Applying lens…" affordance; (12) end-to-end
   periodic continuity covered by the wrap-seam test (12≈#2); (13) nested-refinement reproducibility = (9).
   All mutation- or review-verified; goldens: `seed42_sector` unchanged (flat parents byte-identical).
+- **✅ WASM RASTERIZER + CONTINUOUS-FOLLOW — DONE 2026-06-10 (the ST-5 unlock, taken).** Globe tiles
+  rasterize off the main thread (`render_rgba`, resvg/usvg/tiny-skia in the worker → RGBA transferable);
+  the 312 ms paint-thread hitch is gone (`data-last-blit-ms < 50`). On that foundation: continuous-follow
+  (fill DURING motion) + velocity-predictive prefetch + in-flight budget + discard-stale, bounded. A
+  13-agent adversarial review caught a real blocker (the budget starved the STATIC-drill fill — fixed
+  with a per-completion refill, mutation-verified) + 7 others, all fixed. See the ST-5 entry above + the
+  `docs/CLAIMS.md` rows. **Deferred follow-up:** base-globe off-thread (off the hot path; own arc).
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
-  the primary globe view; **relief displacement** (evidence-gated, unchanged); **wasm rasterizer**
-  (the ST-5 unlock, evidence-gated).
+  the primary globe view; **relief displacement** (evidence-gated, unchanged); **base-globe off-thread**
+  (the deferred rasterizer follow-up — needs a year-aware `render_rgba_at_year`).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
 build; see `web/README.md`). Then `mapgen planet --seed 11` for the planisphere, or

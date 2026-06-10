@@ -398,6 +398,20 @@ worker pool — see Recommended scope reduction.
 > (b) on the real primitive set is the cheap decider before committing to either.
 > Revival trigger: continuous-follow/prefetch get prioritized, or profiling shows
 > settle-fill jank degrading the primary navigation experience.
+>
+> **UPDATE — UNLOCK TAKEN (2026-06-10): option (a) wasm raster SHIPPED.** A pre-build
+> spike de-risked it decisively: resvg/usvg/tiny-skia compile to wasm32 (+1 MB, banded),
+> raster ~135 ms/tile OFF the worker thread (vs the 312 ms `drawImage` ON the paint
+> thread), and usvg 0.47 HONORS the lens class selectors (so the worker bakes the lens
+> via `with_root_class` — no per-variant render, no second renderer, the option-(b) drift
+> risk avoided). `WorldHandle::render_rgba(style, lens, w, h)` renders the globe-tile SVG
+> internally and rasterizes to a transferable RGBA buffer; the worker `refineTile` posts
+> it (zero-copy), the main thread only `putImageData` + uploads (`data-last-blit-ms < 50`).
+> On that foundation, **continuous-follow + velocity-predictive prefetch are now in
+> scope and SHIPPED** (during-motion pump @ PUMP_MS=90, in-flight budget=3 with a
+> per-completion refill, discard-stale, all bounded by the existing cache firewall). The
+> base-globe texture still rasterizes on main (enter/lens/year-scrub — off the navigation
+> hot path) — a named deferred follow-up needing a year-aware `render_rgba_at_year`.
 
 **In scope (v1):** view-driven LOD selection, a bounded patch cache,
 settle-driven scheduling with single-worker serialization, inter-patch seams
