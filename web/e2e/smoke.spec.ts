@@ -398,6 +398,11 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   await expect(page.locator("#breadcrumb")).toContainText(/L[1-6]/);
   await expect(canvas).toBeVisible(); // still the 3D globe, NOT a 2D sector
   await expect(page.locator("#map-content")).toBeHidden();
+  // 1f entry-ease: the drill GLIDES into the flight pose instead of snapping —
+  // `data-entry-eases` is a monotonic counter bumped ONLY when enterRegion starts a
+  // glide (the interpolation itself is pinned off-GPU by camera.test.ts::lerpPose).
+  // Remove the entryEase capture in enterRegion → never set → red.
+  expect(Number(await canvas.getAttribute("data-entry-eases"))).toBeGreaterThan(0);
 
   // 1b: the refined sector lands on a curved high-detail patch over the base globe
   // — `data-patch=<level>` is set ONLY by globe.showPatch, and `data-patch-textures`

@@ -31,9 +31,11 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
+  type CamPose,
   type GlobeCamState,
   globeCamPose,
   LAT_MAX,
+  lerpPose,
   lonLatToUnit,
   panSubPoint,
   type PatchParams,
@@ -372,6 +374,17 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   const FLY_MS = 600;
   let flyTo: { from: Vector3; target: Vector3; start: number; onArrive: () => void } | null = null;
   const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+  // 1f entry-ease: glide from the camera's CURRENT pose into the flight pose over
+  // a short window instead of the one-frame snap (the fly-to end pose and the
+  // flight pose differ slightly — centroid vs click, radius, roll — and a deeper
+  // drill re-frames mid-flight). `from` is captured at enterRegion; the ease
+  // interpolates toward the LIVE flight pose, so a pan during the glide still
+  // converges. The look target the camera currently uses is tracked in
+  // `lastLook` (lookAt doesn't persist a readable target on the camera).
+  const ENTRY_MS = 350;
+  let entryEase: { from: CamPose; start: number } | null = null;
+  let entryEases = 0; // monotonic; data-entry-eases lets the e2e prove the glide path ran
+  const lastLook = new Vector3(0, 0, 0);
 
   const tick = () => {
     if (flyTo) {
@@ -380,6 +393,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       const t = Math.min(1, (performance.now() - flyTo.start) / FLY_MS);
       camera.position.lerpVectors(flyTo.from, flyTo.target, easeInOut(t));
       camera.lookAt(0, 0, 0);
+      lastLook.set(0, 0, 0);
       if (t >= 1) {
         const arrive = flyTo.onArrive;
         flyTo = null;
@@ -390,10 +404,16 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // Drilled (free-fly) mode: drive the camera from the flight state. The
       // anchor is framed in its LOCAL up frame, so an equatorial region orbits
       // correctly (no orbiting through the planet core).
-      const pose = globeCamPose(flight);
+      let pose = globeCamPose(flight);
+      if (entryEase) {
+        const t = Math.min(1, (performance.now() - entryEase.start) / ENTRY_MS);
+        pose = lerpPose(entryEase.from, pose, easeInOut(t));
+        if (t >= 1) entryEase = null;
+      }
       camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
       camera.up.set(pose.up[0], pose.up[1], pose.up[2]);
       camera.lookAt(pose.target[0], pose.target[1], pose.target[2]);
+      lastLook.set(pose.target[0], pose.target[1], pose.target[2]);
       // Track the region billboard: project its FIXED anchor; hide it once the
       // region rotates past the horizon (dot(anchor, camPos) < 1 ⇒ behind the limb).
       if (labelAnchor && regionLabel.textContent) {
@@ -542,6 +562,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
+      entryEase = null; // and any in-flight entry glide
       controls.enabled = true;
       disposePatches(); // free all patch GPU resources when leaving the globe
       hideLabel();
@@ -573,14 +594,24 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // this state (tick → globeCamPose) and OrbitControls steps aside. The drill
       // fly-to has already swung the camera near the point; this re-centres it on
       // the region and sets the framing altitude.
-      // DEFERRED (1a, cosmetic): the fly-to end pose and this flight pose differ
-      // slightly (centroid vs click, radius, roll), so there's a one-frame snap
-      // here; a short entry-ease is a polish increment, not a 1a correctness gap.
+      // 1f ENTRY-EASE: the fly-to end pose and this flight pose differ slightly
+      // (centroid vs click, radius, roll) — and a deeper drill re-frames from the
+      // previous flight pose — so instead of snapping, capture the camera's
+      // CURRENT pose and let tick glide it into the flight pose over ENTRY_MS.
       // Drop the previous level's patches immediately so a re-drill (or a level
       // change) doesn't leave stale patches hanging; the new in-view set streams in
       // on settle (the coarse base covers the gap). ST-1 is one level at a time.
       disposePatches();
       const cl = clampLat(subLat);
+      entryEase = {
+        from: {
+          position: [camera.position.x, camera.position.y, camera.position.z],
+          target: [lastLook.x, lastLook.y, lastLook.z],
+          up: [camera.up.x, camera.up.y, camera.up.z],
+        },
+        start: performance.now(),
+      };
+      canvas.dataset.entryEases = String((entryEases += 1));
       flight = { subLon, subLat: cl, altitude, heading: 0, pitch: 0 };
       flyTo = null;
       controls.enabled = false;
@@ -655,6 +686,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       hideLabel();
       flight = null;
       flyTo = null;
+      entryEase = null; // a stale glide must not replay on the next drill
       pickable = true;
       delete canvas.dataset.region;
       delete canvas.dataset.subLon;
@@ -664,6 +696,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       camera.up.set(0, 1, 0);
       camera.position.set(0, 0, 3.6);
       controls.target.set(0, 0, 0);
+      lastLook.set(0, 0, 0); // the overview looks at the origin again
       controls.update();
     },
     dispose() {

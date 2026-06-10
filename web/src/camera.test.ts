@@ -1,8 +1,10 @@
 import { Mesh, PerspectiveCamera, Raycaster, SphereGeometry, Vector2, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import {
+  type CamPose,
   type GlobeCamState,
   globeCamPose,
+  lerpPose,
   lonLatToUnit,
   panSubPoint,
   sectorPatchParams,
@@ -252,5 +254,47 @@ describe("camera ↔ sphere convention (raycast round-trip pin)", () => {
       expect(Math.abs(w.x - center.x)).toBeLessThan(W * 0.01);
       expect(Math.abs(w.y - center.y)).toBeLessThan(H * 0.01);
     }
+  });
+});
+
+describe("lerpPose (1f entry-ease)", () => {
+  const a: CamPose = { position: [0, 0, 3.6], target: [0, 0, 0], up: [0, 1, 0] };
+  const b: CamPose = { position: [1.2, 0.4, 0.9], target: [0.8, 0.3, 0.5], up: [0.2, 0.9, 0.1] };
+
+  it("returns the endpoints exactly at t=0 and t=1 (up normalized)", () => {
+    const p0 = lerpPose(a, b, 0);
+    near(p0.position[2], 3.6);
+    near(p0.target[0], 0);
+    near(p0.up[1], 1);
+    const p1 = lerpPose(a, b, 1);
+    near(p1.position[0], 1.2);
+    near(p1.target[1], 0.3);
+    // up is NORMALIZED at the endpoint, not b.up verbatim (b.up is non-unit here).
+    near(length(p1.up), 1);
+    near(p1.up[1] / p1.up[0], b.up[1] / b.up[0], 1e-4); // same direction as b.up
+  });
+
+  it("the midpoint lies strictly between the endpoints on every channel", () => {
+    const m = lerpPose(a, b, 0.5);
+    for (const k of [0, 1, 2] as const) {
+      const lo = Math.min(a.position[k], b.position[k]);
+      const hi = Math.max(a.position[k], b.position[k]);
+      expect(m.position[k]).toBeGreaterThanOrEqual(lo);
+      expect(m.position[k]).toBeLessThanOrEqual(hi);
+      expect(m.target[k]).toBeGreaterThanOrEqual(Math.min(a.target[k], b.target[k]));
+      expect(m.target[k]).toBeLessThanOrEqual(Math.max(a.target[k], b.target[k]));
+    }
+    // Strictly between where the endpoints differ (the glide is real, not a snap:
+    // a t-clamped-to-1 implementation would sit AT b and fail these).
+    expect(m.position[0]).toBeGreaterThan(0.1);
+    expect(m.position[0]).toBeLessThan(1.1);
+    near(length(m.up), 1); // up stays unit mid-glide
+  });
+
+  it("clamps t outside [0,1] (no overshoot from a late frame)", () => {
+    const over = lerpPose(a, b, 1.7);
+    near(over.position[0], 1.2);
+    const under = lerpPose(a, b, -0.3);
+    near(under.position[2], 3.6);
   });
 });

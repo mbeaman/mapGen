@@ -99,6 +99,35 @@ export function globeCamPose(s: GlobeCamState): { position: Vec3; target: Vec3; 
   return { position, target: P, up };
 }
 
+/// A full camera pose: where it sits, what it looks at, which way is screen-up.
+/// The shape `globeCamPose` returns, named so the entry-ease can interpolate it.
+export interface CamPose {
+  position: Vec3;
+  target: Vec3;
+  up: Vec3;
+}
+
+/// Interpolate between two camera poses (increment 1f entry-ease): linear in
+/// position and look-target, normalized-linear in up (nlerp — exact at the
+/// endpoints, monotone in between; the entry poses differ by a small angle, so
+/// nlerp ≈ slerp without the trig). `t` is raw [0,1] — the CALLER applies easing,
+/// keeping this pure and trivially testable. Used to glide the camera from the
+/// fly-to end pose (or the previous drill's pose) into the flight pose instead of
+/// the one-frame snap the 1a note deferred.
+export function lerpPose(a: CamPose, b: CamPose, t: number): CamPose {
+  const k = Math.max(0, Math.min(1, t));
+  const lerp3 = (p: Vec3, q: Vec3): Vec3 => [
+    p[0] + (q[0] - p[0]) * k,
+    p[1] + (q[1] - p[1]) * k,
+    p[2] + (q[2] - p[2]) * k,
+  ];
+  return {
+    position: lerp3(a.position, b.position),
+    target: lerp3(a.target, b.target),
+    up: norm(lerp3(a.up, b.up)),
+  };
+}
+
 /// Partial-sphere geometry for a drilled sector (increment 1b). Maps the sector's
 /// equirectangular world rect to a three.js `SphereGeometry` segment occupying
 /// exactly that lon/lat span on the unit sphere, so a high-detail texture of the
