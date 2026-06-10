@@ -121,4 +121,15 @@ describe("desiredSectors", () => {
       expect(res.length).toBeLessThanOrEqual(30); // bounded — not the 156-sector pool
     }
   });
+
+  it("POLAR CAP: rows centred beyond ±75° never stream (wedge-streak band)", () => {
+    // Camera near the north pole: without the cap the window would include the
+    // top rows, whose equirect tiles render as converging wedges on the sphere.
+    const cam = camOver(0, Math.PI / 2 - 0.05, 0.3);
+    const res = desiredSectors(cam, 4, W, H, cfg(24, 2)); // span = 16, rows 11.25°
+    expect(res.length).toBeGreaterThan(0);
+    // Row centre lat for sy: 90° − (sy+0.5)/16·180°. sy=0 → 84.4°, sy=1 → 73.1°.
+    // The cap (75°) excludes sy=0 only; dropping the cap re-admits it → red.
+    expect(res.every((s) => s.sy >= 1)).toBe(true);
+  });
 });

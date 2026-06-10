@@ -368,9 +368,11 @@ test("globe scale mounts a 3D sphere and renders a frame", async ({ page }) => {
   // And it's textured with the REAL world (the flat biomes render), not the
   // placeholder graticule: setTexture sets data-textured only when a rasterized
   // world texture is applied (the constructor's placeholder never goes through
-  // setTexture). So this fails if the generate→biomes-svg→rasterize→setTexture
-  // pipeline broke and the sphere fell back to the placeholder.
-  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  // setTexture). THE READY CONTRACT (#11, quality hunt): "Globe ready" is only
+  // announced AFTER the texture lands, so at this point — having waited for the
+  // ready status above — the attribute must ALREADY be "1" with no further wait.
+  // Announce-before-texture (the old order) reds this race-free read.
+  expect(await canvas.getAttribute("data-textured")).toBe("1");
   // The sphere is shown over the hidden SVG layer.
   await expect(canvas).toBeVisible();
   await expect(page.locator("#map-content")).toBeHidden();
@@ -530,6 +532,24 @@ test("globe time-slider re-textures the sphere per year", async ({ page }) => {
     .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
     .toBeGreaterThan(before);
   await expect(page.locator("#timeyear")).not.toHaveText("present");
+
+  // THE TEMPORAL CONTRACT: drilling from a scrubbed past year SNAPS the base back
+  // to the present (refined tiles always render the present — without the snap,
+  // present detail composites over a past base: mixed-era content with no
+  // warning, and the slider label lies on return). The snap is observable as one
+  // more base re-texture fired by the drill itself. Remove the snap in navTo →
+  // the count never bumps → red.
+  const atPast = Number(await canvas.getAttribute("data-textures"));
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-textures")), { timeout: 15_000 })
+    .toBeGreaterThan(atPast);
+  // Returning to the overview shows a TRUTHFUL label: the base is the present
+  // again, and the slider says so.
+  await page.locator("#breadcrumb").getByRole("button", { name: "Globe" }).click();
+  await expect(page.locator("#timeyear")).toHaveText("present");
 });
 
 // Lens parity: a data overlay (Faith/Prosperity/Trade) can be shown on the globe,
@@ -655,6 +675,78 @@ test("globe drill survives an intermediate crumb hop and a regenerate", async ({
 // (not a drag) drills ONE level finer and rebuilds a smaller patch — the sphere
 // stays shown, the 2D layer never appears. Before 1c a patch click did nothing
 // (pickable was false while drilled). A globe click drills to L3, so a patch click → L4.
+// #10 (quality hunt): the drill's detail fill is a serial queue of up to 49 tiles
+// (~100ms+ each) — the user must SEE the progress, not stare at a coarse base with
+// a status claiming readiness. `data-pending-tiles` tracks the outstanding queue:
+// it appears > 0 right after the drill settles and drains to 0 when the in-view
+// set is filled (the status passes through "Loading detail… N tiles" on the same
+// updates). Remove the updateStreamProgress calls → the attribute never appears →
+// red.
+test("drill detail fill shows live progress and drains to zero", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  // The queue surfaces (some tiles outstanding)…
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-pending-tiles")) ?? "0"), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  // …and drains to zero with the region prompt restored.
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-pending-tiles")), {
+      timeout: 30_000,
+    })
+    .toBe(0);
+  await expect(page.locator("#status")).toContainText("Region L", { timeout: 10_000 });
+});
+
+// #9 (quality hunt): RE-DRILL REPRODUCIBILITY — drill, return, drill the same
+// point again: the same sector must load (the path every user takes constantly;
+// state corruption across the round-trip would land them somewhere else or wedge
+// the stream). The Rust determinism of refine is pinned separately; this pins the
+// APP state machine across the round-trip.
+test("re-drilling the same point after a return loads the same sector", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  const lon1 = Number(await canvas.getAttribute("data-sub-lon"));
+  const lat1 = Number(await canvas.getAttribute("data-sub-lat"));
+  const crumb1 = await page.locator("#breadcrumb").textContent();
+  // Let the drill's stream drain (explicit signal — not a sleep) so the return
+  // isn't racing in-flight tiles under CI load.
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-pending-tiles")) ?? "0"), {
+      timeout: 30_000,
+    })
+    .toBe(0);
+  // Return to the overview, then drill the same screen point again — only after
+  // the overview camera is provably back upright (the exitRegion reset signal).
+  await page.locator("#breadcrumb").getByRole("button", { name: "Globe" }).click();
+  await expect(canvas).not.toHaveAttribute("data-region", "1");
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-cam-up-y")), { timeout: 10_000 })
+    .toBeGreaterThan(0.99);
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  const lon2 = Number(await canvas.getAttribute("data-sub-lon"));
+  const lat2 = Number(await canvas.getAttribute("data-sub-lat"));
+  const crumb2 = await page.locator("#breadcrumb").textContent();
+  // Same point (within a degree — the precision contract) and same sector chain.
+  expect(Math.abs(lon2 - lon1)).toBeLessThan(0.02);
+  expect(Math.abs(lat2 - lat1)).toBeLessThan(0.02);
+  expect(crumb2).toBe(crumb1);
+});
+
 test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async ({ page }) => {
   await page.goto("/?scale=globe&cells=2000&seed=8");
   const status = page.locator("#status");

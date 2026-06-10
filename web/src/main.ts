@@ -180,6 +180,23 @@ const streamReconcile = (): void => {
     pendingTiles.add(key);
     send({ type: "refineTile", level: sec.level, sx: sec.sx, sy: sec.sy, style: "globe" });
   }
+  updateStreamProgress();
+};
+
+// #10 (quality hunt): the drill's detail fill is a SERIAL worker queue (up to
+// 7×7 = 49 tiles × ~100ms+) — without an affordance the user sees a coarse base,
+// a status claiming readiness, and detail that "eventually happens". Surface the
+// queue: a live "Loading detail… N tiles" status while tiles are outstanding,
+// the region prompt once the in-view set is filled, and `data-pending-tiles` so
+// the e2e can pin the affordance (appears > 0, then drains to 0).
+const updateStreamProgress = (): void => {
+  if (!globeScale || nav.level === 0) return;
+  globeCanvas.dataset.pendingTiles = String(pendingTiles.size);
+  if (pendingTiles.size > 0) {
+    setStatus(`Loading detail… ${pendingTiles.size} tile${pendingTiles.size === 1 ? "" : "s"}`, "busy");
+  } else {
+    setStatus(`Region L${nav.level} — drag to pan, scroll to zoom; Globe to return.`, "ok");
+  }
 };
 
 // 1e — lens toggle while DRILLED: the streamed patches dominate the drilled surface,
@@ -220,7 +237,12 @@ const textureGlobe = async (g: GlobeHandle, svg: string): Promise<void> => {
 // Re-texture the sphere from the cached `globe` SVG with the current lens applied —
 // used when a lens toggles while the globe is shown (no regenerate / worker hop).
 const retextureGlobe = (): void => {
-  if (globe && lastGlobeSvg) void textureGlobe(globe, lastGlobeSvg);
+  if (globe && lastGlobeSvg) {
+    // The re-rasterize blocks the main thread ~300ms+ (2048×1024 SVG drawImage) —
+    // say so instead of letting the UI silently freeze on a lens click.
+    setStatus("Applying lens…", "busy");
+    void textureGlobe(globe, lastGlobeSvg).then(() => setStatus("Lens applied.", "ok"));
+  }
 };
 
 // Show the sphere over the (hidden) SVG layer, optionally texturing it from an
@@ -277,6 +299,11 @@ let historyYears: number[] = [];
 // Coalesce rapid scrubs: render one year at a time, remembering the latest.
 let yearBusy = false;
 let pendingYear: number | null = null;
+// The year the base view is scrubbed to (null = present). Drilling SNAPS this to
+// present: refined tiles always render the present, so a drill from a past year
+// would otherwise composite present detail over a past base — a silent temporal
+// lie (and the slider label lied again on return). Tracked here so navTo can snap.
+let scrubbedYear: number | null = null;
 
 // ---- Layer toggles ---- (which layers are enabled; applied to every SVG swap)
 const layerState = defaultLayerState();
@@ -516,11 +543,16 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         // exactly the lon/lat whole-world map the sphere UVs want) and show it
         // instead of injecting the SVG into the DOM. worldW/worldH were already
         // pinned to planet dims.
-        void enterGlobeView(msg.svg);
+        // "Globe ready" only AFTER the texture actually lands — enterGlobeView's
+        // rasterize+upload takes ~300ms+, and announcing readiness first created a
+        // false-ready window where clicks were accepted over the placeholder.
+        setStatus("Texturing globe…", "busy");
+        void enterGlobeView(msg.svg).then(() => {
+          setStatus(`Globe ready · generated in ${(msg.genMs / 1000).toFixed(2)}s`, "ok");
+        });
         historyYears = msg.historyYears;
         updateBreadcrumb();
         narrateBtn.disabled = false;
-        setStatus(`Globe ready · generated in ${(msg.genMs / 1000).toFixed(2)}s`, "ok");
         break;
       }
       frames.push({ svg: msg.svg, label: "Finished" });
@@ -572,6 +604,7 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         if (globe && globeScale && nav.level === reqLevel) {
           globe.showPatch(sec, raster, params, tw * th * 4); // RGBA bytes
         }
+        updateStreamProgress(); // live "Loading detail… N tiles" countdown (#10)
       });
       break;
     }
@@ -836,6 +869,14 @@ const navTo = (target: Sector, focus?: { x: number; y: number }) => {
       // doesn't care: desiredSectors windows around whatever sub-point the camera
       // has. Altitude frames the sector by its angular (longitude) span: deeper
       // sectors → closer.
+      // TEMPORAL SNAP: refined tiles always render the PRESENT (refineTile has no
+      // year), so a drill from a scrubbed past year would paint present detail
+      // over a past base — mixed-era content with no warning. Snap the base back
+      // to the present before drilling (the e2e pins the re-texture).
+      if (scrubbedYear !== null) {
+        scrubbedYear = null;
+        requestYear(historyYears[1] ?? 0);
+      }
       const rc = sectorRect(target, worldW, worldH);
       const fx = focus?.x ?? rc.x0 + rc.w / 2;
       const fy = focus?.y ?? rc.y0 + rc.h / 2;
@@ -942,6 +983,7 @@ const refreshTimeslider = () => {
   timescrubInput.max = String(end);
   timescrubInput.value = String(end); // start at the present
   timeyearEl.textContent = "present";
+  scrubbedYear = null;
 };
 
 const labelYear = (y: number) => {
@@ -974,6 +1016,7 @@ const flushPendingYear = () => {
 timescrubInput.addEventListener("input", () => {
   if (busy) return;
   const y = Number(timescrubInput.value);
+  scrubbedYear = y >= (historyYears[1] ?? 0) ? null : y;
   labelYear(y);
   requestYear(y);
 });

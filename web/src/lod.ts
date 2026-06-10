@@ -30,6 +30,12 @@ export interface CamState {
   far: number;
 }
 
+/// Sector rows whose centre |latitude| exceeds this never stream a patch — the
+/// pole band the base texture already fades to ocean (~|lat| > 75°). Equirect
+/// tiles mapped onto the converging polar sphere render as wedge-streaks; the
+/// faded base is the honest presentation there.
+export const POLAR_CAP_LAT = (75 * Math.PI) / 180;
+
 export interface LodConfig {
   /** hard cap on the live/desired patch count (MAX_LIVE_PATCHES). */
   maxPatches: number;
@@ -101,6 +107,13 @@ export function desiredSectors(
     for (let dx = -N; dx <= N; dx++) {
       const sx = (((subSec.sx + dx) % span) + span) % span; // WRAP longitude (periodic)
       const sy = Math.max(0, Math.min(span - 1, subSec.sy + dy)); // CLAMP latitude (poles)
+      // POLAR CAP: skip rows whose centre latitude is beyond ±75° — the same band
+      // the base texture's pole fade covers. Equirect tiles there render as
+      // converging wedge-streaks on the sphere (texels compress to a point), which
+      // reads as broken; the faded base showing through reads as intended low-fi
+      // polar ocean. (screenshot-confirmed on a polar drill.)
+      const rowCenterLat = Math.abs(Math.PI / 2 - ((sy + 0.5) / span) * Math.PI);
+      if (rowCenterLat > POLAR_CAP_LAT) continue;
       const key = `${sx}:${sy}`;
       if (seen.has(key)) continue; // pole clamping (and a window ≥ span) creates duplicates
       seen.add(key);

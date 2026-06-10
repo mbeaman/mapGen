@@ -113,8 +113,14 @@ describe("sectorPatchParams", () => {
 
   it("segW/segH track the lon/lat aspect (else the cartography squashes) and centerDir matches the sector center", () => {
     const p = sectorPatchParams({ level: 2, sx: 0, sy: 1 }, W, H); // wide-ish sector
-    // The segment aspect must follow the angular aspect within rounding.
-    expect(Math.abs(p.segW / p.segH - p.phiLength / p.thetaLength)).toBeLessThan(0.25);
+    // The segment aspect must follow the angular aspect within the EXACT
+    // quantization bound: segW/segH = round(span/0.06) each carry ≤ ±0.5 of
+    // rounding, so the ratio error is ≤ ratio · (0.5/segW + 0.5/segH) to first
+    // order. (The old magic 0.25 admitted a 20%+ cartographic squash — a visibly
+    // distorted patch — without ever tripping; the derived bound is ~3% here.)
+    const ratio = p.phiLength / p.thetaLength;
+    const bound = ratio * (0.5 / p.segW + 0.5 / p.segH) + 1e-6;
+    expect(Math.abs(p.segW / p.segH - ratio)).toBeLessThanOrEqual(bound);
     // centerDir is the unit vector at the sector center (cross-checked vs lonLatToUnit).
     const cx = 0 + 512 / 2;
     const cyWorld = 320 + 320 / 2;
