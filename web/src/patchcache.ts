@@ -10,11 +10,17 @@ import type { Sector } from "./sector";
 /// The hard caps — a SINGLE source of truth so the selector's `maxPatches` and the
 /// cache's `maxPatches` cannot drift (pass `MAX_LIVE_PATCHES` to BOTH at the call
 /// site). Per the streaming addendum.
-// Sized for a PREFETCH RING (ST-2, window 2 = 5×5 candidates): the cap must hold the
-// visible hemisphere's worth of patches PLUS a ring beyond the view edge, so panning
-// lands on already-streamed detail. ~32 patches × the real ~2.1 MB/tile ≈ 67 MB GPU.
-export const MAX_LIVE_PATCHES = 32;
-export const MAX_TEXTURE_BYTES = 128_000_000; // ~128 MB (estBytes-based room → 32 loads)
+// Sized so the streamed patch set COVERS THE VISIBLE CAP at the first drill level
+// (window 3 = 7×7 candidates): at L3 framing altitude (~1.1) the horizon sits
+// ~61° from the sub-point — a visible cap ~123° across, ~2.7 L3 sectors (45°) in
+// radius. The previous 5×5 window (~112° centred) left the patch set's EDGE
+// inside the view: a permanent sharp straight line where crisp streamed detail
+// abutted the blurry coarse base sphere — the dominant "nature unnaturally
+// shifts" seam artifact. 7×7 puts that boundary at/past the horizon at L3 (and
+// horizon foreshortening hides the residual at deeper levels). ~52 patches × the
+// real ~2.1 MB/tile ≈ 110 MB GPU.
+export const MAX_LIVE_PATCHES = 52;
+export const MAX_TEXTURE_BYTES = 208_000_000; // estBytes-based room → 52 loads
 export const ESTIMATED_PATCH_BYTES = 4_000_000; // 1024px-long-edge RGBA, no mipmaps
 
 /// Stable cache key — `style` is IN the key so a lens toggle can't serve a stale

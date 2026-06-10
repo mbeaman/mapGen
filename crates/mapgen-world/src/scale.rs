@@ -260,6 +260,22 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
     ocean::run(&mut world);
     climate_seasonal::run(&mut world, ClimateParams::default());
+
+    // The projections (and the climate seam-pin below) sample parent layers by
+    // "nearest parent cell" — compute that mapping once and share it (the nearest
+    // search dominated the projection cost).
+    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
+
+    // Climate seam-pinning: elevation is pinned to the shared base above, but the
+    // climate fields are marched per-sector on the sector's OWN mesh (upwind
+    // moisture transport), so two adjacent sectors disagree slightly along their
+    // shared edge — and BIOMES quantize that disagreement into discrete class
+    // swaps along a perfectly straight line (the visible "nature unnaturally
+    // shifts" seam). Blend each climate field toward the PARENT's value (nearest
+    // parent cell — both neighbours sample the same parent) with the same
+    // edge-distance smoothstep elevation uses, BEFORE biomes classify, so the two
+    // sides of a seam classify from near-identical inputs at the edge.
+    pin_climate_to_parent(&mut world, parent, rect, &nearest_parent);
     biomes::classify(&mut world);
 
     // Project the parent's river network onto the sector. Rivers are derived
@@ -269,10 +285,6 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     // gives correct drainage and makes a river cross a sector seam identically on
     // both sides. Runs after biomes (which used the sector's own flow), so this
     // only re-bases what the renderer draws.
-    //
-    // Both projections sample parent layers by "nearest parent cell" — compute
-    // that mapping once and share it (it dominated the projection cost).
-    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
     project_hydrology(parent, &mut world, halo, &nearest_parent);
 
     // Project the parent's society onto the sector — the same towns, borders,
@@ -339,6 +351,67 @@ fn pin_edges_to_shared(world: &mut WorldData, rect: [f32; 4], shared: &[f32]) {
         let t = (d_in / blend).clamp(0.0, 1.0);
         let w = t * t * (3.0 - 2.0 * t); // smoothstep
         elev[i] = shared[i] + (elev[i] - shared[i]) * w;
+    }
+}
+
+/// Climate seam-pinning (the biome half of `pin_edges_to_shared`): blend every
+/// climate field toward the PARENT's value (nearest parent cell) as cells
+/// approach the sector boundary, with the same smoothstep band elevation uses.
+/// Two adjacent sectors sample the SAME parent cells along their shared edge, so
+/// their climate — and therefore the quantized biome classification — agrees at
+/// the seam instead of swapping classes along a straight line. The interior
+/// (band inward) keeps the sector's own marched climate untouched. A
+/// physical-only parent (no climate) is a no-op. Pure f32 mul/add — no RNG, no
+/// transcendentals — so the refine path stays native↔wasm byte-identical.
+fn pin_climate_to_parent(
+    world: &mut WorldData,
+    parent: &WorldData,
+    rect: [f32; 4],
+    nearest_parent: &[Option<u32>],
+) {
+    let [x0, y0, x1, y1] = rect;
+    let blend = ((x1 - x0).min(y1 - y0) * 0.12).max(1.0);
+    let n = world.mesh.cell_count();
+    // (sector field, parent field) pairs — seasonal fields are present on a full
+    // parent; each pair is skipped independently if either side is missing.
+    let pairs: [(&mut Vec<f32>, &Vec<f32>); 6] = [
+        (&mut world.climate.temperature, &parent.climate.temperature),
+        (
+            &mut world.climate.precipitation,
+            &parent.climate.precipitation,
+        ),
+        (
+            &mut world.climate.temperature_summer,
+            &parent.climate.temperature_summer,
+        ),
+        (
+            &mut world.climate.temperature_winter,
+            &parent.climate.temperature_winter,
+        ),
+        (
+            &mut world.climate.precipitation_summer,
+            &parent.climate.precipitation_summer,
+        ),
+        (
+            &mut world.climate.precipitation_winter,
+            &parent.climate.precipitation_winter,
+        ),
+    ];
+    for (field, parent_field) in pairs {
+        if field.len() != n || parent_field.len() != parent.mesh.cell_count() {
+            continue;
+        }
+        for i in 0..n {
+            let Some(pi) = nearest_parent[i] else {
+                continue;
+            };
+            let target = parent_field[pi as usize];
+            let p = world.mesh.sites[i];
+            let d_in = (p[0] - x0).min(x1 - p[0]).min(p[1] - y0).min(y1 - p[1]);
+            let t = (d_in / blend).clamp(0.0, 1.0);
+            let w = t * t * (3.0 - 2.0 * t); // smoothstep
+            field[i] = target + (field[i] - target) * w;
+        }
     }
 }
 

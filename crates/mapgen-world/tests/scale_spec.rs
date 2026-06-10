@@ -301,6 +301,68 @@ fn adjacent_sectors_agree_at_their_seam() {
     );
 }
 
+/// Seam-pinning for the VISIBLE field: two adjacent sectors agree on the BIOME
+/// along their shared edge. Elevation is pinned to the shared base (above), but
+/// biomes derive from CLIMATE (temperature/precipitation), which each sector
+/// marches independently on its own mesh — without `pin_climate_to_parent`, the
+/// two sides land on different sides of biome-class thresholds and the seam
+/// shows as a sharp straight line where nature unnaturally shifts (the
+/// user-reported drilled-globe artifact: discrete biome colours swapping along
+/// the sector edge). Fixture: the probe-picked WORST seam — the seed-8 planet
+/// @2000 (the globe e2e world), L3 (1,4)|(2,4), a land seam that agreed only 87%
+/// unpinned and 92% pinned (the residual is nearest-cell sampling granularity at
+/// legitimate biome transitions, not seam error). Threshold 90% sits between —
+/// removing the climate pin reds this. Behavioral fixture: re-derive the seam if
+/// a sim change shifts the world.
+#[test]
+fn adjacent_sectors_agree_on_biome_at_their_seam() {
+    let mut p = GenerateParams::planet(8);
+    p.cell_count = 2000;
+    let parent = generate_full(p);
+    let a = refine_sector(
+        &parent,
+        Sector {
+            level: 3,
+            sx: 1,
+            sy: 4,
+        },
+        RefineParams::default(),
+    );
+    let b = refine_sector(
+        &parent,
+        Sector {
+            level: 3,
+            sx: 2,
+            sy: 4,
+        },
+        RefineParams::default(),
+    );
+
+    let edge_x = 2048.0 * 2.0 / 8.0; // boundary between L3 columns 1 and 2
+    let row_h = 1024.0 / 8.0;
+    let (y_lo, y_hi) = (row_h * 4.0 + 4.0, row_h * 5.0 - 4.0);
+
+    let mut same = 0;
+    let mut total = 0;
+    for k in 0..60 {
+        let y = y_lo + (y_hi - y_lo) * k as f32 / 59.0;
+        let pt = [edge_x, y];
+        let ba = a.climate.biome[nearest(&a.mesh.sites, pt)];
+        let bb = b.climate.biome[nearest(&b.mesh.sites, pt)];
+        total += 1;
+        if ba == bb {
+            same += 1;
+        }
+    }
+    let agree = same as f32 / total as f32;
+    assert!(
+        agree >= 0.9,
+        "seam biome agreement {:.0}% ({same}/{total}) — adjacent sectors classify the \
+         same edge differently (unpinned climate → visible straight-line biome swaps)",
+        agree * 100.0
+    );
+}
+
 /// Golden hash of a fixed refined sector — the native anchor for the
 /// cross-platform refine golden (`crates/mapgen-wasm/tests/cross_platform.rs`
 /// hashes the same sector under wasm32 and compares to this file). Pins that the
