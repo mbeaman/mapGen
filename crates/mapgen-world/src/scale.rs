@@ -7,35 +7,37 @@
 //!
 //! ## How it stays consistent with the parent
 //!
-//! The base elevation field is *position-deterministic*: plate centres are
-//! scattered in world coordinates from the **root** `Stage::Plates` stream, and
-//! the noise overlay is a pure function of world position from the **root**
-//! `Stage::Noise` stream. A sector recomputes exactly those fields, just sampled
-//! on a denser mesh confined to the sub-rectangle — so the coarse shape (coast
-//! lines, plate uplift, mountain belts) matches the parent by construction. The
-//! coarsening contract — averaging the child back down reproduces the parent —
-//! is tested in `tests/scale_spec.rs` on this base field.
+//! The child's elevation **anchors to the parent's FINAL eroded field** —
+//! [`parent_anchor_elevation`] interpolates it at each child site (k-nearest
+//! inverse-distance over the surrounding parent cells), so the content the user
+//! was just looking at is exactly what gets refined: same coastlines, same
+//! mountain belts, same valleys (which therefore align with the PROJECTED parent
+//! rivers). The refine path runs NO erosion of its own — the parent's erosion is
+//! already in the anchor, and re-deriving terrain (the old model: recompute
+//! plates+noise, re-erode) is what made zooming rewrite the map. The coarsening
+//! contract — the child reproduces the parent at the parent's own sample points —
+//! is pinned tight in `tests/scale_spec.rs` (land/sea > 96%, MAD < 0.05, plus a
+//! planet-path biome test).
 //!
-//! Sub-parent **detail** (extra high-frequency noise octaves) and the stateful
-//! stages' randomness (erosion, etc.) are drawn from the **sector** seed
-//! ([`StageRng::sector`]), so they are reproducible per (level, sx, sy) yet
-//! distinct per sector. Because the added octaves are zero-mean, they average
-//! away under coarsening — the contract still holds.
+//! Sub-parent **detail** (extra high-frequency, zero-mean noise octaves) is drawn
+//! from the **sector** seed ([`StageRng::sector`]), so it is reproducible per
+//! (level, sx, sy) yet distinct per sector, and averages away under coarsening.
 //!
 //! ## Halo + seams
 //!
-//! Erosion / hydrology / climate are neighbour-coupled, so a bare sector would
-//! show edge artifacts. We build the mesh over the sector grown by a halo margin
-//! and run the stages over the whole thing; the output `mesh.region` is the
-//! *true* sector, so the renderer's viewport clips the halo away. The halo is
-//! context for the interior. Seam *consistency* between adjacent sectors is then
-//! achieved explicitly: [`pin_edges_to_shared`] blends each sector's terrain back
-//! to the shared base field toward its edges, so two neighbours agree on
-//! elevation/coast along their seam while keeping their own interior detail.
+//! Hydrology / climate are neighbour-coupled, so a bare sector would show edge
+//! artifacts. We build the mesh over the sector grown by a halo margin and run
+//! the stages over the whole thing; the output `mesh.region` is the *true*
+//! sector, so the renderer's viewport clips the halo away. Seam *consistency*
+//! between adjacent sectors is explicit: [`pin_edges_to_shared`] fades each
+//! sector's own detail noise out toward the (parent-derived, hence shared)
+//! anchor at the edges, and `pin_climate_to_parent` does the same for the
+//! climate fields before biomes classify — so two neighbours agree along their
+//! seam, with each other AND with the parent's coarse render.
 //!
 //! ## Scope (v1)
 //!
-//! Refines the *physical* map: terrain → erosion → hydrology → ocean → climate →
+//! Refines the *physical* map: anchored terrain → hydrology → ocean → climate →
 //! biomes (+ soils). Two layers are **projected from the parent** rather than
 //! re-rolled, so a drill-in shows *this* world (not a different one) and stays
 //! seam-consistent (both neighbours sample the same global parent): society
@@ -51,7 +53,7 @@ use mapgen_core::{
 use mapgen_geom::{Mesh, RegionMeshParams};
 
 use crate::{
-    biomes, climate::ClimateParams, climate_seasonal, erosion, hydrology, noise, ocean, plates,
+    biomes, climate::ClimateParams, climate_seasonal, hydrology, noise, ocean, plates,
     GenerateParams,
 };
 
@@ -206,17 +208,36 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
         ..Default::default()
     };
 
-    // 3. Base noise from the ROOT stream → identical low-frequency field.
-    noise::overlay(
-        &mut world,
-        noise::NoiseParams::default(),
-        &mut root_rng.stream(Stage::Noise),
-    );
+    // The anchor, the climate seam-pin, and the projections all sample parent
+    // layers by "nearest parent cell" — compute that mapping once and share it
+    // (the nearest search dominated the projection cost).
+    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
 
-    // Seam reference: the base field so far (plates + ROOT noise) is *shared* —
-    // an adjacent sector recomputes it identically. Snapshot it now, before the
-    // sector-specific detail noise and erosion, so we can pin the sector edges
-    // back to it and have neighbours agree along their shared boundary.
+    // 3. CROSS-LEVEL ANCHOR (the coarsening contract made literal): the child's
+    // elevation REFINES the parent's FINAL eroded field — the content the user
+    // was just looking at — rather than re-deriving its own. The old path
+    // rebuilt plates+noise (the PRE-erosion base) and ran its OWN erosion, so
+    // zooming in rewrote the map: measured on the globe e2e world, only 55–85%
+    // of cells kept their land/sea sign and 34–58% their biome across a drill.
+    // It also carved fictional valleys that didn't align with the PROJECTED
+    // parent rivers drawn on top. Now: sample the parent's elevation at each
+    // child site (k=4 inverse-distance interpolation over the surrounding parent
+    // cells — continuous at every drill depth) and let the sector add only
+    // zero-mean fine detail below. Child EROSION IS GONE — the parent's erosion
+    // is already in the anchor (re-eroding was the drift). The anchor is also
+    // the seam reference: adjacent sectors sample the SAME parent, so they agree
+    // with each other AND with the coarse base render at every boundary.
+    if let Some(anchor) = parent_anchor_elevation(parent, &world, halo) {
+        world.terrain.elevation = anchor;
+    } else {
+        // Physical-only parent (no usable elevation field): fall back to the
+        // recomputed plates field + root noise so the sector is still terrain.
+        noise::overlay(
+            &mut world,
+            noise::NoiseParams::default(),
+            &mut root_rng.stream(Stage::Noise),
+        );
+    }
     let shared_elev = world.terrain.elevation.clone();
 
     // 4. Sub-parent detail from the SECTOR stream: extra octaves at the
@@ -237,20 +258,11 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
         );
     }
 
-    // 5. Physical pipeline over the sub-mesh (sector streams for the stateful
-    // stages). Mirrors `generate_full`'s stage order; `mesh.width/height` stay
-    // full-world so plate scatter and climate latitude remain global.
-    erosion::run(
-        &mut world,
-        erosion::ErosionParams::default(),
-        &mut sec_rng.stream(Stage::Erosion),
-    );
-
-    // Seam-pinning: blend the eroded + detailed terrain back toward the shared
-    // base field as we approach the sector edges, so two independently-generated
-    // neighbours agree along their shared boundary (their edge cells both reduce
-    // to the same shared field) while the interior keeps its full detail. Runs
-    // before hydrology so rivers/coast are derived from the pinned terrain.
+    // Seam-pinning: fade the sector's own detail noise out toward the anchor as
+    // cells approach the sector edges, so two independently-generated neighbours
+    // (whose detail noise comes from DIFFERENT sector streams) agree along their
+    // shared boundary — and both agree with the parent's render there. Runs
+    // before hydrology so coast is derived from the pinned terrain.
     pin_edges_to_shared(&mut world, rect, &shared_elev);
 
     hydrology::detect_coast(&mut world);
@@ -260,11 +272,6 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     hydrology::extract_rivers(&mut world, &flow_dir, 0.05);
     ocean::run(&mut world);
     climate_seasonal::run(&mut world, ClimateParams::default());
-
-    // The projections (and the climate seam-pin below) sample parent layers by
-    // "nearest parent cell" — compute that mapping once and share it (the nearest
-    // search dominated the projection cost).
-    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
 
     // Climate seam-pinning: elevation is pinned to the shared base above, but the
     // climate fields are marched per-sector on the sector's OWN mesh (upwind
@@ -352,6 +359,73 @@ fn pin_edges_to_shared(world: &mut WorldData, rect: [f32; 4], shared: &[f32]) {
         let w = t * t * (3.0 - 2.0 * t); // smoothstep
         elev[i] = shared[i] + (elev[i] - shared[i]) * w;
     }
+}
+
+/// The cross-level elevation anchor: the parent's FINAL (eroded) elevation
+/// interpolated at each child site by INVERSE-DISTANCE WEIGHTING over the k=4
+/// nearest parent cells. IDW gives continuous gradients INSIDE a parent cell, so
+/// the anchor stays geographic at every drill depth — a nearest-cell sample
+/// degrades to a CONSTANT once the sector is smaller than one parent cell
+/// (L5–L6), turning coasts into anchorless noise speckle. The parent search
+/// window is the halo grown by two parent-cell spacings, so even a deepest-drill
+/// sector (smaller than a single parent cell) always sees its surrounding
+/// parents — there is no "no parent in halo" failure depth. `None` only for a
+/// physical-only parent (no elevation to anchor to). Pure f32 add/mul/div (+
+/// IEEE-exact sqrt for the spacing) in deterministic mesh order —
+/// native↔wasm byte-identical.
+fn parent_anchor_elevation(
+    parent: &WorldData,
+    world: &WorldData,
+    halo: [f32; 4],
+) -> Option<Vec<f32>> {
+    let pn = parent.mesh.cell_count();
+    if parent.terrain.elevation.len() != pn || pn == 0 {
+        return None;
+    }
+    let spacing = (parent.mesh.width * parent.mesh.height / pn as f32).sqrt();
+    let g = 2.0 * spacing;
+    let search = [halo[0] - g, halo[1] - g, halo[2] + g, halo[3] + g];
+    let cand: Vec<u32> = (0..pn as u32)
+        .filter(|&i| in_rect(parent.mesh.sites[i as usize], search))
+        .collect();
+    if cand.is_empty() {
+        return None;
+    }
+    const K: usize = 4;
+    const EPS: f32 = 1e-6;
+    let anchor = world
+        .mesh
+        .sites
+        .iter()
+        .map(|&p| {
+            // k smallest squared distances (insertion sort into a fixed array —
+            // deterministic tie-break by candidate order).
+            let mut best: [(f32, u32); K] = [(f32::MAX, u32::MAX); K];
+            for &pc in &cand {
+                let s = parent.mesh.sites[pc as usize];
+                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                if d < best[K - 1].0 {
+                    let mut k = K - 1;
+                    while k > 0 && d < best[k - 1].0 {
+                        best[k] = best[k - 1];
+                        k -= 1;
+                    }
+                    best[k] = (d, pc);
+                }
+            }
+            let (mut num, mut den) = (0.0f32, 0.0f32);
+            for &(d, pc) in &best {
+                if pc == u32::MAX {
+                    continue;
+                }
+                let w = 1.0 / (d + EPS);
+                num += parent.terrain.elevation[pc as usize] * w;
+                den += w;
+            }
+            num / den
+        })
+        .collect();
+    Some(anchor)
 }
 
 /// Climate seam-pinning (the biome half of `pin_edges_to_shared`): blend every

@@ -115,13 +115,22 @@ fn refined_sector_reproduces_parent_within_tolerance() {
 
         let mad = mad / n as f32;
         let agree = sign_agree as f32 / n as f32;
+        // TIGHTENED with the cross-level anchor (the child refines the parent's
+        // FINAL field): the old thresholds (MAD < 0.15, agreement > 0.90) let a
+        // tenth of the map flip land↔sea across a zoom — the user-visible
+        // "patterns do not represent the same content" defect. Anchored, the
+        // measured values are MAD ≤ 0.03 / agreement ≥ 98%; thresholds sit just
+        // below so re-introducing per-sector erosion (or any low-frequency
+        // rewrite) reds this.
         assert!(
-            mad < 0.15,
-            "sector {sec:?}: elevation MAD {mad:.3} too high"
+            mad < 0.05,
+            "sector {sec:?}: elevation MAD {mad:.3} too high — the child is \
+             rewriting the parent's terrain, not refining it"
         );
         assert!(
-            agree > 0.90,
-            "sector {sec:?}: land/sea agreement {:.1}% too low",
+            agree > 0.96,
+            "sector {sec:?}: land/sea agreement {:.1}% too low — coastlines \
+             reshape across a zoom",
             agree * 100.0
         );
 
@@ -299,6 +308,104 @@ fn adjacent_sectors_agree_at_their_seam() {
         river_agree >= 34,
         "seam river-presence agreement {river_agree}/40 too low"
     );
+}
+
+/// The other half of "refine, never rewrite": the child must genuinely REFINE —
+/// add sub-parent detail — not just upsample the parent verbatim. Every
+/// agreement test above is monotone in smoothness (a child that IS the smoothed
+/// parent scores perfectly), so without this contrast a silently-broken detail
+/// stage (detail_octaves effectively 0) would stay green everywhere — the
+/// review-caught false-green. Self-calibrating: refine the same sector WITH the
+/// default detail octaves and WITH zero, and assert the default differs from
+/// the detail-free anchor by a real margin. MEASURED: the detail stage
+/// contributes ~0.0043 mean |Δelevation| (the noise crate's fBm output is far
+/// below its nominal 0.12 amplitude) — deliberately SUBTLE fine texture, which
+/// also serves the cross-level alignment contract; an upsample-only child gives
+/// ~0. Threshold 0.002 sits between. (If drilled sectors ever read as "just a
+/// blurry parent", the detail strength is the tuning knob — see tuning_log.)
+#[test]
+fn a_refined_sector_adds_sub_parent_detail() {
+    let p = params();
+    let parent = generate_full(p);
+    let sec = Sector {
+        level: 2,
+        sx: 1,
+        sy: 1,
+    };
+    let with_detail = refine_sector(&parent, sec, RefineParams::default());
+    let without = refine_sector(
+        &parent,
+        sec,
+        RefineParams {
+            detail_octaves: 0,
+            ..RefineParams::default()
+        },
+    );
+    // Same sector stream → identical mesh; the only delta is the detail stage.
+    assert_eq!(
+        with_detail.mesh.cell_count(),
+        without.mesh.cell_count(),
+        "fixture: both refines must share the mesh"
+    );
+    let n = with_detail.mesh.cell_count();
+    let mean_abs_delta: f32 = (0..n)
+        .map(|i| (with_detail.terrain.elevation[i] - without.terrain.elevation[i]).abs())
+        .sum::<f32>()
+        / n as f32;
+    assert!(
+        mean_abs_delta >= 0.002,
+        "mean |Δelev| {mean_abs_delta:.4} — the detail stage adds no sub-parent detail \
+         (the child is a bare upsample of the parent)"
+    );
+}
+
+/// THE CROSS-LEVEL CONTRACT on the globe's own path: drilling a PLANET world
+/// shows the SAME place at higher fidelity — land/sea and biomes must match the
+/// parent the user was just looking at. Before the cross-level anchor, the
+/// refine path re-derived its own terrain (pre-erosion base + its own erosion):
+/// measured on this exact world, only 55–85% of cells kept their land/sea sign
+/// and 34–58% their biome across a drill — zooming in visibly rewrote the map.
+/// Anchored (child = smoothed parent FINAL elevation + zero-mean detail, no
+/// child erosion), the same sectors measure 97–100% land/sea and 85–90% biome.
+/// Thresholds sit between the two regimes: reverting the anchor reds this.
+#[test]
+fn drilling_a_planet_shows_the_same_place_at_higher_fidelity() {
+    let mut p = GenerateParams::planet(8);
+    p.cell_count = 2000;
+    let parent = generate_full(p);
+    for (sx, sy) in [(1u32, 3u32), (1, 4), (2, 4)] {
+        let sec = Sector { level: 3, sx, sy };
+        let child = refine_sector(&parent, sec, RefineParams::default());
+        let rect = sec.rect(2048.0, 1024.0);
+        let (mut n, mut sign, mut biome_same) = (0, 0, 0);
+        for i in 0..parent.mesh.cell_count() {
+            let pp = parent.mesh.sites[i];
+            if !in_rect(pp, rect) {
+                continue;
+            }
+            n += 1;
+            let ci = nearest(&child.mesh.sites, pp);
+            if (parent.terrain.elevation[i] > 0.0) == (child.terrain.elevation[ci] > 0.0) {
+                sign += 1;
+            }
+            if parent.climate.biome[i] == child.climate.biome[ci] {
+                biome_same += 1;
+            }
+        }
+        assert!(n >= 20, "sector ({sx},{sy}): too few parent samples ({n})");
+        let land_agree = sign as f32 / n as f32;
+        let biome_agree = biome_same as f32 / n as f32;
+        assert!(
+            land_agree >= 0.92,
+            "sector ({sx},{sy}): land/sea agreement {:.0}% — drilling rewrites the coastline",
+            land_agree * 100.0
+        );
+        assert!(
+            biome_agree >= 0.75,
+            "sector ({sx},{sy}): biome agreement {:.0}% — drilling recolours the map",
+            biome_agree * 100.0
+        );
+    }
 }
 
 /// Seam-pinning for the VISIBLE field: two adjacent sectors agree on the BIOME

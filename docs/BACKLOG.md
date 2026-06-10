@@ -235,6 +235,18 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   `seed42_sector` golden re-anchored, wasm 5/5). Screenshot-verified continuous terrain. RESIDUAL (named):
   half-texel edge fringes at patch boundaries (LinearFilter+ClampToEdge, no bleed gutter) — hairlines only;
   revival trigger: visible grid lines at high zoom after the above two fixes.
+- **✅ CROSS-LEVEL CONTENT CONTRACT — DONE 2026-06-10 (user-reported: "content of cells do not align as
+  you zoom — patterns do not represent the same content at different fidelity").** Third member of the
+  continuous-UX defect family (after click-precision + seams). MEASURED: on the globe path (planet 8
+  @2000, L3) drilling kept only 55–85% of land/sea signs and 34–58% of biomes — zooming rewrote the map.
+  ROOT CAUSE: refine_sector anchored to the PRE-erosion base and ran its OWN erosion (fictional terrain
+  matching neither the parent render nor the projected parent rivers). FIX: `parent_anchor_elevation` —
+  the child REFINES the parent's FINAL eroded elevation (nearest-parent + 2 Jacobi smoothing passes) +
+  zero-mean detail noise; child erosion REMOVED. After: 97–100% land/sea, 85–90% biome, MAD 0.15→0.01.
+  Coarsening contract TIGHTENED (0.96/0.05 from 0.90/0.15) + new standing planet-path test
+  (mutation-verified red at 55%). Visual: mid-streaming vs settled drill screenshots near-identical
+  (content sharpens in place); ornate 2D drill keeps mountains/forest/coast character. `seed42_sector`
+  golden re-anchored; wasm 5/5; tiles also stream FASTER (no per-tile erosion).
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
