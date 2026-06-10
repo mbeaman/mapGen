@@ -211,7 +211,27 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     // The anchor, the climate seam-pin, and the projections all sample parent
     // layers by "nearest parent cell" — compute that mapping once and share it
     // (the nearest search dominated the projection cost).
-    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, halo);
+    //
+    // PERIODIC parent (the planet): parent sampling uses the minimum-image x and
+    // an x-UNCLAMPED sampling halo, so a sector at the antimeridian sees the
+    // parents across the wrap — its seam edge then pins to the same parent
+    // content the wrap-adjacent sector pins to, and the drilled detail is as
+    // seamless as the base globe. (The MESH halo stays clamped to the world —
+    // only the parent SAMPLING wraps.) Flat parents are byte-identical.
+    let period = parent.mesh.periodic.then_some(parent.mesh.width);
+    let sample_halo = if period.is_some() {
+        let mx = (rect[2] - rect[0]) * refine.halo_fraction;
+        let my = (rect[3] - rect[1]) * refine.halo_fraction;
+        [
+            rect[0] - mx,
+            (rect[1] - my).max(0.0),
+            rect[2] + mx,
+            (rect[3] + my).min(params.height),
+        ]
+    } else {
+        halo
+    };
+    let nearest_parent = nearest_parent_cells(parent, &world.mesh.sites, sample_halo, period);
 
     // 3. CROSS-LEVEL ANCHOR (the coarsening contract made literal): the child's
     // elevation REFINES the parent's FINAL eroded field — the content the user
@@ -227,7 +247,7 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     // is already in the anchor (re-eroding was the drift). The anchor is also
     // the seam reference: adjacent sectors sample the SAME parent, so they agree
     // with each other AND with the coarse base render at every boundary.
-    if let Some(anchor) = parent_anchor_elevation(parent, &world, halo) {
+    if let Some(anchor) = parent_anchor_elevation(parent, &world, sample_halo, period) {
         world.terrain.elevation = anchor;
     } else {
         // Physical-only parent (no usable elevation field): fall back to the
@@ -292,13 +312,20 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
     // gives correct drainage and makes a river cross a sector seam identically on
     // both sides. Runs after biomes (which used the sector's own flow), so this
     // only re-bases what the renderer draws.
-    project_hydrology(parent, &mut world, halo, &nearest_parent);
+    project_hydrology(parent, &mut world, sample_halo, period, &nearest_parent);
 
     // Project the parent's society onto the sector — the same towns, borders,
     // and roads, remapped to the finer mesh. Society is generated once at world
     // scale and never re-rolled per sector, so drilling in shows *this* world's
     // cities, not different ones.
-    project_society(parent, &mut world, rect, halo, &nearest_parent);
+    project_society(
+        parent,
+        &mut world,
+        rect,
+        sample_halo,
+        period,
+        &nearest_parent,
+    );
 
     world
 }
@@ -309,13 +336,22 @@ pub fn refine_sector(parent: &WorldData, sector: Sector, refine: RefineParams) -
 /// onto the finer mesh — this nearest search dominated their cost, so it is done
 /// once here. `O(sector_cells × parent_cells_in_halo)`; the halo restriction
 /// keeps the parent set small.
+///
+/// `period` is `Some(width)` for a PERIODIC parent (the planet): both the halo
+/// membership and the distances use the minimum-image x (`plates::wrap_dx`), so a
+/// sector at the antimeridian samples the parents ACROSS the wrap — without this,
+/// the two wrap-adjacent sector columns each saw one-sided context and met at the
+/// seam with mismatched content (a hard vertical line in drilled detail, the
+/// drilled twin of the base-globe seam the periodic arc removed). Flat parents
+/// (`None`) are byte-identical to before.
 fn nearest_parent_cells(
     parent: &WorldData,
     sites: &[[f32; 2]],
     halo: [f32; 4],
+    period: Option<f32>,
 ) -> Vec<Option<u32>> {
     let parent_in_halo: Vec<u32> = (0..parent.mesh.cell_count() as u32)
-        .filter(|&i| in_rect(parent.mesh.sites[i as usize], halo))
+        .filter(|&i| in_rect_p(parent.mesh.sites[i as usize], halo, period))
         .collect();
     sites
         .iter()
@@ -324,7 +360,7 @@ fn nearest_parent_cells(
             let mut bd = f32::MAX;
             for &pc in &parent_in_halo {
                 let s = parent.mesh.sites[pc as usize];
-                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                let d = dist2_p(s, p, period);
                 if d < bd {
                     bd = d;
                     best = Some(pc);
@@ -337,6 +373,32 @@ fn nearest_parent_cells(
 
 fn in_rect(p: [f32; 2], r: [f32; 4]) -> bool {
     p[0] >= r[0] && p[0] < r[2] && p[1] >= r[1] && p[1] < r[3]
+}
+
+/// `in_rect` with minimum-image x for a periodic world: the rect's x-range may
+/// conceptually extend past `[0, width]` (an unclamped sampling halo at the
+/// antimeridian), so a point is inside if `x`, `x+width`, or `x−width` lands in
+/// it. `None` → the flat test, byte-identical.
+fn in_rect_p(p: [f32; 2], r: [f32; 4], period: Option<f32>) -> bool {
+    match period {
+        None => in_rect(p, r),
+        Some(w) => {
+            (p[1] >= r[1] && p[1] < r[3])
+                && ((p[0] >= r[0] && p[0] < r[2])
+                    || (p[0] + w >= r[0] && p[0] + w < r[2])
+                    || (p[0] - w >= r[0] && p[0] - w < r[2]))
+        }
+    }
+}
+
+/// Squared distance with minimum-image x for a periodic world (`None` → flat).
+fn dist2_p(a: [f32; 2], b: [f32; 2], period: Option<f32>) -> f32 {
+    let dx = match period {
+        Some(w) => crate::plates::wrap_dx(a[0] - b[0], w),
+        None => a[0] - b[0],
+    };
+    let dy = a[1] - b[1];
+    dx * dx + dy * dy
 }
 
 /// Seam-pinning (Phase 7): blend each cell's elevation back toward the shared
@@ -377,6 +439,7 @@ fn parent_anchor_elevation(
     parent: &WorldData,
     world: &WorldData,
     halo: [f32; 4],
+    period: Option<f32>,
 ) -> Option<Vec<f32>> {
     let pn = parent.mesh.cell_count();
     if parent.terrain.elevation.len() != pn || pn == 0 {
@@ -386,7 +449,7 @@ fn parent_anchor_elevation(
     let g = 2.0 * spacing;
     let search = [halo[0] - g, halo[1] - g, halo[2] + g, halo[3] + g];
     let cand: Vec<u32> = (0..pn as u32)
-        .filter(|&i| in_rect(parent.mesh.sites[i as usize], search))
+        .filter(|&i| in_rect_p(parent.mesh.sites[i as usize], search, period))
         .collect();
     if cand.is_empty() {
         return None;
@@ -403,7 +466,7 @@ fn parent_anchor_elevation(
             let mut best: [(f32, u32); K] = [(f32::MAX, u32::MAX); K];
             for &pc in &cand {
                 let s = parent.mesh.sites[pc as usize];
-                let d = (s[0] - p[0]).powi(2) + (s[1] - p[1]).powi(2);
+                let d = dist2_p(s, p, period);
                 if d < best[K - 1].0 {
                     let mut k = K - 1;
                     while k > 0 && d < best[k - 1].0 {
@@ -499,13 +562,14 @@ fn project_hydrology(
     parent: &WorldData,
     world: &mut WorldData,
     halo: [f32; 4],
+    period: Option<f32>,
     nearest_parent: &[Option<u32>],
 ) {
     if parent.hydrology.flow.len() != parent.mesh.cell_count() {
         return;
     }
     let psite = |c: u32| parent.mesh.sites[c as usize];
-    let in_halo = |c: u32| in_rect(psite(c), halo);
+    let in_halo = |c: u32| in_rect_p(psite(c), halo, period);
     let n = world.mesh.cell_count();
 
     // Per-cell flow + Strahler order, sampled from the nearest parent cell
@@ -601,6 +665,7 @@ fn project_society(
     world: &mut WorldData,
     rect: [f32; 4],
     halo: [f32; 4],
+    period: Option<f32>,
     nearest_parent: &[Option<u32>],
 ) {
     if parent.society.nations.is_empty() && parent.society.settlements.is_empty() {
@@ -672,7 +737,7 @@ fn project_society(
         .society
         .roads
         .iter()
-        .filter(|r| r.cells.iter().any(|&c| in_rect(psite(c), halo)))
+        .filter(|r| r.cells.iter().any(|&c| in_rect_p(psite(c), halo, period)))
         .map(|r| Road {
             cells: r.cells.iter().map(|&c| nearest_sector(psite(c))).collect(),
         })

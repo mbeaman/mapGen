@@ -470,6 +470,61 @@ fn adjacent_sectors_agree_on_biome_at_their_seam() {
     );
 }
 
+/// The ANTIMERIDIAN drilled seam: on a PERIODIC planet, the wrap-adjacent sector
+/// columns (sx = span−1 and sx = 0) are adjacent ON THE GLOBE — their shared edge
+/// is the seam the periodic arc removed from the base render. Without wrap-aware
+/// parent sampling, each column saw one-sided context (the halo, nearest-parent,
+/// and anchor searches all clamped at x ∈ [0, W]) and the drilled detail met at
+/// the wrap with a hard content line (screenshot-confirmed). With minimum-image
+/// sampling both columns pin to the SAME parents across the wrap, so biomes
+/// agree along the seam exactly like any interior seam.
+#[test]
+fn wrap_adjacent_sectors_agree_at_the_antimeridian() {
+    let mut p = GenerateParams::planet(8);
+    p.cell_count = 2000;
+    let parent = generate_full(p);
+    assert!(parent.mesh.periodic, "fixture: the planet must be periodic");
+    let a = refine_sector(
+        &parent,
+        Sector {
+            level: 3,
+            sx: 7,
+            sy: 4,
+        },
+        RefineParams::default(),
+    );
+    let b = refine_sector(
+        &parent,
+        Sector {
+            level: 3,
+            sx: 0,
+            sy: 4,
+        },
+        RefineParams::default(),
+    );
+    // The shared edge on the cylinder: x = 2048 (sector 7's east) ≡ x = 0
+    // (sector 0's west). Sample just inside each side's own rect.
+    let row_h = 1024.0 / 8.0;
+    let (y_lo, y_hi) = (row_h * 4.0 + 4.0, row_h * 5.0 - 4.0);
+    let (mut same, mut total) = (0, 0);
+    for k in 0..60 {
+        let y = y_lo + (y_hi - y_lo) * k as f32 / 59.0;
+        let ba = a.climate.biome[nearest(&a.mesh.sites, [2047.0, y])];
+        let bb = b.climate.biome[nearest(&b.mesh.sites, [1.0, y])];
+        total += 1;
+        if ba == bb {
+            same += 1;
+        }
+    }
+    let agree = same as f32 / total as f32;
+    assert!(
+        agree >= 0.85,
+        "antimeridian seam biome agreement {:.0}% ({same}/{total}) — the wrap-adjacent \
+         drilled sectors disagree (parent sampling not wrap-aware)",
+        agree * 100.0
+    );
+}
+
 /// Golden hash of a fixed refined sector — the native anchor for the
 /// cross-platform refine golden (`crates/mapgen-wasm/tests/cross_platform.rs`
 /// hashes the same sector under wasm32 and compares to this file). Pins that the
