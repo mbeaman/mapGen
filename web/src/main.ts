@@ -27,6 +27,7 @@ import {
 } from "./sector";
 import { sectorPatchParams, type Vec3, worldToLonLat } from "./camera";
 import { desiredSectors, predictedAhead } from "./lod";
+import { displacedPatchArrays, GH as RELIEF_GH, GW as RELIEF_GW, patchGpuBytes } from "./relief";
 import {
   ESTIMATED_PATCH_BYTES,
   MAX_LIVE_PATCHES,
@@ -207,11 +208,7 @@ const failTileKeys = new Set<string>();
 // tile try: gridW=0 -> relief_grid rejects (vs w=0 -> Pixmap::new rejects).
 // Pins that BOTH stages route through the same single-tileFailed recovery.
 const failStageRelief = new URLSearchParams(location.search).get("failStage") === "relief";
-// Relief grid dims (addendum §5): fixed, decoupled from patch tessellation --
-// 129×65 matches the tiles' universal 2:1 aspect at ~the refined mesh's Nyquist
-// (≈4k cells ≈ 64×64); square world-unit steps keep the hillshade isotropic.
-const RELIEF_GW = 129;
-const RELIEF_GH = 65;
+// Relief grid dims live in relief.ts (GW/GH) — imported above as RELIEF_GW/GH.
 
 // Tile raster size: long edge 1024, the short edge scaled by the sector's aspect
 // so the cartography isn't anisotropically squashed on the curved patch. Computed
@@ -790,6 +787,10 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       // (the uncaught error still surfaces; the next reconcile just re-requests).
       pendingTiles.delete(key);
       const params = sectorPatchParams(sec, worldW, worldH);
+      // Relief (R2): the worker's seam-banded heightfield → displaced geometry.
+      // Pure math (relief.ts), built INSIDE the data-last-blit-ms span below so
+      // the <50 ms gate covers it with zero new plumbing.
+      const heights = new Float32Array(msg.heights);
       // The ONLY synchronous main-thread cost now: a putImageData blit + the patch-mesh
       // build (geometry/material/scene.add). The GPU `texImage2D` is DEFERRED by three.js
       // to the next `renderer.render()` and is NOT in this span. The ~300 ms SVG drawImage
@@ -804,7 +805,8 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         0,
         0,
       );
-      globe.showPatch(sec, cv, params, msg.w * msg.h * 4);
+      const displaced = displacedPatchArrays(params, heights, msg.gridW, msg.gridH);
+      globe.showPatch(sec, cv, params, patchGpuBytes(msg.w, msg.h, msg.gridW, msg.gridH), displaced);
       globeCanvas.dataset.lastBlitMs = (performance.now() - t0).toFixed(1);
       // Refill the budget slot this completion freed — drains the full in-view set at
       // STREAM_BUDGET-outstanding even on a STATIC drill (the pump dies after settle, so

@@ -10,6 +10,7 @@ import {
   sectorPatchParams,
   unitToUv,
   worldToLonLat,
+  nearFor,
 } from "./camera";
 import { latLonToWorld, patchUvToWorld, ROOT, sectorRect, uvToWorld } from "./sector";
 
@@ -319,6 +320,26 @@ describe("unitToUv (precision pick)", () => {
       const direct = latLonToWorld(lat, lon, W, H);
       near(viaUv.x, direct.x, 1e-3);
       near(viaUv.y, direct.y, 1e-3);
+    }
+  });
+});
+
+describe("nearFor (dynamic near plane)", () => {
+  it("keeps the ground out of the near plane at MIN_ALT (the black-screen defect)", () => {
+    // Camera at radius 1.05 (alt 0.05): ground is ~0.049 away; the legacy
+    // near=0.1 clipped ALL of it (measured: black screen). The policy must
+    // sit safely below the ground distance.
+    expect(nearFor(1.05)).toBeLessThan(0.049);
+    expect(nearFor(1.05)).toBeGreaterThanOrEqual(0.002);
+  });
+  it("never exceeds the legacy 0.1 and never collapses below the floor", () => {
+    expect(nearFor(3.5)).toBe(0.1); // far out: the old value exactly
+    expect(nearFor(1.0)).toBe(0.002); // degenerate: floor, never ≤ 0
+  });
+  it("stays below the radial clearance over the terrain ceiling", () => {
+    for (const alt of [0.05, 0.1, 0.2, 0.5, 1.0, 2.5]) {
+      const r = 1 + alt;
+      expect(nearFor(r)).toBeLessThanOrEqual(Math.max(0.002, r - 1.024));
     }
   });
 });

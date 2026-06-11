@@ -198,3 +198,13 @@ export function panSubPoint(
   const subLat = Math.max(-LAT_MAX, Math.min(LAT_MAX, s.subLat + dy * k));
   return { subLon: s.subLon - dx * k, subLat };
 }
+
+/** Dynamic near plane (Relief addendum §R3, altitude half pulled into R2 —
+ * the measured defect: at MIN_ALT 0.05 the fixed near=0.1 swallowed the whole
+ * 42° FOV, rendering BLACK). Half the camera's radial clearance over the
+ * worst-case terrain ceiling R_TER = 1.024 (base 1.001 + max raw elevation
+ * ~1.0 × VERT_EXAG 0.023), floored at 0.002 (depth precision), capped at the
+ * legacy 0.1. Pitch joins in R3; at pitch 0 this is the full designed policy. */
+export function nearFor(camRadius: number): number {
+  return Math.min(0.1, Math.max(0.002, 0.5 * (camRadius - 1.024)));
+}

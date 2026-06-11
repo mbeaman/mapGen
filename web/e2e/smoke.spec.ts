@@ -724,6 +724,12 @@ test("drill detail fill shows live progress and drains to zero", async ({ page }
   const liveFilled = Number(await canvas.getAttribute("data-live-patches"));
   expect(liveFilled).toBeGreaterThanOrEqual(8); // » STREAM_BUDGET=3 → the refill drained the in-view set
   expect(liveFilled).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // still bounded by the hard cap
+
+  // Relief (R2): the drilled patches are genuinely DISPLACED — data-relief-max
+  // is computed from the BUILT vertex radii (relief.ts), so it is > 0 only when
+  // some land vertex actually left the base shell. A flat/sea-only sector would
+  // legitimately read 0, but seed-8's first drill lands on a continent.
+  expect(Number(await canvas.getAttribute("data-relief-max"))).toBeGreaterThan(0);
 });
 
 // CONTRACT (failure recovery): a tile whose refine/rasterize FAILS in the worker

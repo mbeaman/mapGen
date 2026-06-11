@@ -97,6 +97,12 @@ export type WorkerResponse =
       // verify-before-apply (drop a tile rasterized under a now-stale lens).
       type: "tile";
       rgba: ArrayBuffer;
+      // Relief (R2): the SAME seam-banded grid that shaded the raster, shipped
+      // for vertex displacement — bit-identical edges across neighbours, so
+      // displaced patches meet exactly. Transferred alongside rgba.
+      heights: ArrayBuffer;
+      gridW: number;
+      gridH: number;
       w: number;
       h: number;
       level: number;
@@ -222,10 +228,14 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           msg.gridH,
         );
         const buf = rgba.buffer as ArrayBuffer;
+        const hbuf = grid.buffer as ArrayBuffer; // Float32Array copied out of wasm — private, transferable
         post(
           {
             type: "tile",
             rgba: buf,
+            heights: hbuf,
+            gridW: msg.gridW,
+            gridH: msg.gridH,
             w: msg.w,
             h: msg.h,
             level: msg.level,
@@ -234,7 +244,7 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
             style: msg.style,
             lens: msg.lens,
           },
-          [buf], // transfer (zero-copy); `buf`/`rgba` are neutered after this
+          [buf, hbuf], // transfer both (zero-copy); neutered in the worker after this
         );
       } catch {
         post({ type: "tileFailed", level: msg.level, sx: msg.sx, sy: msg.sy, lens: msg.lens });

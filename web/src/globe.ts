@@ -13,6 +13,8 @@
 /// pool and flakes headless tests). `dispose()` is the full teardown.
 
 import {
+  BufferAttribute,
+  BufferGeometry,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
@@ -42,6 +44,8 @@ import {
   type PatchParams,
 } from "./camera";
 import type { CamState } from "./lod";
+import { nearFor } from "./camera";
+import type { DisplacedPatch } from "./relief";
 import { patchKey } from "./patchcache";
 import type { Sector } from "./sector";
 
@@ -72,7 +76,7 @@ export interface GlobeHandle {
    *  refined-sector render on a curved partial-sphere segment over the base globe,
    *  occupying `sector`'s lon/lat span (`params` from `sectorPatchParams`). Keyed by
    *  sector; bumps `data-patch`/`data-patch-textures`/`data-refines`/`data-live-patches`. */
-  showPatch(sector: Sector, source: HTMLCanvasElement, params: PatchParams, texBytes: number): void;
+  showPatch(sector: Sector, source: HTMLCanvasElement, params: PatchParams, gpuBytes: number, displaced: DisplacedPatch): void;
   /** Evict ONE patch (by `patchKey`) and free its GPU resources (ST-1). */
   evictPatch(key: string): void;
   /** The live patch cache state for the pure `reconcile` policy (ST-1). */
@@ -261,7 +265,8 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
     lastSeen: number;
   }
   const patches = new Map<string, PatchEntry>();
-  let patchTexCount = 0; // cumulative texture uploads (data-patch-textures)
+  let patchTexCount = 0;
+let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-max) // cumulative texture uploads (data-patch-textures)
   let refineCount = 0; // cumulative patch loads (data-refines) — streaming activity
   const PATCH_STYLE = "globe"; // the globe always renders the fontless `globe` style
   const writeLive = () => {
@@ -462,6 +467,16 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       // to +Y or OrbitControls' lookAt renders the globe rolled). ~1 ⇒ upright.
       canvas.dataset.camUpY = camera.up.y.toFixed(3);
     }
+    // Dynamic near plane (R2 — the measured black-screen defect): at low
+    // altitude the fixed near=0.1 swallowed the whole FOV. Recompute from the
+    // live camera radius every frame (cheap; updateProjectionMatrix only when
+    // it actually moves) — nearFor is pure + unit-tested.
+    const near = nearFor(camera.position.length());
+    if (near !== camera.near) {
+      camera.near = near;
+      camera.updateProjectionMatrix();
+      canvas.dataset.camNear = near.toFixed(4);
+    }
     renderer.render(scene, camera);
     if (!painted) {
       // Signal first paint: a frame actually rendered (renderer instantiated +
@@ -651,30 +666,40 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
       const a = lonLatToUnit(subLon, cl);
       labelAnchor = new Vector3(a[0], a[1], a[2]);
       regionLabel.textContent = name;
+      reliefMaxSeen = 0; // new drill, fresh displacement witness
+      canvas.dataset.reliefMax = "0";
       writeFlightData();
       markFlightChanged(); // trigger the streaming reconcile once the drill settles
     },
-    showPatch(sector: Sector, source: HTMLCanvasElement, params: PatchParams, texBytes: number) {
-      // Add (or replace) ONE patch in the streaming cache: a curved segment over the
-      // sector's lon/lat span on the unit sphere (radius 1.001, just above the base
-      // skin). depthTest=false + renderOrder so it composites over its base region.
+    showPatch(sector: Sector, source: HTMLCanvasElement, _params: PatchParams, gpuBytes: number, displaced: DisplacedPatch) {
+      // Add (or replace) ONE patch in the streaming cache: a RELIEF-DISPLACED
+      // grid over the sector's lon/lat span (R2 — built by the pure
+      // displacedPatchArrays from the worker's seam-banded heightfield; sea sits
+      // at exactly the legacy 1.001 shell). depthTest:true — displaced terrain
+      // needs real self-occlusion at oblique pitch, and the spike measured ZERO
+      // z-fight (the base sphere's facet chords dip below r=1, so the 0.001
+      // offset is enormous vs depth precision). renderOrder stays as an inert
+      // tiebreak only (enterRegion disposes the previous level synchronously —
+      // no transition overlap exists for it to order).
       const key = patchKey(sector, PATCH_STYLE);
       const existing = patches.get(key);
       if (existing) disposeEntry(existing);
-      const geo = new SphereGeometry(
-        1.001,
-        params.segW,
-        params.segH,
-        params.phiStart,
-        params.phiLength,
-        params.thetaStart,
-        params.thetaLength,
-      );
-      const mat = new MeshBasicMaterial({ map: patchTexture(source), depthTest: false });
+      const geo = new BufferGeometry();
+      geo.setAttribute("position", new BufferAttribute(displaced.positions, 3));
+      geo.setAttribute("uv", new BufferAttribute(displaced.uvs, 2));
+      geo.setIndex(new BufferAttribute(displaced.index, 1));
+      const mat = new MeshBasicMaterial({ map: patchTexture(source), depthTest: true });
       const mesh = new Mesh(geo, mat);
-      mesh.renderOrder = 1 + sector.level; // finer levels composite on top
+      mesh.renderOrder = 1 + sector.level; // inert tiebreak (see above)
       scene.add(mesh);
-      patches.set(key, { mesh, sector, texBytes, lastSeen: performance.now() });
+      // Running MAX across this drill's patches (NOT last-write-wins: an
+      // all-sea tile landing last would overwrite a mountain tile's witness
+      // with 0 and false-red the e2e).
+      if (displaced.reliefMax > reliefMaxSeen) {
+        reliefMaxSeen = displaced.reliefMax;
+        canvas.dataset.reliefMax = reliefMaxSeen.toFixed(5);
+      }
+      patches.set(key, { mesh, sector, texBytes: gpuBytes, lastSeen: performance.now() });
       canvas.dataset.patch = String(sector.level);
       canvas.dataset.patchTextures = String((patchTexCount += 1));
       canvas.dataset.refines = String((refineCount += 1));
