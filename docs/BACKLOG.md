@@ -277,6 +277,22 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
   13-agent adversarial review caught a real blocker (the budget starved the STATIC-drill fill — fixed
   with a per-completion refill, mutation-verified) + 7 others, all fixed. See the ST-5 entry above + the
   `docs/CLAIMS.md` rows. **Deferred follow-up:** base-globe off-thread (off the hot path; own arc).
+  **Post-ship hardening (same day, from a 25-agent review of the landed diff + a 17-agent review of
+  the fix itself):** the in-flight budget had converted "one orphaned reservation = one coarse sector"
+  into "3 orphans = the whole stream freezes" — every tile-work failure now answers the
+  sector+lens-carrying `tileFailed` (refineSector inside the try; `!root` routed through it; lens-echo
+  guard mirrored), and — the fix-review's catch — a PERSISTENTLY failing sector is BENCHED after
+  MAX_TILE_RETRIES=3 instead of retry-looping (naive release+refill re-requests a doomed NEAREST
+  sector forever; measured: it monopolises the budget head and the fill starves at 0). Recovery
+  contract pinned end-to-end with REAL injected wasm failures (`?failTiles=N` → w=0 → `Pixmap::new`
+  rejects, persistent per-key), mutation-verified both ways (both starve at 0). `worker.onerror` is a
+  STICKY defensive backstop (degraded flag stops re-reserving + status clobber, unwedges busy/overlay)
+  honestly documented as structurally unreachable for tile work. Opacity asserts tightened to per-texel
+  `min_alpha==255` (the premultiplied→putImageData color-correctness invariant, mutation-verified at
+  `min alpha 161`). A `predictedAhead` radius-renorm was tried and REVERTED by the fix-review: it
+  turned a fast zoom-in (radius more than halved between samples flips `2·pos − prev` backwards) from
+  a self-culling overshoot (measured 0 sectors) into confident ANTIPODAL prefetch (measured 16 garbage
+  sectors); the horizon inflation stays as a documented self-correcting artifact. CLAIMS rows updated.
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
