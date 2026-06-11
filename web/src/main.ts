@@ -179,6 +179,30 @@ let currentDesiredKeys = new Set<string>(); // in-view ∪ predicted, this pump
 let prevPosUnit: Vec3 | null = null; // finite-difference camera-velocity source
 let reconcileLevel = -1; // detect the level discontinuity that resets the velocity
 let tilesDiscarded = 0; // results dropped as stale (camera moved past) — e2e signal
+let tilesFailed = 0; // worker tile failures gracefully released (tileFailed) — e2e signal
+// Persistent-failure memo: `tileFailed` releases the budget slot and the refill
+// re-requests the sector — right for a TRANSIENT fault, but a sector that fails
+// deterministically (a recurring wasm fault on one tile) would otherwise ping-pong
+// main↔worker forever (~10 attempts/s), pegging the serial worker and pinning the
+// status at "Loading detail…". After MAX_TILE_RETRIES failures a key is BENCHED:
+// it stays coarse (no worse than never-loaded) until the next discontinuity —
+// level change / lens refresh / regenerate — clears the memo with pendingTiles.
+const MAX_TILE_RETRIES = 3;
+const failedTiles = new Map<string, number>();
+// Sticky worker-degraded flag (see onWorkerFailure at the worker creation site):
+// once the worker has fallen silent, reconcile must not re-reserve into the void
+// and the stream-progress status must not clobber the failure banner.
+let workerDegraded = false;
+// FAULT-INJECTION test hook (?failTiles=N): the first N DISTINCT sectors requested
+// fail PERSISTENTLY — every send for those keys carries w=0, which the wasm
+// rasterizer genuinely rejects (`Pixmap::new(0,h)` → JsError "invalid raster
+// dimensions"). A REAL end-to-end failure, not a mock, and persistent (not
+// one-shot) so the e2e pins BOTH halves of the recovery contract: a failure
+// RELEASES its budget slot (the fill completes around the failing sectors) AND the
+// retry memo BOUNDS the loop (`data-tiles-failed` stabilises at N × MAX_TILE_RETRIES
+// instead of climbing forever). Inert without the param.
+const failTilesN = Number(new URLSearchParams(location.search).get("failTiles") ?? 0);
+const failTileKeys = new Set<string>();
 
 // Tile raster size: long edge 1024, the short edge scaled by the sector's aspect
 // so the cartography isn't anisotropically squashed on the curved patch. Computed
@@ -206,7 +230,7 @@ const tileDims = (sec: Sector): { w: number; h: number } => {
 // — collapsing the prefetch lead. Refills still reconcile + feed the budget; they
 // just don't disturb the velocity window.
 const streamReconcile = (sampleVelocity = false): void => {
-  if (!globe || !globeScale || nav.level === 0) return;
+  if (workerDegraded || !globe || !globeScale || nav.level === 0) return;
   const cam = globe.getCameraState();
   // A level change (drill / deeper-drill / re-drill) is a camera DISCONTINUITY, not
   // motion — drop the velocity so the predictor doesn't extrapolate the jump.
@@ -241,8 +265,11 @@ const streamReconcile = (sampleVelocity = false): void => {
     if (pendingTiles.size >= STREAM_BUDGET) break;
     const key = patchKey(sec, "globe");
     if (pendingTiles.has(key)) continue; // already refining
+    if ((failedTiles.get(key) ?? 0) >= MAX_TILE_RETRIES) continue; // benched (see memo)
     pendingTiles.add(key);
     const { w, h } = tileDims(sec);
+    if (failTileKeys.size < failTilesN) failTileKeys.add(key); // ?failTiles hook (see decl)
+    const injectFail = failTileKeys.has(key);
     // Bake the active lens into the worker raster (off-main-thread); see render_rgba.
     send({
       type: "refineTile",
@@ -250,7 +277,7 @@ const streamReconcile = (sampleVelocity = false): void => {
       sx: sec.sx,
       sy: sec.sy,
       style: "globe",
-      w,
+      w: injectFail ? 0 : w,
       h,
       lens: activeLensClass(),
     });
@@ -266,7 +293,9 @@ const streamReconcile = (sampleVelocity = false): void => {
 // the e2e can pin the affordance (appears > 0, then drains to 0).
 let lastPendingShown = -1;
 const updateStreamProgress = (): void => {
-  if (!globeScale || nav.level === 0) return;
+  // Degraded: the failure banner owns the status — don't clobber it with
+  // "Loading detail…" / the region prompt.
+  if (workerDegraded || !globeScale || nav.level === 0) return;
   // Debounce: the ~PUMP_MS during-motion pump (Phase B) calls this many times a
   // second — only rewrite the dataset + status when the count actually changes, so
   // a pan doesn't thrash the DOM / the e2e signal.
@@ -292,6 +321,7 @@ const refreshGlobePatches = (): void => {
   if (!globe || !globeScale || nav.level === 0) return;
   for (const e of globe.liveEntries()) globe.evictPatch(e.key);
   pendingTiles.clear();
+  failedTiles.clear(); // new lens = new raster input; benched sectors get a fresh shot
   streamReconcile();
 };
 // Inject the active layer classes onto the SVG root, so a rasterized `<img>` of it
@@ -595,6 +625,35 @@ const startReplay = () => {
 // ---- Worker ----
 const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
 const send = (req: WorkerRequest) => worker.postMessage(req);
+// Worker-death backstop — DEFENSIVE, and honest about its reach: the worker wraps
+// its whole onmessage in try/catch and answers tile work with a typed `tileFailed`,
+// so no in-handler failure can ever reach this `error` event. What CAN: a module
+// load/parse failure (which fires before any world exists, so there is nothing to
+// release) — and any future code that escapes the worker's try/catch. Kept because
+// it is the only handler for "the worker fell silent", and if that ever becomes
+// reachable mid-stream the alternative is a permanently wedged budget + a UI stuck
+// busy. STICKY (`workerDegraded`): streamReconcile must not re-reserve into a dead
+// worker, and updateStreamProgress must not clobber this banner with "Loading
+// detail…". Also unwedges the GENERATE path (overlay + busy) — a death
+// mid-generate would otherwise leave the whole app frozen behind the overlay.
+const onWorkerFailure = (): void => {
+  workerDegraded = true;
+  pendingTiles.clear();
+  failedTiles.clear();
+  hideOverlay();
+  setBusy(false);
+  globeCanvas.dataset.pendingTiles = "0";
+  setStatus("Map worker crashed — reload the page to recover.", "error");
+};
+worker.onerror = onWorkerFailure;
+// A single unreadable MESSAGE (worker still alive — realistically unreachable for
+// these plain-object/ArrayBuffer messages): release the reservations so nothing
+// wedges and reconcile re-requests; late duplicate answers are harmless (showPatch
+// replaces idempotently, discard-stale drops). NOT degraded — the worker works.
+worker.onmessageerror = () => {
+  pendingTiles.clear();
+  streamReconcile();
+};
 
 let busy = false;
 let hasWorld = false;
@@ -690,7 +749,16 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       // key: a lens toggle ran `refreshGlobePatches` (clear + re-stream under the new
       // lens), so this same key is now reserving a LIVE new-lens request — deleting it
       // would un-reserve a real in-flight tile and let the budget overshoot. The
-      // new-lens tile's show/discard path releases it.
+      // new-lens tile's show/discard path releases it. (VALUE-compare, not request
+      // generations: an A→B→A double toggle can mis-match one echo — bounded to one
+      // duplicate raster, self-healed by the idempotent show/discard path.)
+      //
+      // While the old-lens echoes drain (≤ BUDGET of them) the budget reads full and
+      // this branch issues no refill — deliberately NOT a stall: the worker is SERIAL
+      // and non-preemptible, so it must chew through those already-queued old-lens
+      // jobs regardless; queueing new requests deeper behind them would not land the
+      // first new-lens tile one ms sooner. Throughput is worker-bound, not queue-
+      // depth-bound; the first new-lens completion resumes the refill cadence.
       if (msg.lens !== activeLensClass()) {
         break;
       }
@@ -704,6 +772,10 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         streamReconcile();
         break;
       }
+      // Arrival bookkeeping FIRST: the reservation is spent whether or not the blit
+      // below succeeds — a putImageData/showPatch throw must not strand the slot
+      // (the uncaught error still surfaces; the next reconcile just re-requests).
+      pendingTiles.delete(key);
       const params = sectorPatchParams(sec, worldW, worldH);
       // The ONLY synchronous main-thread cost now: a putImageData blit + the patch-mesh
       // build (geometry/material/scene.add). The GPU `texImage2D` is DEFERRED by three.js
@@ -719,7 +791,6 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
         0,
         0,
       );
-      pendingTiles.delete(key);
       globe.showPatch(sec, cv, params, msg.w * msg.h * 4);
       globeCanvas.dataset.lastBlitMs = (performance.now() - t0).toFixed(1);
       // Refill the budget slot this completion freed — drains the full in-view set at
@@ -729,10 +800,33 @@ worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
       break;
     }
     case "tileFailed": {
-      // A single tile's rasterize failed in the worker — release its budget slot (so it
-      // doesn't wedge 1/STREAM_BUDGET of throughput) and refill. No UI banner: one
-      // dropped tile leaves the coarse base showing there, no worse than not-yet-loaded.
-      pendingTiles.delete(patchKey({ level: msg.level, sx: msg.sx, sy: msg.sy }, "globe"));
+      // A single tile's refine/rasterize failed in the worker — release its budget
+      // slot (so it doesn't wedge 1/STREAM_BUDGET of throughput), remember the
+      // failure (the memo bounds re-requests at MAX_TILE_RETRIES), and refill. No UI
+      // banner: one dropped tile leaves the coarse base showing there, no worse than
+      // not-yet-loaded. `data-tiles-failed` is the e2e recovery-contract witness.
+      const key = patchKey({ level: msg.level, sx: msg.sx, sy: msg.sy }, "globe");
+      // Stale (changed level / left the globe): release + refill but do NOT count —
+      // mirror of the tile arm's first guard; an invalidated failure isn't a
+      // recovery event, and counting it would make `data-tiles-failed` lie.
+      if (!globe || !globeScale || nav.level !== msg.level) {
+        pendingTiles.delete(key);
+        streamReconcile();
+        break;
+      }
+      // Lens-echo guard, mirroring the `tile` handler: a failure rasterized under a
+      // now-stale lens must NOT delete the key — a lens toggle ran refreshGlobePatches
+      // (clear + re-stream), so this same key is reserving a LIVE new-lens request;
+      // deleting it would un-reserve that request and overshoot the budget. (Like
+      // the tile arm this compares lens VALUES, not request generations, so an
+      // A→B→A double toggle can mis-match one echo — bounded: one duplicate raster,
+      // self-healed by the idempotent show/discard path.)
+      if (msg.lens !== activeLensClass()) {
+        break;
+      }
+      failedTiles.set(key, (failedTiles.get(key) ?? 0) + 1);
+      pendingTiles.delete(key);
+      globeCanvas.dataset.tilesFailed = String((tilesFailed += 1));
       streamReconcile();
       break;
     }
@@ -822,6 +916,7 @@ const doGenerate = () => {
   hasWorld = false;
   nav = { ...ROOT };
   pendingTiles.clear(); // a regenerate invalidates any in-flight streaming tiles
+  failedTiles.clear(); // …and the failure memo with them (new world, new tiles)
   planetScale = s.scale === "planet";
   globeScale = s.scale === "globe";
   if (!globeScale) exitGlobeView(); // leaving globe → restore the SVG layer
@@ -975,10 +1070,14 @@ const navTo = (target: Sector, focus?: { x: number; y: number }) => {
   // behind the still-shown globe. So branch purely on the target level here.
   if (globeScale) {
     // A level change (drill / crumb hop / return) invalidates every in-flight tile
-    // request for the old level. Clear the pending set so a refineTile the worker
-    // answers with `error` (no sector id to target) can't leave a key stuck forever,
-    // permanently blocking that sector's detail. The new level re-streams on settle.
+    // request for the old level. Clear the pending set so a refineTile that never
+    // answers with a typed message (a worker killed mid-flight, an unreadable
+    // answer — every in-handler failure DOES answer `tileFailed` now) can't leave
+    // a key stuck forever, permanently blocking that sector's detail. The failure
+    // memo resets with it: a benched sector at the old level deserves a fresh shot
+    // after the discontinuity. The new level re-streams on settle.
     pendingTiles.clear();
+    failedTiles.clear();
     nav = target;
     updateBreadcrumb();
     if (target.level === 0) {

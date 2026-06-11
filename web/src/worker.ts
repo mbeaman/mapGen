@@ -99,7 +99,12 @@ export type WorkerResponse =
       style: string;
       lens: string;
     }
-  | { type: "tileFailed"; level: number; sx: number; sy: number }
+  // A SINGLE tile's refine/rasterize failed — sector + lens echoed so the main
+  // thread can release exactly that budget reservation (and ignore a stale-lens
+  // echo, mirroring the `tile` handler's verify-before-apply). NEVER a sector-less
+  // `error` for tile work: that arm can't free the slot, so it would wedge
+  // 1/STREAM_BUDGET of streaming throughput.
+  | { type: "tileFailed"; level: number; sx: number; sy: number; lens: string }
   | { type: "continentInfo"; info: ContinentInfo | null; x: number; y: number }
   | { type: "yearFrame"; svg: string; year: number }
   | { type: "chronicle"; work: Work }
@@ -174,10 +179,6 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         ms: performance.now() - t0,
       });
     } else if (msg.type === "refineTile") {
-      if (!root) {
-        post({ type: "error", message: "no world generated yet" });
-        return;
-      }
       // Streaming patch refine (ST-1): refine + RASTERIZE ONE tile WITHOUT touching
       // the persistent `sector` slot (the legacy drill path owns that). Free the temp
       // handle so the cache holds zero wasm handles. Same `refineSector` call the
@@ -187,8 +188,16 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       // instead of shipping the ~200 KB SVG string for the main thread to drawImage
       // (~300 ms on the paint thread). `renderRgba` returns a Uint8Array copied out
       // of wasm memory, so its `.buffer` is a private ArrayBuffer safe to transfer.
-      const tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
+      //
+      // EVERY failure of tile work — refineSector, renderRgba, even the can't-happen
+      // !root — must answer with the sector-carrying `tileFailed`, never the generic
+      // sector-less `error`: the main thread's `error` arm can't free this tile's
+      // pendingTiles reservation, and with STREAM_BUDGET slots an unfreed key is
+      // 1/BUDGET of streaming throughput wedged until the next level change.
+      let tile: WorldHandle | undefined;
       try {
+        if (!root) throw new Error("no world generated yet");
+        tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
         const rgba = tile.renderRgba(msg.style, msg.lens, msg.w, msg.h);
         const buf = rgba.buffer as ArrayBuffer;
         post(
@@ -206,13 +215,11 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
           [buf], // transfer (zero-copy); `buf`/`rgba` are neutered after this
         );
       } catch {
-        // A rasterize failure for ONE tile must not flash a UI error banner NOR leak
-        // its pendingTiles reservation (the generic outer catch posts a sector-less
-        // `error` → the budget slot wedges). Echo the sector so the main thread frees
-        // exactly this key.
-        post({ type: "tileFailed", level: msg.level, sx: msg.sx, sy: msg.sy });
+        post({ type: "tileFailed", level: msg.level, sx: msg.sx, sy: msg.sy, lens: msg.lens });
       } finally {
-        tile.free(); // free even on throw — keep the "cache holds zero wasm handles" invariant
+        // free even on throw — keep the "cache holds zero wasm handles" invariant
+        // (`tile` is undefined when refineSector itself threw; nothing to free).
+        tile?.free();
       }
     } else if (msg.type === "continentAt") {
       // Point→landmass for the continent-aware drill. Always against the root

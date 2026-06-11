@@ -726,6 +726,60 @@ test("drill detail fill shows live progress and drains to zero", async ({ page }
   expect(liveFilled).toBeLessThanOrEqual(MAX_LIVE_PATCHES); // still bounded by the hard cap
 });
 
+// CONTRACT (failure recovery): a tile whose refine/rasterize FAILS in the worker
+// must RELEASE its budget slot, the fill must still complete, and a PERSISTENTLY
+// failing sector must be BENCHED, not retried forever. The in-flight budget turned
+// an orphaned reservation from "one sector stays coarse" into "1/STREAM_BUDGET of
+// throughput wedged" (3 orphans freeze the stream outright); the naive fix —
+// release + refill — would instead retry a deterministically failing sector ~10×/s
+// forever, pegging the serial worker. ?failTiles=3 makes the first 3 DISTINCT
+// sectors fail FOR REAL inside the wasm rasterizer on EVERY attempt (w=0 →
+// Pixmap::new rejects → JsError → the worker's tileFailed path) — no mocks, the
+// genuine end-to-end failure surface, persistent by design. Mutation-verified
+// both ways — and both starve the fill at 0: drop the pendingTiles.delete → the
+// budget is exhausted by the 3 orphans; drop the failedTiles memo skip → the
+// doomed sectors are NEAREST-first, so the retry loop monopolises the budget head
+// and nothing else ever loads (the memo is load-bearing for the fill itself, not
+// just worker politeness).
+test("CONTRACT: a failed tile releases its budget slot and a doomed sector is benched, not retried forever", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8&failTiles=3");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  // Release half: the failures came back as tileFailed, freed their slots, and the
+  // fill still covers the view AROUND the 3 doomed sectors (same ≥8 bound as the
+  // static-fill regression above), bounded by the hard cap.
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-live-patches")) ?? "0"), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThanOrEqual(8);
+  expect(Number(await canvas.getAttribute("data-live-patches"))).toBeLessThanOrEqual(
+    MAX_LIVE_PATCHES,
+  );
+  // The queue DRAINS to zero — only possible if the benched sectors hold no
+  // reservation (an unbounded retry loop keeps ≥1 doomed key permanently pending).
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-pending-tiles")), {
+      timeout: 30_000,
+    })
+    .toBe(0);
+  // Bench half: each doomed sector was retried exactly MAX_TILE_RETRIES=3 times
+  // (3 sectors × 3 = 9), then benched — the counter reaches 9…
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-tiles-failed")) ?? "0"), {
+      timeout: 15_000,
+    })
+    .toBe(9);
+  // …and STAYS 9 with the queue drained: any further attempt could only be a
+  // memo-defeating re-request of a doomed key — give one a window to show up.
+  await page.waitForTimeout(1_500);
+  expect(Number(await canvas.getAttribute("data-tiles-failed"))).toBe(9);
+  expect(Number(await canvas.getAttribute("data-pending-tiles"))).toBe(0);
+});
+
 // #9 (quality hunt): RE-DRILL REPRODUCIBILITY — drill, return, drill the same
 // point again: the same sector must load (the path every user takes constantly;
 // state corruption across the round-trip would land them somewhere else or wedge
@@ -975,9 +1029,13 @@ test("CONTRACT (Phase B): detail follows DURING a pan — the reconcile pumps be
     .toBeGreaterThan(pumpsBefore);
   await page.mouse.up();
 
-  // ...AND detail actually FILLED as the camera moved: a sector not in view at drill
-  // time streamed in, and the live set stayed within the hard cap (continuous-follow
-  // AND the predictive prefetch both route through reconcile's count/byte firewall).
+  // ...AND the pan's streaming actually LANDED content: a sector not in view at
+  // drill time streamed in, and the live set stayed within the hard cap. HONESTY:
+  // this poll runs after mouse.up, so it is a generic "the pan caused new detail"
+  // bound — a settle-only engine would also satisfy it eventually. The during-
+  // motion half of the contract is carried ENTIRELY by the data-stream-pumps
+  // assertion above (polling for a tile to LAND mid-drag would flake on slow CI
+  // raster, which is exactly why the pump counter counts the fire instead).
   await expect
     .poll(
       async () => {

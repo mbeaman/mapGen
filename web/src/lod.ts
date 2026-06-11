@@ -156,6 +156,15 @@ export function predictedAhead(
     2 * cam.posUnit[1] - prevPosUnit[1],
     2 * cam.posUnit[2] - prevPosUnit[2],
   ];
+  // |predicted| is NOT re-normalized to the camera radius — deliberately. For two
+  // same-altitude samples θ apart, |2·pos − prev| = r·√(5 − 4·cosθ) ≥ r, so a fast
+  // pan hands desiredSectors a slightly inflated radius → a slightly WIDER horizon
+  // cull. That is a self-correcting superset (faster ⇒ look further; the extras sit
+  // AFTER in-view in nearest-first order and are re-evaluated next pump). Re-scaling
+  // to the real radius was tried and REVERTED: when the radius more than halves
+  // between samples (a fast zoom-in), 2·pos − prev flips sign, and rescuing that
+  // backward vector to a valid radius turns a self-culling overshoot (measured: 0
+  // sectors) into a confident ANTIPODAL camera (measured: 16 garbage prefetches).
   const have = new Set(inView.map((s) => `${s.level}:${s.sx}:${s.sy}`));
   return desiredSectors({ ...cam, posUnit: predicted }, level, worldW, worldH, cfg).filter(
     (s) => !have.has(`${s.level}:${s.sx}:${s.sy}`),

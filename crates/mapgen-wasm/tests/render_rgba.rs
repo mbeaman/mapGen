@@ -28,13 +28,16 @@ fn render_rgba_is_sane_opaque_and_the_lens_differs() {
         "RGBA buffer must be w*h*4 bytes"
     );
 
-    // Fully opaque (opaque deep-sea backdrop) + non-uniform + has sea AND land.
+    // EVERY texel alpha-255 (opaque deep-sea backdrop) + non-uniform + has sea AND
+    // land. The all-255 bound is load-bearing, not cosmetic: these are tiny-skia
+    // PREMULTIPLIED bytes that the main thread feeds to `putImageData`, which reads
+    // STRAIGHT alpha — the encodings agree only at alpha==255, so even one
+    // semi-transparent texel ships a wrong color.
     let px = (w * h) as f64;
-    let (mut opaque, mut water, mut warm, mut sum, mut sumsq) = (0u64, 0u64, 0u64, 0.0f64, 0.0f64);
+    let (mut min_alpha, mut water, mut warm, mut sum, mut sumsq) =
+        (u8::MAX, 0u64, 0u64, 0.0f64, 0.0f64);
     for c in base.chunks_exact(4) {
-        if c[3] == 255 {
-            opaque += 1;
-        }
+        min_alpha = min_alpha.min(c[3]);
         let (r, g, b) = (c[0] as f64, c[1] as f64, c[2] as f64);
         let lum = 0.299 * r + 0.587 * g + 0.114 * b;
         sum += lum;
@@ -48,9 +51,11 @@ fn render_rgba_is_sane_opaque_and_the_lens_differs() {
     }
     let mean = sum / px;
     let variance = (sumsq / px - mean * mean).max(0.0);
-    assert!(
-        opaque as f64 / px > 0.99,
-        "render_rgba not opaque ({opaque} / {px}) — the deep-sea backdrop should cover every texel"
+    assert_eq!(
+        min_alpha, 255,
+        "render_rgba has a semi-transparent texel (min alpha {min_alpha}) — premultiplied \
+         bytes through putImageData mis-color anything below alpha 255; the deep-sea \
+         backdrop must cover every texel"
     );
     assert!(
         variance > 100.0,

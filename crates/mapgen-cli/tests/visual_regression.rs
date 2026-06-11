@@ -187,11 +187,10 @@ fn globe_texture_rasterizes_and_its_lens_class_is_honored() {
     let total = (base.width() * base.height()) as f64;
     assert!(total > 0.0, "empty globe pixmap");
 
-    let (mut opaque, mut sum, mut sumsq, mut water, mut warm) = (0u64, 0.0f64, 0.0f64, 0u64, 0u64);
+    let (mut min_alpha, mut sum, mut sumsq, mut water, mut warm) =
+        (u8::MAX, 0.0f64, 0.0f64, 0u64, 0u64);
     for px in base.data().chunks_exact(4) {
-        if px[3] > 200 {
-            opaque += 1;
-        }
+        min_alpha = min_alpha.min(px[3]);
         let (r, g, b) = (px[0] as f64, px[1] as f64, px[2] as f64);
         let lum = 0.299 * r + 0.587 * g + 0.114 * b;
         sum += lum;
@@ -206,12 +205,17 @@ fn globe_texture_rasterizes_and_its_lens_class_is_honored() {
     let mean = sum / total;
     let variance = (sumsq / total - mean * mean).max(0.0);
     // The opaque deep-sea backdrop (planet.rs render_globe_texture) makes EVERY
-    // texel opaque — a sphere skin must be land-or-sea at every point, so this is
-    // a near-1.0 floor, not the 0.8 the parchment renders use.
-    assert!(
-        opaque as f64 / total > 0.99,
-        "globe texture not fully opaque ({:.3}) — the deep-sea backdrop should cover every texel",
-        opaque as f64 / total
+    // texel alpha-255 — and that exact invariant is LOAD-BEARING for color
+    // correctness, not just coverage: `render_rgba` ships tiny-skia's PREMULTIPLIED
+    // bytes (`pixmap.take()`) into the browser's `putImageData`, which reads them as
+    // STRAIGHT alpha. The two encodings agree only at alpha==255, so a single
+    // semi-transparent texel (e.g. a sub-pixel sliver if the backdrop rect ever
+    // shrinks) would ship wrong colors. Pin every texel, not a >0.99 fraction.
+    assert_eq!(
+        min_alpha, 255,
+        "globe texture has a semi-transparent texel (min alpha {min_alpha}) — the deep-sea \
+         backdrop must cover every texel, or premultiplied-vs-straight alpha mis-colors it \
+         through putImageData"
     );
     assert!(variance > 150.0, "globe ~uniform (variance {variance:.0})");
     assert!(
