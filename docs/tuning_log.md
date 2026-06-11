@@ -692,3 +692,10 @@ truth: the relief spike's screenshot matrix (hillshade alone carries ~90% of the
 sea byte-identical). `ambient` must stay ≥ 0.5 — the flat-field ≡ 1.0 exactness
 contract (`relief.rs::flat_field_shading_is_a_byte_noop`) relies on Sterbenz.
 Feel-judged; revisit in the R4 quality pass with oblique screenshots.
+
+## VERT_EXAG (relief R2, 2026-06-11)
+`0.023` (web/src/relief.ts): peak raw land elevation ~0.86 (seed-42 stats) →
+~2% of sphere radius — the spike's screenshot-verified displacement. Heights
+are RAW per-world values (never normalized — seam bit-identity + one fewer
+derived constant), so low-relief worlds displace proportionally less.
+Skirt depth 0.004; grid 129×65. Feel-judged at the R4 pass.
