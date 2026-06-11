@@ -13,14 +13,14 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: rustup component add rustfmt
       - run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -28,7 +28,7 @@ jobs:
   test-native:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
@@ -40,7 +40,7 @@ jobs:
     # regression still trips it; hardware variance doesn't).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - name: Perf budget check (scaled for CI hardware)
         run: PERF_BUDGET_SCALE=2.0 cargo run --release -p mapgen-world --example perf_baseline -- --check
@@ -48,7 +48,7 @@ jobs:
   build-wasm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Build WASM façade
@@ -69,15 +69,21 @@ jobs:
     # the next image. (Locally on an unsupported distro, see `just web-e2e`.)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - uses: jetli/wasm-pack-action@v0.4.0
+      # Replaces jetli/wasm-pack-action@v0.4.0 (unmaintained, still node16 —
+      # already past the runner's node20 deprecation). install-action is a
+      # composite (no Node runtime) that installs the prebuilt wasm-pack binary
+      # with checksum verification.
+      - uses: taiki-e/install-action@v2
         with:
-          version: latest
-      - uses: actions/setup-node@v4
+          tool: wasm-pack
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          # 22 = active LTS (node 20 hit end-of-life 2026-04-30) and matches the
+          # dev box, so CI runs the web suites on the same major as `just check`.
+          node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Cross-platform determinism golden (native↔wasm byte-identity)

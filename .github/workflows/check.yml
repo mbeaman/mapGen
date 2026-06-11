@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # rust-toolchain.toml pins the channel; this action honors it.
       - name: Install Rust toolchain
@@ -34,7 +34,7 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry + git db + target
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -45,7 +45,9 @@ jobs:
             cargo-${{ runner.os }}-
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        # v4 is a composite action (no Node runtime at all) — immune to the
+        # runner's Node-version deprecation cycle, unlike the node20 v2.
+        uses: extractions/setup-just@v4
 
       # `just check` runs fmt + clippy + workspace tests + wasm
       # release build, matching the local pre-push gate exactly. If
