@@ -133,3 +133,34 @@ fn planet_seed9_far_shore_golden_matches_native_under_wasm() {
          mapgen_core::fmath)"
     );
 }
+
+/// Relief twin (the Relief addendum): the seam-banded heightfield + lambert
+/// shade grid — the NEW export surface that no `WorldData` golden can see —
+/// must hash byte-identical to the native golden under wasm32. Same canonical
+/// call as `mapgen-world/tests/relief_spec.rs::relief_grid_golden_hash`; same
+/// committed file, so re-anchoring the native golden re-anchors this twin.
+#[wasm_bindgen_test]
+fn relief_grid_golden_matches_native_under_wasm() {
+    let parent = generate_full(fixed_params(42));
+    let sec = Sector {
+        level: 2,
+        sx: 1,
+        sy: 1,
+    };
+    let tile = refine_sector(&parent, sec, RefineParams::default());
+    let heights = mapgen_world::relief::relief_grid(&parent, &tile, sec, 129, 65)
+        .expect("relief grid under wasm");
+    let lambert = mapgen_render::relief::lambert_grid(&heights, 129, 65, &Default::default());
+    let mut bytes = Vec::with_capacity((heights.len() + lambert.len()) * 4);
+    for v in heights.iter().chain(lambert.iter()) {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    let hash = blake3::hash(&bytes).to_hex().to_string();
+    let committed =
+        include_str!("../../mapgen-world/tests/golden/seed42_relief_grid.blake3.txt").trim();
+    assert_eq!(
+        hash, committed,
+        "wasm32 relief grid/lambert diverged from the native golden — the relief \
+         sampler or shade math is not cross-platform byte-identical"
+    );
+}

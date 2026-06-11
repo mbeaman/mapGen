@@ -15,6 +15,7 @@ pub mod patch;
 pub mod pipeline;
 pub mod plates;
 pub mod polities;
+pub mod relief;
 pub mod religions;
 pub mod scale;
 pub mod sea_lanes;

@@ -123,6 +123,61 @@ impl WorldHandle {
     /// `usvg::Options::default()` (no fontdb) is the complete parse path.
     #[wasm_bindgen(js_name = renderRgba)]
     pub fn render_rgba(&self, style: &str, lens: &str, w: u32, h: u32) -> Result<Vec<u8>, JsError> {
+        self.rasterize(style, lens, w, h)
+    }
+
+    /// [`render_rgba`](Self::render_rgba) + baked hillshade (the Relief
+    /// addendum): the SAME raster body (shared private fn — the two paths
+    /// cannot drift), then `lambert_grid` + `shade_rgba` multiply the relief
+    /// shading into RGB before the bytes ship. The relief `grid` is passed IN
+    /// (the worker computes it once via [`relief_grid`](Self::relief_grid)) so
+    /// the field that SHADES is bitwise the field that DISPLACES — no
+    /// shade-vs-geometry drift class. Alpha is untouched (min_alpha == 255
+    /// holds); a flat/sea grid shades to exactly 1.0 → byte-no-op.
+    #[wasm_bindgen(js_name = renderRgbaShaded)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_rgba_shaded(
+        &self,
+        style: &str,
+        lens: &str,
+        w: u32,
+        h: u32,
+        grid: &[f32],
+        gw: u32,
+        gh: u32,
+    ) -> Result<Vec<u8>, JsError> {
+        if grid.len() != (gw as usize) * (gh as usize) || gw < 2 || gh < 2 {
+            return Err(JsError::new("relief grid dims mismatch"));
+        }
+        let mut rgba = self.rasterize(style, lens, w, h)?;
+        let lambert = mapgen_render::relief::lambert_grid(grid, gw, gh, &Default::default());
+        mapgen_render::relief::shade_rgba(&mut rgba, w, h, &lambert, gw, gh);
+        Ok(rgba)
+    }
+
+    /// Seam-banded relief heightfield for a refined `tile` of this ROOT world
+    /// (`mapgen_world::relief::relief_grid`): row-major gh×gw, row 0 = north,
+    /// RAW sea-clamped heights. `&self + &tile`: reads only, no RNG, no new
+    /// serde field — `WorldData` bytes are untouched (golden-neutral by
+    /// structure; see the relief addendum's determinism scope).
+    #[wasm_bindgen(js_name = reliefGrid)]
+    pub fn relief_grid(
+        &self,
+        tile: &WorldHandle,
+        level: u32,
+        sx: u32,
+        sy: u32,
+        gw: u32,
+        gh: u32,
+    ) -> Result<Vec<f32>, JsError> {
+        let sector = Sector { level, sx, sy };
+        mapgen_world::relief::relief_grid(&self.inner, &tile.inner, sector, gw, gh)
+            .map_err(|e| JsError::new(&e))
+    }
+
+    /// The shared SVG→RGBA raster body of [`render_rgba`](Self::render_rgba) and
+    /// [`render_rgba_shaded`](Self::render_rgba_shaded).
+    fn rasterize(&self, style: &str, lens: &str, w: u32, h: u32) -> Result<Vec<u8>, JsError> {
         let style = Style::from_str(style).map_err(|e| JsError::new(&e))?;
         let svg = mapgen_render::render(&self.inner, style).map_err(|e| JsError::new(&e))?;
         let svg = mapgen_render::with_root_class(&svg, lens);

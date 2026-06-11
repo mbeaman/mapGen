@@ -203,6 +203,15 @@ let workerDegraded = false;
 // instead of climbing forever). Inert without the param.
 const failTilesN = Number(new URLSearchParams(location.search).get("failTiles") ?? 0);
 const failTileKeys = new Set<string>();
+// `&failStage=relief` aims the injected failure at the OTHER wasm call in the
+// tile try: gridW=0 -> relief_grid rejects (vs w=0 -> Pixmap::new rejects).
+// Pins that BOTH stages route through the same single-tileFailed recovery.
+const failStageRelief = new URLSearchParams(location.search).get("failStage") === "relief";
+// Relief grid dims (addendum §5): fixed, decoupled from patch tessellation --
+// 129×65 matches the tiles' universal 2:1 aspect at ~the refined mesh's Nyquist
+// (≈4k cells ≈ 64×64); square world-unit steps keep the hillshade isotropic.
+const RELIEF_GW = 129;
+const RELIEF_GH = 65;
 
 // Tile raster size: long edge 1024, the short edge scaled by the sector's aspect
 // so the cartography isn't anisotropically squashed on the curved patch. Computed
@@ -270,16 +279,20 @@ const streamReconcile = (sampleVelocity = false): void => {
     const { w, h } = tileDims(sec);
     if (failTileKeys.size < failTilesN) failTileKeys.add(key); // ?failTiles hook (see decl)
     const injectFail = failTileKeys.has(key);
-    // Bake the active lens into the worker raster (off-main-thread); see render_rgba.
+    // Bake the active lens + the relief hillshade into the worker raster
+    // (off-main-thread); see renderRgbaShaded. failStage=relief aims the
+    // injected failure at the relief_grid call instead of the raster.
     send({
       type: "refineTile",
       level: sec.level,
       sx: sec.sx,
       sy: sec.sy,
       style: "globe",
-      w: injectFail ? 0 : w,
+      w: injectFail && !failStageRelief ? 0 : w,
       h,
       lens: activeLensClass(),
+      gridW: injectFail && failStageRelief ? 0 : RELIEF_GW,
+      gridH: RELIEF_GH,
     });
   }
   updateStreamProgress();

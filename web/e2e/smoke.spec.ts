@@ -780,6 +780,40 @@ test("CONTRACT: a failed tile releases its budget slot and a doomed sector is be
   expect(Number(await canvas.getAttribute("data-pending-tiles"))).toBe(0);
 });
 
+// CONTRACT (relief, R1): the tile try now holds TWO wasm calls (reliefGrid →
+// renderRgbaShaded). A failure in the RELIEF stage must ride the exact same
+// single-tileFailed recovery as a raster failure — never a sector-less error,
+// never a double-count. &failStage=relief aims the same persistent injection at
+// reliefGrid (gridW=0 → relief_grid rejects FOR REAL in wasm), and the contract
+// is identical: fill survives, queue drains, counter stabilises at exactly 9.
+// A double-post per failure would land 18 → red; the sector-less error arm
+// would starve the fill at 0 → red.
+test("CONTRACT (relief): a relief-stage failure rides the same single-tileFailed recovery", async ({ page }) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8&failTiles=3&failStage=relief");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-live-patches")) ?? "0"), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThanOrEqual(8);
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-pending-tiles")), {
+      timeout: 30_000,
+    })
+    .toBe(0);
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-tiles-failed")) ?? "0"), {
+      timeout: 15_000,
+    })
+    .toBe(9);
+  await page.waitForTimeout(1_500);
+  expect(Number(await canvas.getAttribute("data-tiles-failed"))).toBe(9);
+});
+
 // #9 (quality hunt): RE-DRILL REPRODUCIBILITY — drill, return, drill the same
 // point again: the same sector must load (the path every user takes constantly;
 // state corruption across the round-trip would land them somewhere else or wedge

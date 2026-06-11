@@ -2,6 +2,7 @@
 //! pluggable; the same world re-renders in any style without re-simulating.
 
 pub mod layers;
+pub mod relief;
 pub mod simplify;
 pub mod style;
 

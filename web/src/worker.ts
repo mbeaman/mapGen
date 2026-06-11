@@ -65,6 +65,12 @@ export type WorkerRequest =
       w: number;
       h: number;
       lens: string;
+      // Relief grid dims (addendum §5): the seam-banded heightfield sampled per
+      // tile — FIXED constants on main (RELIEF_GW/GH), decoupled from the patch
+      // tessellation. gridW=0 is the failStage=relief fault-injection (a real
+      // wasm-side reject, like w=0 for the raster).
+      gridW: number;
+      gridH: number;
     }
   | { type: "continentAt"; x: number; y: number }
   | { type: "renderYear"; style: string; year: number }
@@ -198,7 +204,23 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       try {
         if (!root) throw new Error("no world generated yet");
         tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS);
-        const rgba = tile.renderRgba(msg.style, msg.lens, msg.w, msg.h);
+        // Relief (addendum §5): one seam-banded heightfield per tile, computed
+        // ONCE — it shades the raster here (renderRgbaShaded multiplies the
+        // baked hillshade into RGB; alpha untouched) and, from R2, the same
+        // buffer ships for vertex displacement, so shade and geometry cannot
+        // drift. Both wasm calls sit inside this ONE try: any failure (the
+        // ?failTiles w=0 raster reject, the failStage=relief gw=0 grid reject)
+        // still answers exactly one sector-carrying tileFailed.
+        const grid = root.reliefGrid(tile, msg.level, msg.sx, msg.sy, msg.gridW, msg.gridH);
+        const rgba = tile.renderRgbaShaded(
+          msg.style,
+          msg.lens,
+          msg.w,
+          msg.h,
+          grid,
+          msg.gridW,
+          msg.gridH,
+        );
         const buf = rgba.buffer as ArrayBuffer;
         post(
           {
