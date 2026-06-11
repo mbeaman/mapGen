@@ -684,3 +684,11 @@ The detail-DECREASING knobs for the zoom-out overview (planet / globe). Render-o
   values today; the River-valley Human `0.9` and Dwarf `0.1` are
   archetype-defining and shouldn't move much, but the middle three
   (Wood Elf `0.2`, Orc `0.2`, Halfling `0.4`) are mostly guesswork.
+
+## ShadeParams (relief R1, 2026-06-11)
+`strength: 14.0, ambient: 0.6, light: [-1,-1,1.25]` (NW, raster space). Ground
+truth: the relief spike's screenshot matrix (hillshade alone carries ~90% of the
+3D reading) + the R1 native artifact (planet-42 L3 (1,3): land models gently,
+sea byte-identical). `ambient` must stay ≥ 0.5 — the flat-field ≡ 1.0 exactness
+contract (`relief.rs::flat_field_shading_is_a_byte_noop`) relies on Sterbenz.
+Feel-judged; revisit in the R4 quality pass with oblique screenshots.

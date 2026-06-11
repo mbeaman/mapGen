@@ -205,7 +205,13 @@ The existing 600ms `flyTo` easeInOut lerp (globe.ts 207-222) carries every scale
 - **Est:** 1 day
 - **Risk:** Feel-sensitive; visual artifact required.
 
-### Increment G (DEFERRED, evidence-gated) — Relief displacement at deep zoom
+### Increment G (SUPERSEDED 2026-06-11 — see the Relief addendum at the end of this doc) — Relief displacement at deep zoom
+
+> **SUPERSEDED.** The evidence gate was lifted by explicit user election of the full
+> relief arc, and the spike REFUTED this section's implicit seam assumption (a
+> tile's own pinned field is NOT seam-true: 0/65 edge nodes bit-identical — see the
+> addendum §0 correction). The shipped design: seam-banded root-field sampling +
+> worker-baked hillshade + displaced patches + the tilt camera.
 
 - **Revival trigger (concrete):** ship ONLY if user testing shows deep near-flat patches read as flat 2D (the curvature-at-depth cost manifesting), where curvature provably cannot carry the 3D cue.
 - **Scope (consumer-backed in ONE increment — per MEMORY):** ship the read-only `WorldHandle::sectorHeightfield(gw,gh)` getter **AND** its displaced-patch consumer together (never plumbing-alone). Sampler is a pure native fn `sample_grid(mesh, elevation, gw, gh)` over `view_rect()`, **no transcendentals** (pure nearest-site index/comparison; if a distance is needed, route `mapgen_core::fmath`), grid capped ~128² and/or sites spatially bucketed. Build the patch from a denser grid; displace vertices radially by normalized per-cell elevation × `VERT_EXAG` (sea clamped flat).
@@ -1226,3 +1232,713 @@ would promise an experience the engine cannot keep.
 7. **The tuning knobs** — `MAX_LIVE_PATCHES=24`, 1024px long-edge, ~96 MB,
    `levelForAltitude` thresholds, the settle-ε and pump-N (`tuning_log.md`).
    Confirm 24/1024/96 MB as starting points, or start tighter (16/768/57 MB)?
+
+---
+
+# Relief addendum (supersedes Increment G) — ACCEPTED 2026-06-11
+
+## 0. Supersession of Increment G — including the SEAM REFUTATION (correction)
+
+Increment G (`docs/design/globe-ground-3d-navigation.md:208-214`) specced a bare
+read-only `WorldHandle::sectorHeightfield(gw,gh)` getter sampling the TILE's own field
+by nearest-site, one displaced patch as consumer, evidence-gated behind "deep patches
+read flat". It is superseded on five grounds:
+
+1. **The evidence gate is lifted by explicit user election** of the full relief arc.
+   Record the gate as satisfied-by-choice; do not silently delete the gate language.
+2. **CORRECTION — G's implicit seam assumption is REFUTED (measured).** G assumed a
+   tile's own elevation field is seam-true because `pin_edges_to_shared` pins edges.
+   It does not: the pin (scale.rs:410-424) blends per-SITE values toward the shared
+   anchor *evaluated at the tile's OWN mesh sites*; adjacent refined sectors have
+   DIFFERENT meshes, so two independently-sampled heightfields disagree at the shared
+   edge — spike-measured **0/65 edge nodes bit-identical, max delta ~6% of local
+   relief** — and `fill_depressions` (scale.rs:286-289) mutates elevation AFTER the
+   pin anyway. Any per-tile-field sampler cracks at every seam. The remedy is the
+   shared-PARENT-field boundary band (§3): near tile edges, sample the ROOT world's
+   anchor field (the same object for all tiles) at bit-identical world coords →
+   bit-identical edges by construction; smoothstep-blend inland to the tile's own
+   refined field, mirroring `pin_edges_to_shared`'s band math.
+3. **G predates the worker wasm rasterizer** (CLAIMS 180). Hillshade baked per-texel
+   into the worker RGBA raster is the visibility FLOOR (~90% of the effect, keeps
+   `MeshBasicMaterial` unlit — the "paper globe" doctrine survives). G's "displacement
+   IS the relief" inverts: displacement is the silhouette/limb-break garnish that pays
+   off only at oblique cameras — which is why the tilt camera ships in the same arc.
+4. **G's sampler spec upgrades.** Pure nearest-site degrades to a CONSTANT once a deep
+   sector is smaller than one parent cell — the failure `parent_anchor_elevation`
+   (scale.rs:426-492) already documents and solved with IDW. Superseded by the
+   measured bucketed exact k=4 IDW (4 ms @129²).
+5. **G predates streaming (ST-1).** The unit is the STREAMED SET (≤ MAX_LIVE_PATCHES
+   = 52), riding the existing `refineTile → tile` flow (worker.ts:181-223) under the
+   ONE `pendingTiles` reservation — not a separate getter round-trip.
+
+**Kept from G verbatim:** consumer-backed getter+consumer in one increment; fmath
+purity (only `+ - * /` and IEEE `sqrt`; `fmath_purity.rs` exempts sqrt); grid capped
+~129², sites spatially bucketed; radial displacement × `VERT_EXAG`, sea clamped flat;
+the serde byte-equality golden-neutrality proof (the vacuous "golden stays green"
+proof stays banned, per the doc's own red-team at the wasm section); the DEDICATED
+native↔wasm golden for the new export (cross_platform.rs:52-73 pattern); the
+non-constant-radii JS witness (upgraded to `data-relief-max`).
+
+**Rejected alternative (recorded):** pushing the band INTO `refine_sector` so the
+tile's serialized field is seam-true. Rejected because (a) it moves `WorldData` →
+re-anchors `seed42_sector` + the wasm twin and risks CLAIMS 174/175's tight
+cross-level contracts for zero 2D-path gain; (b) it is INSUFFICIENT alone —
+`fill_depressions` runs after any pin and re-breaks bit-identity, forcing a hydrology
+re-order; (c) it conflates a SAMPLING concern with world content (the same separation
+already ruled for texture bleed). Export-time banding is golden-neutral by structure.
+
+**Doc edits that land with this addendum:** SUPERSEDED banner on Increment G with a
+pointer here; the seam-refutation correction above cross-referenced from G's text; the
+"Elevation: NONE in the core arc" line annotated "superseded by the Relief addendum";
+risk-register rows rewritten (the 1b depthTest:false z-fight row; the two relief-getter
+rows updated to the new export shape); camera.ts:30-32 and lod.ts:9-14
+"pitch … deferred" comments updated when those increments land.
+
+---
+
+## 1. Architecture overview
+
+```
+worker (per tile, ONE message, ONE reservation, ONE try/catch/finally):
+  tile = root.refineSector(level, sx, sy, SECTOR_CELLS)        // verbatim, golden-pinned
+  grid = root.reliefGrid(tile, level, sx, sy, GW, GH)          // seam-banded heights (R1)
+  rgba = tile.renderRgbaShaded(style, lens, w, h, grid, GW, GH) // hillshade baked (R1)
+  post tile message: rgba [+ heights/gw/gh from R2], both buffers transferred
+
+main thread:
+  putImageData (unchanged) + displacedPatchArrays(grid) → BufferGeometry (R2)
+  MeshBasicMaterial { map, depthTest: true } (R2)
+  pick: raycast displaced patches first, normalize(hit.point) → unitToUv (R2)
+  tilt gesture + maxPitch clearance clamp + pitch-aware dynamic near + lookDir LOD (R3)
+```
+
+The grid is computed ONCE per tile and passed INTO the shading export, so the field
+that shades and the field that displaces are **the same object by construction** — no
+recompute, no cross-language grid-dims drift, no shade/silhouette divergence class.
+(This is contracts-first's grid-passed-in shape, chosen over wasm-first's combined
+`ReliefTile` export: it keeps `renderRgba` untouched for its existing tests and the
+base-globe follow-up, at the cost of one extra ~33 KB boundary copy per tile —
+negligible vs the 4 ms IDW.)
+
+**Grid dims are FIXED CONSTANTS, decoupled from tessellation** (the red-team's
+wasm-first fatal): `GW = 129`, `GH = 65` in `web/src/relief.ts`, imported by worker
+and main, riding the request message (self-describing; a pure function of the sector
+key — the R9 rule trivially satisfied). 129×65 sits at the upper end of the spike's
+measured envelope (65²–129²: 4 ms IDW, 3.7 ms geometry, payload 33 KB inside the
+16–66 KB no-cache-retune band). Every sector is 2:1 (lon:lat) because the globe path
+pins the planet world (2048×1024, main.ts:928 — the continent default is 2048×1280;
+this rationale is planet-path-dependent and named as such), so the 129×65 grid keeps
+sample steps square in world units at every level. `PATCH_ANGULAR_RES` / `segW/segH`
+no longer control relief density at all; patch geometry is built FROM the grid (§6).
+
+---
+
+## 2. Rust substrate — `crates/mapgen-world/src/relief.rs` (new module)
+
+```rust
+/// Spatially-bucketed exact k-NN IDW over a site set. fmath-pure: only +,-,*,/
+/// and fmath::sqrt. Deterministic and BIT-IDENTICAL to the O(n) brute-force scan:
+/// candidates rank by lexicographic (d2, site_index); rings expand until
+/// ring_lower_bound² > the kth-best d2; the IDW accumulation runs in
+/// (d2, idx)-SORTED order so f32 summation order is canonical (autovectorization
+/// risk named: keep the loop scalar). Buckets ALWAYS span the WHOLE site set —
+/// NO caller-supplied rect pre-filter (the existing parent_anchor_elevation IS
+/// rect-restricted, scale.rs:450-453; restricting per-tile would make two tiles
+/// restrict differently at a shared edge and silently break edge bit-identity).
+/// `period = Some(width)` wraps x by minimum-image (plates::wrap_dx) for the
+/// periodic planet root; tile meshes pass None.
+pub struct SiteBuckets<'a> { /* sites, period, cell grid of Vec<u32>, cell size */ }
+impl<'a> SiteBuckets<'a> {
+    pub fn new(sites: &'a [[f32; 2]], period: Option<f32>) -> Self;
+    /// k=4 IDW, w = 1/(d2 + 1e-6) — mirrors scale.rs::parent_anchor_elevation.
+    pub fn idw4(&self, field: &[f32], p: [f32; 2]) -> f32;
+}
+
+/// Seam-banded relief grid for a refined tile: row-major, gh rows × gw cols,
+/// ROW 0 = NORTH (rect.y0), COL 0 = WEST (rect.x0). Heights are RAW sea-clamped
+/// elevation: max(0.0, blended elevation) — NEVER per-tile-normalized (per-tile
+/// maxima differ → normalization would re-break edge bit-identity) and NOT
+/// root-max-normalized (one fewer derived constant; VERT_EXAG is the single JS
+/// knob; elevation is per-world relative, recorded in tuning_log).
+/// gw, gh validated in [2, 257]; the tile's view_rect must equal
+/// Sector::rect(level, sx, sy) (consistency check → Err on mismatch).
+pub fn relief_grid(parent: &WorldData, tile: &WorldData,
+                   level: u32, sx: u32, sy: u32, gw: u32, gh: u32)
+    -> Result<Vec<f32>, String>;
+```
+
+### Seam-band math (exact, load-bearing)
+
+Per node `(i, j)` with `rect = Sector::rect(level, sx, sy, W, H)` (scale.rs:88-100):
+
+1. **Endpoint-pinned grid coords** — `x_i = rect.x0` when `i == 0`; `x_i = rect.x1`
+   when `i == gw-1`; else `x0 + (x1-x0) * (i as f32 / (gw-1) as f32)`. Same for `y_j`.
+   The naive `lerp(x0, x1, 1.0)` does NOT round back to `x1` in f32 — the explicit
+   endpoint pin is load-bearing and unit-tested (the ulp trap). `Sector::rect`
+   computes a shared edge as `(sx+1) as f32 * cw` on BOTH sides, so neighbouring
+   tiles evaluate edge nodes at bit-identical world coordinates.
+2. **ANTIMERIDIAN CANONICALIZATION** — before ROOT sampling, if the parent mesh is
+   periodic and `x_i == W`, set `x_i = 0.0`. Without this the wrap pair samples the
+   root at `x = W` on one side and `x = 0` on the other, and minimum-image
+   `wrap_dx` is NOT bitwise-neutral there: for a site `s` with `x < W/2`,
+   `fl(fl(W - s) - W) ≠ -s` (Sterbenz holds only for `s ≥ W/2`; plates.rs:153-161),
+   so d2 differs in the last ulps and k-NN ranking can flip on near-ties. With
+   canonicalization the wrap edge is bit-identical like any other (CLAIMS 167's
+   L3 (7,4)|(0,4) surface). This was the sharpest cross-design catch; both rival
+   designs' headline seam contracts were false or untested at the wrap without it.
+3. **Two samples** — `h_tile = idw4(tile sites, tile.terrain.elevation, p)` (the
+   post-`fill_depressions` final field, coherent with the rivers/lakes the texture
+   draws; no period) and `h_root = idw4(parent sites, parent.terrain.elevation,
+   p_canon)` (period = `Some(W)` when `parent.mesh.periodic`).
+4. **Band blend, mirroring `pin_edges_to_shared`'s band math** —
+   `band = max(0.12 * min(rect_w, rect_h), 1.0)`; `d_in` = distance inside the rect
+   to the nearest edge; `t = clamp(d_in / band, 0, 1)`; `w = t*t*(3 - 2*t)`;
+   `h = h_root + (h_tile - h_root) * w`. At `d_in == 0`, `w == 0` exactly → the
+   value is the pure root sample at bit-identical coords over the identical
+   whole-set candidate buckets → **bit-identical across neighbours by construction**
+   (and one value at a 4-sector corner).
+5. **Sea clamp AFTER the blend** — `h = max(h, 0.0)` (sea level is 0 by the
+   TerrainData contract, world_data.rs ~329). Both neighbours clamp the identical
+   edge value → identity preserved.
+
+---
+
+## 3. Hillshade — `crates/mapgen-render/src/relief.rs` (new module, plain slices, no new deps)
+
+```rust
+pub struct ShadeParams {
+    pub strength: f32,   // slope scale per grid step — TUNING (tuning_log.md)
+    pub ambient: f32,    // shade floor, ~0.6 — TUNING
+    pub light: [f32; 3], // raster space, x right / y DOWN: NW = (-1, -1, 1.25)
+}
+impl Default for ShadeParams { /* NW light, spike-read values */ }
+
+/// Per-node Lambert shade-factor grid — the SHARED shade source for the raster
+/// multiply AND the cross-platform golden. Central differences inside, one-sided
+/// at edges. n = (-s*gx, -s*gy, 1); L normalized once (fmath::sqrt);
+/// lambert = max(0, n·L̂) / sqrt(s²gx² + s²gy² + 1)   [one fmath::sqrt per node]
+/// f = ambient + (1 - ambient) * lambert / L̂z
+/// Normalized so a FLAT field gives f ≡ 1.0 EXACTLY (flat ⇒ lambert = L̂z ⇒
+/// f = ambient + (1 - ambient), exact in f32 since 1-a is Sterbenz-exact):
+/// shading a flat/sea tile is a byte-no-op; light-facing slopes brighten f > 1,
+/// away-facing fall toward ambient. Transcendental-free (fmath_purity covers it).
+pub fn lambert_grid(heights: &[f32], gw: u32, gh: u32, p: &ShadeParams) -> Vec<f32>;
+
+/// Multiply shade into the raster: per texel, bilinear-sample the lambert grid
+/// (pure +,-,*,/), rgb' = min(255, round(rgb * f)); ALPHA NEVER TOUCHED — the
+/// min_alpha == 255 per-texel invariant (CLAIMS 184) holds by construction.
+pub fn shade_rgba(rgba: &mut [u8], w: u32, h: u32, lambert: &[f32], gw: u32, gh: u32);
+```
+
+Because the 129×65 grid has square world-unit steps on the 2:1 sectors, `strength`
+is isotropic with no aspect correction term (planet-path dependency named in §1).
+
+---
+
+## 4. wasm exports — `crates/mapgen-wasm/src/lib.rs` (two exports; `renderRgba` retained)
+
+```rust
+#[wasm_bindgen]
+impl WorldHandle {
+    /// On the ROOT handle (it owns the shared band field), taking the
+    /// already-refined tile by reference (wasm-bindgen 0.2.121 supports borrowed
+    /// exported-type args). &self + &tile: no mutation, no RNG, no serde field.
+    #[wasm_bindgen(js_name = reliefGrid)]
+    pub fn relief_grid(&self, tile: &WorldHandle, level: u32, sx: u32, sy: u32,
+        gw: u32, gh: u32) -> Result<Vec<f32>, JsError>;
+
+    /// On the TILE handle: render_rgba's EXACT body (factored shared private fn so
+    /// the two raster paths cannot drift) + lambert_grid + shade_rgba before take().
+    /// The grid is passed IN — the field that shades is the field that displaces.
+    #[wasm_bindgen(js_name = renderRgbaShaded)]
+    pub fn render_rgba_shaded(&self, style: &str, lens: &str, w: u32, h: u32,
+        grid: &[f32], gw: u32, gh: u32) -> Result<Vec<u8>, JsError>;
+}
+```
+
+**Determinism scope (honest):** heights + lambert are native↔wasm bit-identical
+(fmath-pure) and pinned by a DEDICATED golden — blake3 over
+`heights.le_bytes ∥ lambert.le_bytes` for the canonical call (seed-42 parent → L2
+(1,1), `RefineParams::default()` — the SAME sector cross_platform.rs:53 pins —
+gw=129, gh=65, `ShadeParams::default()`), committed as
+`crates/mapgen-world/tests/golden/seed42_relief_grid.blake3.txt`, asserted by the
+native test AND a `cross_platform.rs` wasm twin. **The RGBA raster bytes are
+explicitly NOT hashed cross-platform** — tiny-skia bytes are not a pinned surface
+anywhere today and its SIMD-vs-scalar paths could diverge; the byte-identity claim
+stops exactly where fmath guarantees it. Size: no new crates → the 1.5–2.8 MB band
+(now 2.13) holds, gated by `check-bundle.mjs`.
+
+---
+
+## 5. Worker protocol — `web/src/worker.ts` refineTile (181-223 shape preserved)
+
+```ts
+// request gains gridW/gridH (= GW/GH consts from relief.ts at the send site — a
+// pure function of the sector key; carrying them enables failStage=relief injection)
+let tile: WorldHandle | undefined;
+try {
+  if (!root) throw new Error("no world generated yet");
+  tile = root.refineSector(msg.level, msg.sx, msg.sy, SECTOR_CELLS); // verbatim, golden-pinned
+  const grid = root.reliefGrid(tile, msg.level, msg.sx, msg.sy, msg.gridW, msg.gridH);
+  const rgba = tile.renderRgbaShaded(msg.style, msg.lens, msg.w, msg.h, grid, msg.gridW, msg.gridH);
+  // R1 message: rgba only (the grid's consumer is the in-call shade bake).
+  // R2 message adds: height: grid.buffer, gw, gh — BOTH buffers in the transfer list.
+  post({ type: "tile", rgba: rgba.buffer, w, h, height: grid.buffer, gw: msg.gridW,
+         gh: msg.gridH, level, sx, sy, style, lens }, [rgba.buffer, grid.buffer]);
+} catch {
+  post({ type: "tileFailed", level: msg.level, sx: msg.sx, sy: msg.sy, lens: msg.lens });
+} finally { tile?.free(); }   // zero wasm handles outlive the call
+```
+
+- ONE try/catch/finally, ONE `pendingTiles` reservation, exactly-ONE-`tileFailed`
+  per failed tile — any throw (refine, grid validation, Pixmap, shade) lands in the
+  one catch with the sector+lens-carrying answer (CLAIMS 183 semantics verbatim).
+- Heights payload 129×65 f32 = 33 KB rides the SAME message — no cache retune
+  (binding spike fact; <1% of `ESTIMATED_PATCH_BYTES`).
+- Failure injection: the existing `?failTiles=N` (w=0 → `Pixmap::new` rejects inside
+  `renderRgbaShaded`) stays green unchanged; NEW `?failTiles=N&failStage=relief`
+  sends `gridW=0` so `reliefGrid` genuinely rejects in wasm (validation [2,257]) —
+  a REAL failure on the new call site, no mocks; exact-count `data-tiles-failed`
+  = N × MAX_TILE_RETRIES (3×3 = 9; a double-post would read 18).
+- Both `Vec` returns copy out of wasm memory → private ArrayBuffers, transfer-safe.
+- The legacy `refine`/`refined` SVG branch and the base-texture path are UNTOUCHED.
+
+---
+
+## 6. Frontend geometry — `web/src/relief.ts` (new pure module, no three.js imports)
+
+```ts
+export const GW = 129, GH = 65;          // grid dims — fixed, decoupled from PATCH_ANGULAR_RES
+export function displacedPatchArrays(params: PatchParams, heights: Float32Array,
+  gw: number, gh: number, vertExag: number, baseRadius = 1.001, skirtDepth = 0.004):
+  { positions: Float32Array; uvs: Float32Array; index: Uint32Array; reliefMax: number };
+export function patchGpuBytes(w: number, h: number, gw: number, gh: number): number;
+```
+
+- Vertex (row r, col c): `phi = phiStart + (c/(gw-1))*phiLength`,
+  `theta = thetaStart + (r/(gh-1))*thetaLength`,
+  `dir = [-cosφ·sinθ, cosθ, sinφ·sinθ]` — EXACTLY the three.js SphereGeometry
+  parameterization camera.test.ts:162-166 pins. `rad = baseRadius + max(0, h)*vertExag`
+  (heights arrive sea-clamped; the JS max is defensive). Sea sits at exactly 1.001.
+- **UV layout (load-bearing):** `uv = (c/(gw-1), 1 - r/(gh-1))`, row 0 = thetaStart
+  = NORTH — reproduces SphereGeometry's `(u, 1-v)` so ALL standing pins survive the
+  geometry-source swap unmodified: `patchUvToWorld` (sector.ts:65-74), the
+  camera.test.ts orientation raycasts, and the 1c hit-uv round-trip.
+- **NO normals attribute** — MeshBasicMaterial is unlit (shade is baked); no consumer
+  ⇒ not built (consumer-backed substrate). Raycaster needs no vertex normals. The
+  spike's 3.7 ms @129² INCLUDED normals; 129×65 without them is well under the gate.
+- `reliefMax` computed FROM THE BUILT radii (`max(|v| - baseRadius)`), so the e2e
+  signal cannot be stubbed from the input field.
+- **Skirts** — perimeter ring duplicated at `baseRadius - skirtDepth`, same uv
+  (texture stretches down), built on every patch. Interior skirts are invisible by
+  construction (neighbours' bit-identical edges cover them, depth-tested); at the
+  STREAMED-SET EDGE and the POLAR_CAP boundary (lod.ts |lat|>75°) they close the
+  patch-to-base gap into a short textured wall instead of a floating crack.
+  NOTE for the supersession text: the design doc's earlier skirt REJECTION covered
+  same-level adjacency (a different problem — skirts do nothing there); these skirts
+  exist for the set/base boundary. Transient interior skirt walls during fill are a
+  named, screenshot-judged cost.
+- **Vertex budget honesty:** 129×65 = 8,385 verts + ~388 skirt ≈ 8.8 K verts,
+  ~17 K triangles per patch; positions+uvs+index ≈ **0.38 MB** (re-derived: 8.8 K ×
+  20 B + ~206 KB index — the earlier ~0.86 MB figure was ~2× high). 52 patches ≈
+  890 K triangles worst case — SwiftShader frame cost is the named unmeasured risk,
+  measured in R2; **contingency knob:** build geometry at a SUBSAMPLED stride of the
+  same grid (stride ∈ {2,4} divides 128/64 → 65×33 or 33×17 verts, ENDPOINTS KEPT so
+  seam bit-identity is untouched) — shade density (the visibility floor) is in the
+  texture and unaffected.
+
+`globe.ts showPatch` builds `BufferGeometry` from these arrays;
+`MeshBasicMaterial({ map, depthTest: true, depthWrite: true })`. `sectorPatchParams`
+stays the source of phi/theta/centerDir; its `segW/segH` remain for the standing
+aspect pins but the patch mesh no longer uses `SphereGeometry`. `renderOrder = 1 +
+level` is KEPT as a comment-documented inert tiebreak (verified: `enterRegion`
+disposes the previous level synchronously, globe.ts:633 — no transition overlap
+exists; correctness now comes from depth, which displaced terrain REQUIRES for
+self-occlusion at oblique pitch). Spike-measured safe: base-sphere facet chords dip
+below r=1, patch base 1.001 ⇒ zero z-fight.
+
+**gpuBytes honesty:** rename `texBytes` → `gpuBytes` end-to-end (showPatch param,
+PatchEntry, patchcache LiveEntry, liveEntries). Per patch ≈ raster (w·h·4, ~2.1 MB)
++ geometry ~0.38 MB ≈ **2.5 MB**; 52 × 2.5 ≈ 130 MB ≤ MAX_TEXTURE_BYTES 208 MB;
+`ESTIMATED_PATCH_BYTES = 4 MB` still over-reserves (honest headroom). Re-derive the
+patchcache.ts math note. Reconcile policy unchanged — only its inputs get honest.
+`disposeEntry` already disposes geometry.
+
+**Cache keys:** relief is NOT a key dimension (argued): the heightfield is a pure
+deterministic function of (world, level, sx, sy), invariant under lens (colors only),
+year (tiles snap to the present; terrain has no timeline — CLAIMS 168 unchanged), and
+camera. `patchKey` stays `level:sx:sy:style`. A future relief on/off toggle goes
+through `refreshGlobePatches` (the lens brute path), never the key.
+
+**Tile handler (main.ts:730-801):** guard chain ORDER UNTOUCHED (stale-level →
+lens-echo value compare → discard-stale → arrival bookkeeping FIRST → blit → refill).
+The geometry build joins the EXISTING `data-last-blit-ms` span, so the <50 ms gate
+(CLAIMS 180, smoke.spec.ts:427) covers it with zero new plumbing. `texImage2D`
+stays deferred to the next render().
+
+---
+
+## 7. Picking under displacement (CLAIMS 166's ≤1° contract, defended)
+
+Spike: base-sphere picking at pitch 50° + max elevation mis-lands ~1.4° — a breach.
+And displacement ALONE creates parallax at pitch 0 for off-center clicks (~0.6–0.8°
+at screen-edge incidence), eating most of the ≤1° margin while the dead-centre e2e
+stays green — so **the pick fix ships WITH displacement (R2), not with the tilt**.
+
+Fix (drilled branch, globe.ts:543-557): raycast the LIVE PATCH MESHES first
+(`raycaster.intersectObjects(patchMeshes)`, bounding-sphere culled — click-cheap); on
+a hit, `dir = hit.point.clone().normalize()` → `unitToUv(dir)` → the EXISTING
+`patchPickCb(u, v)` contract. Displacement is RADIAL, so the displaced surface point
+and its ground point share the unit direction EXACTLY — `normalize(hit.point)` IS the
+ground pick; triangle interpolation error at 129×65 density is ≪0.1°. This PRESERVES
+the pinned mechanism ("derive uv from the EXACT hit.point … NOT the raycaster's
+barycentric hit.uv", CLAIMS 166 / globe.ts comment) — the row's mechanism text is
+updated deliberately (patches-first), never silently rewritten to `hit.uv` (the
+red-team flagged that as a silent contract rewrite; rejected). Fallback when no patch
+is hit (click beyond the streamed set / polar cap): the existing base-sphere
+`unitToUv` path — that ground is undisplaced, hence parallax-free. The OVERVIEW pick
+is untouched. `patchUvToWorld` stays pinned as substrate; a skirt-wall hit
+normalizes to ~the rim direction — an edge click, acceptable. main.ts's
+`uvToWorld → childSectorAt` path, re-drill, and distinct-clicks contracts need ZERO
+changes.
+
+---
+
+## 8. Camera: tilt, clearance clamp, pitch-aware near, oblique LOD
+
+**Gesture:** pitch on right-button drag OR Shift+left-drag, vertical axis (drag up →
+toward the horizon), `PITCH_SPEED ≈ 0.005 rad/px`; `contextmenu` preventDefault on
+the canvas; left-drag pan and wheel zoom untouched. Heading stays 0 (north-up) —
+out of scope; `globeCamPose` carries it. A pitch drag calls `markFlightChanged()` —
+the during-motion pump (PUMP_MS=90) and settle (SETTLE_MS=140) treat tilt exactly
+like pan/zoom (CLAIMS 181 machinery inherited). `exitRegion` resets pitch to 0 and
+near to 0.1; per the stale-guard memory, grep ALL camera-reset sites (exitRegion,
+hide(), enterRegion, the regenerate path) for the pitch/near reset in the same
+increment. Per-frame `data-cam-pitch`; `data-cam-near` written FROM `camera.near`
+(real camera state, never policy echo).
+
+**Terrain-clearance pose invariant (pure camera.ts fns):**
+
+```
+R_TER  = PATCH_RADIUS + VERT_EXAG            // 1.001 + 0.023 = 1.024 worst-peak ceiling
+R_SAFE = R_TER + CLEAR_MARGIN                // margin 0.005 → 1.029
+camRadius(alt, pitch) = sqrt(1 + 2·alt·cos(pitch) + alt²)   // target on the unit sphere
+maxPitch(alt) = min(MAX_PITCH, acos(clamp((R_SAFE² − 1 − alt²) / (2·alt), −1, 1)))
+MAX_PITCH = 50°   // the spike's measured envelope — NOT 55°; extrapolation rejected
+```
+
+Pitch is clamped to `[0, maxPitch(altitude)]` and the wheel handler RE-CLAMPS after
+every altitude change (zooming down while tilted must not tunnel into terrain —
+unclamped pitch→π/2 at MIN_ALT=0.05 puts the camera radius ~1.00125, INSIDE the
+1.024 peak ceiling). This makes camera-vs-terrain safety a POSE INVARIANT, unit-swept.
+
+**Dynamic near — PITCH-AWARE (the red-team's shared fatal-class fix).** The nadir
+inequality `alt − VERT_EXAG·h_max > near` is false-green at oblique pitch: at pitch
+50°/MIN_ALT the binding constraint is RADIAL clearance (~0.009) at the bottom frustum
+edge. Policy (pure):
+
+```
+clearance(alt, pitch) = camRadius(alt, pitch) − R_TER     // ≥ CLEAR_MARGIN by the pitch clamp
+nearFor(alt, pitch)   = clamp(NEAR_FRAC · clearance, NEAR_MIN, 0.1)
+NEAR_FRAC = 0.5, NEAR_MIN = 0.002
+```
+
+Any terrain point lies within radius R_TER and the camera at camRadius, so its
+distance from the camera is ≥ clearance; `near ≤ 0.5·clearance < clearance` ⇒ terrain
+can NEVER cross the near plane, at any allowed (alt, pitch) — the invariant is
+pitch-aware by construction. Sanity: alt 0.15/pitch 0 → near 0.063 (fixes the spike's
+"near=0.1 clips below alt ~0.15"); alt 0.05/pitch 50° → clearance 0.0089, near 0.0045;
+overview alt ≥ 0.6 → clamped 0.1 (byte-unchanged behavior). Applied in tick's flight
+branch with >5% hysteresis before `updateProjectionMatrix` (no per-frame matrix
+churn); far stays 100 — depth-precision banding at near 0.002 is an R4 screenshot
+check.
+
+**Oblique LOD window (cheap correct fix, ships with tilt):** at pitch 50° the camera
+nadir sits ~26° BEHIND the look anchor — the nadir-centered window wastes its budget
+behind the camera (verified: the selector centers on `posUnit` = camera.position,
+globe.ts:311 / lod.ts). Fix: `CamState` gains optional `lookDir` (globe.ts packs
+`lonLatToUnit(subLon, subLat)` in flight); `desiredSectors` centers its window on
+`lookDir ?? posUnit`; the horizon cull KEEPS `posUnit` (geometric truth);
+`predictedAhead` passes the extrapolated posUnit and drops lookDir (idle-priority,
+noted). Stationary/overview behavior byte-identical. The full frustum-corner
+footprint selector stays a registered follow-up; residual limb coarseness at max
+pitch is a named, screenshot-measured gap (R4).
+
+---
+
+## 9. Seam strategy (complete picture)
+
+1. **Heights: bit-identical at shared edges** — endpoint-pinned coords + Sector::rect
+   bit-equality + pure-root samples at w=0 + whole-set buckets + x==W→0
+   canonicalization (§2). Contract rows SEAM-1; includes the antimeridian pair.
+2. **Geometry: no cracks** — same-level adjacent patches' edge param coords coincide
+   (already pinned); bit-identical heights × identical `(1 + VERT_EXAG·h)` ⇒ displaced
+   shared-edge vertex positions exactly equal (the f64→f32 rounding equality is
+   ADJUDICATED by the Vitest pin, not asserted as exact in prose). One live level at
+   a time (enterRegion disposes synchronously) ⇒ no T-junctions.
+3. **Shade: measured tolerance, not bit-identity** — edge-node gradients pull one
+   stencil arm from each tile's own first-inland node (blended w≈0.013), so seam
+   lambert agrees only to ~1e-3. Contract: `max |Δlambert|` along the canonical
+   shared edge **< 0.005** (under the u8 quantization step 1/255), actual value
+   RECORDED in the test; the named seam SCREENSHOT is the severity judge.
+   **Measurement-gated contingency** (do not build speculatively): a pure-ROOT edge
+   stencil (both gradient arms from the root field at canonical coords → bit-identical
+   edge lambert). Cost stated: re-anchors `seed42_relief_grid.blake3.txt` (one file)
+   + seam tests re-run; WorldData goldens unaffected.
+4. **Set-edge / polar cliff** — skirts close the geometric gap (§6); the 7×7 window
+   pushes the boundary toward the horizon top-down (CLAIMS 176), but PITCH brings the
+   limb into view and the base globe stays UNSHADED (non-goal §13) ⇒ the shading
+   cliff at the set edge is a named KNOWN GAP until the base-globe follow-up; R4
+   screenshots measure it.
+5. **Texture coast vs relief misregistration** — shading derives from the same
+   elevation that produced the coast, but the SVG coast is vector-simplified; the sea
+   clamp (h=0 ⇒ f≡1 over water) keeps open water clean. Named, screenshot-judged.
+
+---
+
+## 10. Goldens & determinism proofs
+
+- **WorldData goldens DO NOT MOVE — structural + proven:**
+  `relief_spec.rs::relief_leaves_worlddata_bytes_untouched` ciborium-serializes
+  parent AND tile, runs `relief_grid` + `lambert_grid` + `shade_rgba`, re-serializes,
+  asserts byte-equality (the non-vacuous proof shape the design doc mandates).
+  Code-level: `&WorldData` in, fresh Vec out, no RNG, no serde field.
+- **Dedicated native↔wasm golden** (§4): blake3 over `heights ∥ lambert` LE bytes,
+  canonical seed-42 L2 (1,1) call; native test + `cross_platform.rs` wasm twin both
+  assert the SAME committed file. RGBA raster bytes NOT hashed (scope honesty, §4).
+- **fmath purity:** both new modules use only `+ - * /` and `fmath::sqrt` → the
+  existing `fmath_purity.rs` grep gate covers them automatically.
+- **wasm export coverage:** `render_rgba.rs` extended — lengths sane, `min_alpha ==
+  255` survives shading, AND shaded-vs-unshaded rasters of the same tile differ
+  >0.5% of bytes (a signal only the bake produces).
+- **wasm size band** 1.5–2.8 MB re-checked (no new deps).
+- **Perf:** native pipeline untouched → perf-gate unaffected; the blit gate (<50 ms)
+  absorbs the geometry build; worker tile latency (refine+grid+shade) re-measured in
+  R4 against the drill-fill e2e budget.
+
+---
+
+## 11. TDD increment order
+
+Per-increment protocol (binding memories): RED test first (run standalone, watch it
+fail for the stated reason) → implement → new tests standalone → FULL un-truncated
+gate (`just check`; `cd web && npm test`; `just web-build && just web-e2e` — the
+stale-bundle trap: build before e2e) → named SwiftShader screenshot artifact →
+hand-verify each red mutation once, record it in the CLAIMS row → THEN draft the
+commit. EVERY increment's docs commit registers its CLAIMS rows + addendum updates in
+the SAME commit (the claims-registry memory).
+
+### R1 — Relief substrate + worker-baked hillshade (the visibility floor) — ~3 d
+The contracts-first R1+R2 fold: the substrate's consumer (the in-call shade bake →
+visible pixels) lands in the SAME increment — structurally consumer-backed, no
+process-gated "lands within one push" promise.
+- **RED FIRST:** `relief_spec.rs::adjacent_relief_grids_are_bit_identical_at_the_shared_edge`
+  against a deliberately tile-only-sampling stub → fails 0/65 (reproducing the
+  spike's refutation — the arc's keystone red); `relief.rs::hillshade_is_directional`
+  (NW-facing > SE-facing on a tent ridge) against a no-op shade stub → fails.
+- **Build:** mapgen-world `relief.rs` (SiteBuckets whole-set, idw4 with canonical
+  accumulation, relief_grid with band + endpoint pin + x==W→0 canonicalization + sea
+  clamp); mapgen-render `relief.rs` (lambert_grid, shade_rgba); the two wasm exports;
+  worker refineTile rewrite (request gains gridW/gridH consts; message UNCHANGED —
+  rgba only; no unconsumed payload ships).
+- **Tests green:** seam bit-equality (E-W pair (1,4)|(2,4), a N-S pair, the
+  antimeridian pair (7,4)|(0,4)); directional 2-region sampler signal; bucketed ≡
+  brute-force bit-identity (incl. constructed equidistant ties); grid endpoints land
+  exactly on rect corners (ulp trap); row0=NORTH NW-quadrant orientation pin; sea
+  clamped flat (all-sea tile → zeros → lambert ≡ 1); flat-field shade is a byte
+  no-op; NW-brighten/SE-darken; alpha untouched; bilinear exact at nodes; seam
+  lambert tolerance <0.005 (measured value recorded); WorldData ciborium
+  byte-equality; `seed42_relief_grid.blake3.txt` committed + wasm twin;
+  shaded-vs-unshaded >0.5%; min_alpha==255; check-bundle band; ALL existing e2e
+  green unmodified; NEW e2e `?failTiles=3&failStage=relief` → fill recovers, drains,
+  `data-tiles-failed` exactly 9.
+- **Mutations hand-verified:** w≡1 band removal → 0/65; drop x-canonicalization →
+  wrap pair red; (d2,idx) tie-break drop; ring-expansion early stop; argmax flip;
+  sea-clamp drop; flip row order; drop /L̂z normalization → global darkening; negate
+  light.xy; shade alpha → min_alpha red; skip shade_rgba → differ-test red; move
+  reliefGrid outside the try → budget wedge → fill starves (data-live-patches=0).
+- **Artifacts:** native CLI `relief_artifacts.rs` (#[ignore], justfile recipe
+  `relief-artifacts`): seed-8 planet L3 canonical pair → `…_unshaded.png`,
+  `…_shaded.png`, `…_seam_pair.png` (composited shared edge); e2e SwiftShader
+  screenshot `globe-relief-hillshade-nadir.png`. Honesty: baked pixels are wasm-unit-
+  and screenshot-bound, not data-*-assertable (stated as the ceiling, CLAIMS-161
+  style).
+- **Docs rider:** G SUPERSEDED banner + this addendum + seam-refutation correction;
+  CLAIMS rows SEAM-1, IDW-1, GOLD-1, SHADE-1, FAIL-1 (+161-ceiling note); BACKLOG
+  relief entry flipped; tuning_log: ShadeParams (strength/ambient/light).
+
+### R2 — Heights on the wire + displaced geometry + depthTest:true + displaced picking + gpuBytes — ~2.5 d
+The pick fix ships HERE (displacement alone creates off-center parallax at pitch 0;
+sequencing it later ships a contract regression the dead-centre e2e can't see).
+- **RED FIRST:** `relief.test.ts::radii_are_non_constant` and
+  `::adjacent_edge_positions_bit_equal` against a constant-radius stub → fail;
+  `pick.test.ts` discriminator pair against the current base-sphere pick → the
+  displaced-mesh half fails (no patches-first raycast exists) and the base-sphere
+  half MEASURES ~1.4° (pin the spike number).
+- **Build:** tile message gains height/gw/gh (typed WorkerResponse union, all
+  consumers one commit; both buffers transferred, same ONE reservation);
+  `web/src/relief.ts` displacedPatchArrays (uv layout, sea clamp, skirt ring,
+  reliefMax from built radii, no normals) + patchGpuBytes; showPatch BufferGeometry
+  swap + depthTest:true (renderOrder demoted to documented inert tiebreak);
+  `data-relief-max`; patches-first raycast → normalize(hit.point) → unitToUv;
+  texBytes → gpuBytes rename + re-derived math note. SwiftShader frame cost at 52
+  full-density patches MEASURED; geometry-subsample contingency knob documented.
+- **Tests green:** Vitest relief suite (layout pin: a known NW peak lands at the
+  predicted three.js vertex index — the flipped-field false-green killer twin;
+  corners round-trip patchUvToWorld; sea at exactly 1.001; displaced shared-edge
+  positions EXACTLY equal); camera.test.ts patch raycast pins PORTED (not deleted)
+  to builder-built meshes; pick discriminator pair (≤0.1° vs ≥1°); gpuBytes >
+  raster-alone + caps bound the honest total; e2e `data-relief-max > 0` while
+  `data-last-blit-ms < 50`; full re-run of precision (pitch 0), re-drill,
+  distinct-clicks, failed-tile bench, pump, temporal-snap, lens-drilled.
+- **Mutations:** VERT_EXAG=0 → Vitest radii + e2e relief-max red; write relief-max
+  from the input heightfield → forbidden-stub review note in the row; revert pick to
+  base-sphere → discriminator red at ~1.4°; flip row order → layout twin red;
+  report raster-only bytes → gpuBytes red; depthTest back to false →
+  screenshot-bound (recorded ceiling).
+- **Artifacts:** `globe-relief-seam-closeup.png` (two-patch shared edge),
+  `globe-relief-displacement-nadir.png`.
+- **Docs rider:** CLAIMS rows GEO-1, PICK-1, BLIT-1 note, CACHE-1; CLAIMS 161/1b row
+  rewritten (depthTest) + risk-register; CLAIMS 166 mechanism text updated;
+  tuning_log: VERT_EXAG, SKIRT_DEPTH.
+
+### R3 — Tilt camera + pitch-aware dynamic near + oblique LOD + the tilted precision contract — ~2 d
+Pitch, near, and the oblique precision e2e ship TOGETHER (no intermediate ships a
+clip or a breach).
+- **RED FIRST:** `camera.test.ts::maxPitch/nearFor` invariant sweep against
+  constant-stub implementations → fails (incl. the PITCH-AWARE case: a nadir-only
+  near formula must FAIL the sweep at pitch 50°/MIN_ALT — the false-green the
+  red-team caught, made executable); `lod.test.ts` lookDir-centering case → fails.
+- **Build:** gesture (right-drag/Shift-drag, PITCH_SPEED, clamp to maxPitch(alt),
+  wheel re-clamp, markFlightChanged); per-frame `data-cam-pitch` + `data-cam-near`
+  (from camera.near, >5% hysteresis); exitRegion/hide/enterRegion/regenerate resets
+  (grep the whole reset-site class — stale-guard memory); CamState.lookDir +
+  window centering.
+- **Tests green:** pose-invariant sweep (camRadius ≥ R_SAFE; near < clearance over
+  the whole allowed lattice); tiltPitch sign/clamp; lookDir unit test (pitched case
+  + stationary byte-identical); e2e — Shift-drag raises data-cam-pitch monotonically
+  and clamps, pumps fire mid-drag, canvas stays 3D, #map-content hidden; wheel-down
+  at max pitch re-clamps; data-cam-near < 0.1 at low altitude, restored on Globe
+  crumb; scripted pitch-50° click lands ≤1° (the CLAIMS-166 extension; deeper drill
+  at pitch >0.6 rad nests exactly one level); pitch-0 precision e2e untouched green.
+- **Mutations:** flip tilt sign; drop the clamp; never write pitch into flight
+  state → data-cam-pitch stays 0; freeze near at 0.1 → e2e red; nadir-only near →
+  unit sweep red; ignore lookDir → pitched-case red.
+- **Artifacts:** `globe-relief-oblique.png` (pitch ~50° silhouettes/limb),
+  `globe-relief-setedge-pitch.png` (set-edge + polar skirt severity under pitch),
+  `globe-relief-nearplane-low-alt.png` (no clipped terrain at MIN_ALT).
+- **Docs rider:** CLAIMS rows CAM-1, NEAR-1, LOD-1, PICK-2 (oblique e2e); tuning_log:
+  PITCH_SPEED, MAX_PITCH, CLEAR_MARGIN/NEAR_FRAC/NEAR_MIN.
+
+### R4 — Quality hunt + close-out — ~1 d
+Per the measure-don't-classify charter: hunt sibling quality dimensions before done.
+- (a) Seam-shade residual: measure the max per-channel step across the canonical
+  seam in the worker raster; if the seam screenshot shows a line, build the
+  pure-root edge-stencil contingency (§9.3) and re-anchor the relief golden.
+- (b) Oblique under-coverage at MAX_PITCH: screenshot whether coarse base shows at
+  the top of frame; register the frustum-footprint selector follow-up with the
+  measurement (or widen the window as a measured stopgap).
+- (c) Depth-buffer banding at near 0.002 / far 100 in the low-altitude screenshot.
+- (d) Worker tile latency end-to-end (refine+grid+shade) vs the drill-fill budget;
+  SwiftShader frame-rate at full patch count re-confirmed.
+- (e) FULL un-truncated gate + every named screenshot re-produced; any not-yet-
+  verified red mutation hand-verified.
+- **Close-out docs (ONE commit):** final CLAIMS rows + every red-mutation note;
+  BACKLOG flipped to the shipped record with measurements; addendum marked SHIPPED
+  with the G cross-reference; tuning_log values finalized with measured looks;
+  `.local/sessionstate.md` handoff updated.
+
+---
+
+## 12. CLAIMS rows to add (claim | layer | evidence | red-mutation)
+
+| ID | Claim | Layer | Evidence | Red-mutation |
+|---|---|---|---|---|
+| SEAM-1 | Adjacent streamed tiles' relief grids are BIT-IDENTICAL along their shared edge — 65/65 edge nodes (spike baseline 0/65), incl. the N-S pair AND the antimeridian pair L3 (7,4)\|(0,4) via x==W→0 canonicalization + min-image root sampling; 4-sector corners are one value | Data (native) | `relief_spec.rs::adjacent_relief_grids_are_bit_identical_at_the_shared_edge`, planet 8 @2000 L3 (1,4)\|(2,4) + N-S + wrap pair | skip the root-band blend (w≡1) → 0/65 → red; skip x-canonicalization → wrap pair red (both mutation-verified) |
+| IDW-1 | Bucketed k=4 IDW is bit-identical to brute force — lexicographic (d2, idx) tie-break, ring expansion until ringLowerBound² > kth-best d2, canonical (d2,idx)-sorted accumulation, buckets spanning the WHOLE site set (no rect pre-filter) | Determinism (native) | `relief_spec.rs::bucketed_sampler_is_bit_identical_to_brute_force` (incl. constructed equidistant ties) + `::relief_grid_follows_the_terrain` (2-region directional signal, sea half exactly 0.0) | drop the tie-break → red on ties; stop ring expansion one ring early → red; argmax flip → directional red; drop the sea clamp → red |
+| GOLD-1 | relief_grid + lambert_grid leave WorldData byte-untouched AND are native↔wasm byte-identical via a DEDICATED golden (blake3 over heights∥lambert LE bytes, seed-42 L2 (1,1), 129×65); the RGBA raster bytes are explicitly NOT hashed (tiny-skia is not a pinned cross-platform surface) | Determinism (golden) | `relief_spec.rs::relief_leaves_worlddata_bytes_untouched` (ciborium byte-equality, parent AND tile) + `::relief_grid_golden` + `cross_platform.rs::relief_grid_golden_matches_native_under_wasm` (same committed file) | add a serde cache field → byte-equality red; route one distance around fmath → fmath_purity red + wasm golden red |
+| SHADE-1 | Hillshade is real, directional, and honest: flat field ⇒ f≡1.0 byte-no-op (open ocean unshaded); NW-facing brightens / SE-facing darkens; ALPHA never touched — min_alpha==255 (CLAIMS 184) holds per-texel after shading; shaded vs unshaded wasm rasters of the same tile differ >0.5% of bytes | Observable (native raster + wasm), screenshot ceiling | mapgen-render `relief.rs` units (flat no-op, tent-ridge asymmetry, alpha untouched, bilinear exact at nodes) + `render_rgba.rs` wasm twin + named `globe-relief-hillshade-nadir.png` | strength 0 / skip shade_rgba → differ + asymmetry red; negate light.xy → asymmetry red; drop /L̂z → flat no-op red (global darkening); shade alpha → min_alpha red |
+| SEAM-2 | Seam SHADING agrees within a MEASURED tolerance: max \|Δlambert\| along the canonical shared edge < 0.005 (actual value recorded); the named seam screenshot is the severity judge; the pure-root edge-stencil contingency is measurement-gated with its golden re-anchor cost stated | Data (native) + screenshot | `relief_spec.rs::seam_lambert_agrees_within_tolerance` + `globe-relief-seam-closeup.png` | w≡1 (no band) → tolerance blows past 0.005 → red |
+| GEO-1 | Displaced patches show NO cracks and cannot false-green flipped: grid orientation pinned at BOTH ends (Rust row0=NORTH NW-quadrant test + the Vitest builder twin pinning a known peak to the predicted three.js vertex index); endpoints land exactly on rect corners (ulp trap); adjacent patches' displaced shared-edge vertex positions exactly equal; uv=(u,1−v) reproduces SphereGeometry so patchUvToWorld + the camera.test.ts orientation pins survive the geometry swap unmodified | Unit (Rust + Vitest) | `relief_spec.rs::relief_grid_row0_is_north…` + `::grid_endpoints_land_exactly_on_rect_corners` + `web/src/relief.test.ts` (layout twin, corners round-trip, sea at exactly 1.001, edge exact-equality) + PORTED camera.test.ts raycast pins | flip row order → both ends red; lerp endpoints naively → ulp test red; per-tile height normalization → edge-equality red |
+| DISP-1 | A drilled land region builds GENUINELY displaced geometry — data-relief-max (from the BUILT vertex radii, not the input field) > 0 after the fill — while data-last-blit-ms < 50 keeps gating with the geometry build in-span | Observable (e2e) | smoke.spec.ts drill extension; CLAIMS 180 row text updated (geometry in-span) | skip the displacement loop → data-relief-max 0 → red; compute the signal from the heightfield → forbidden-stub review note in this row |
+| PICK-1 | Drill precision (≤1°, CLAIMS 166) HOLDS over displaced terrain: picking raycasts the displaced patch meshes first and derives uv from normalize(hit.point) (the pinned EXACT-hit-point mechanism, never barycentric hit.uv); the discriminator pair proves the test detects the breach it guards | Unit (Vitest) + e2e | `pick.test.ts` — displaced-mesh pick ≤0.1° AND base-sphere pick ≥1° (~1.4°, the spike number pinned) on the SAME ray; e2e scripted pitch-50° click lands ≤1°; pitch-0 precision e2e untouched | revert to the base-sphere raycast → ~1.4° → both red (mutation-verified) |
+| CAM-1 | The camera can never enter terrain: pitch ∈ [0, maxPitch(alt)] (cap 50°, the spike's measured envelope) with wheel re-clamp; \|globeCamPose.position\| ≥ R_SAFE = PATCH_RADIUS + VERT_EXAG + margin swept over the whole allowed (alt, pitch) lattice | Unit + e2e | `camera.test.ts::maxPitch` sweep + e2e wheel-down-at-max-pitch re-clamp; tilt gesture e2e (data-cam-pitch climbs, clamps, pumps fire, canvas stays 3D) | return constant MAX_PITCH ignoring altitude → low-alt clearance red; never write pitch into flight state → e2e red |
+| NEAR-1 | Dynamic near is PITCH-AWARE: near = clamp(0.5·(camRadius(alt,pitch) − R_TER), 0.002, 0.1) < radial clearance over the whole allowed lattice (a nadir-only formula FAILS the sweep at pitch 50°/MIN_ALT — the false-green made executable); data-cam-near reads REAL camera.near; overview restores 0.1 | Unit + e2e | `camera.test.ts::nearFor` sweep (incl. the nadir-formula counterexample) + e2e low-altitude data-cam-near < 0.1, restored on return + `globe-relief-nearplane-low-alt.png` | freeze near at 0.1 → e2e red; substitute the nadir-only formula → unit sweep red |
+| LOD-1 | The streaming window under pitch centers on the LOOK ANCHOR (lookDir ?? posUnit; horizon cull keeps posUnit) — the budget is not wasted ~26° behind the camera at pitch 50°; stationary/overview behavior byte-identical | Unit | `lod.test.ts` extension (pitched case + byte-identical stationary case); residual limb coarseness at MAX_PITCH is a NAMED screenshot-measured gap with the frustum-footprint follow-up registered | ignore lookDir (center on nadir) → pitched-case red |
+| FAIL-1 | Exactly ONE tileFailed per failed tile survives the relief calls: both new calls sit inside the ONE worker try/catch/finally; ?failTiles=N&failStage=relief (gridW=0 → reliefGrid genuinely rejects in wasm) recovers the fill and stabilises data-tiles-failed at EXACTLY N×MAX_TILE_RETRIES = 9; the existing w=0 injection stays green inside renderRgbaShaded | Observable (e2e) | smoke.spec.ts failStage=relief contract + the existing CLAIMS 183 e2e re-run | move reliefGrid outside the try → sector-less error → budget wedge → fill starves (data-live-patches=0) → red; double-post → 18 ≠ 9 → red |
+| PROTO-1 | Protocol + cache honesty: heights ride the SAME tile message under the SAME pendingTiles reservation, BOTH buffers transferred; gridW/gridH are a pure function of the sector key (constants on the request); gpuBytes accounting includes the displaced geometry (≈ raster + 0.38 MB), liveEntries reports it, the reconcile caps bound the honest total; relief is NOT a cache-key dimension (argued: pure function of world+sector, lens/year/camera-invariant); wasm size band 1.5–2.8 MB holds | Unit + structural | `patchcache.test.ts` honest-bytes row; typed WorkerResponse union; check-bundle.mjs | report raster-only bytes → gpuBytes red; add a heavy dep → band red |
+
+## 13. Old contracts deliberately changed (named — never silently broken)
+
+1. **CLAIMS 161 / increment-1b row + risk-register:** "depthTest=false + renderOrder
+   composites over the base / removes the z-fight dependency" → REWRITTEN:
+   depthTest:true (spike-measured zero z-fight at base 1.001; REQUIRED for terrain
+   self-occlusion at oblique pitch); renderOrder kept as documented inert tiebreak.
+2. **camera.test.ts sectorPatchParams raycast pins** (CLAIMS 161 geometry evidence):
+   PORTED to displacedPatchArrays-built meshes (flat grid), NOT deleted — the
+   orientation/flip protection survives the geometry-source swap. segW/segH remain
+   for the aspect pins; patches no longer use SphereGeometry.
+3. **CLAIMS 166 + the globe.ts pick comment (1c mechanism):** mechanism text gains
+   "raycast the displaced patch meshes FIRST"; uv is STILL derived from the exact
+   hit.point (normalize), never barycentric hit.uv — the contract value (≤1°) and
+   the patchPickCb (u,v) callback contract are unchanged; the e2e family gains the
+   pitch-50° click.
+4. **CLAIMS 180 row text:** the data-last-blit-ms span now includes the displaced-
+   geometry build (gate value unchanged, <50).
+5. **WorkerResponse / request types:** refineTile request gains gridW/gridH (R1);
+   the tile message gains height/gw/gh (R2) — typed unions, all consumers updated in
+   the same commit.
+6. **Design doc:** Increment G SUPERSEDED (banner + §0 correction recording the seam
+   refutation); "Elevation: NONE in the core arc" annotated; camera.ts:30-32 /
+   lod.ts:9-14 "pitch deferred" comments updated; both relief risk-register rows
+   rewritten to the new export shape.
+7. **BACKLOG.md:299:** "relief displacement (evidence-gated, unchanged)" flipped to
+   the shipped record (grep-verified NOT stale first: no relief/hillshade/VERT_EXAG
+   code exists in crates/ or web/src today — confirmed 2026-06-10).
+
+## 14. Non-goals (explicit)
+
+- **Base-globe hillshade stays DEFERRED.** The entry/lens/year base textures keep the
+  main-thread unshaded path: no year-aware RGBA export exists (`renderAtYear` is
+  SVG-only and `&mut self` with a timeline swap-restore), and BACKLOG.md:299-300
+  already registers base-globe-off-thread as a separate follow-up needing
+  `render_rgba_at_year` (with its own year-echo-guard design). Shipping it inside
+  this arc would either break the per-year re-texture e2e or breach temporal
+  honesty. CONSEQUENCE (named KNOWN GAP): the streamed-set edge shows shaded-patch
+  vs unshaded-base, mitigated by skirts + the 7×7 window, measured by the R3/R4
+  set-edge screenshots, closed by the follow-up.
+- Heading/yaw (stays 0, north-up; globeCamPose carries it for later).
+- The frustum-corner-footprint LOD selector (lookDir window is the v1; follow-up
+  registered with R4's measurement).
+- A relief on/off user toggle (would route via refreshGlobePatches, never the key).
+- Per-level grid dims (the message is self-describing; revisit only with evidence).
+- Vertex normals / lit materials (the unlit paper-globe doctrine stands).
+- Moving the band into refine_sector (rejected, §0).
+- On-patch labels (unchanged deferral).
+
+## 15. Open tuning knobs (each gets a tuning_log.md entry: value, rationale, measured look, raise/lower guidance)
+
+| Knob | Initial | Notes |
+|---|---|---|
+| `VERT_EXAG` | ~0.023 | reads well vs the ~0.86 land-elevation tail; per-world relative (raw heights) — no ground truth, screenshot-judged |
+| `ShadeParams.strength` | spike-read value | slope scale per grid step; isotropic on the 2:1 grid |
+| `ShadeParams.ambient` | ~0.6 | shade floor |
+| `ShadeParams.light` | (-1,-1,1.25) normalized | NW, raster space y-down |
+| `PITCH_SPEED` | ~0.005 rad/px | gesture feel |
+| `MAX_PITCH` | 50° | the spike's measured envelope — raising it requires re-measuring pick parallax + depthTest safety |
+| `CLEAR_MARGIN / NEAR_FRAC / NEAR_MIN` | 0.005 / 0.5 / 0.002 | clearance clamp + near policy; depth-banding check in R4 |
+| `SKIRT_DEPTH` | 0.004 | set-edge wall depth |
+| `GW × GH` | 129 × 65 | upper spike envelope; dims changes re-run the seam tests + re-anchor the relief golden |
+| geometry subsample stride | 1 (off) | contingency if SwiftShader frame cost fails in R2; stride ∈ {2,4}, endpoints kept |
+
+## 16. Open risks / measurements still owed
+
+- SwiftShader frame cost at 52 × ~17 K-tri patches (R2 measurement; subsample
+  contingency ready, shade floor unaffected).
+- Seam-lambert residual vs the 0.005 tolerance (R1 records the number; R4 gates the
+  pure-root edge-stencil contingency on the screenshot).
+- Depth-buffer banding at near 0.002 / far 100 (R4 screenshot).
+- Worker tile latency (refine + 4 ms grid + shade) vs the drill-fill e2e budget (R4).
+- Oblique limb coverage at MAX_PITCH (R4 screenshot → frustum-footprint follow-up).
+- Displaced-edge f32 vertex equality across patches is adjudicated by the Vitest pin
+  (overwhelmingly likely, not asserted as exact in prose).

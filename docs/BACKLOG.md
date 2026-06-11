@@ -296,7 +296,7 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
-  the primary globe view; **relief displacement** (evidence-gated, unchanged); **base-globe off-thread**
+  the primary globe view; **relief displacement — IN PROGRESS (user-elected full arc 2026-06-11; the evidence gate was lifted by choice). R1 SHIPPED:** seam-banded relief grids (the Increment-G seam assumption was spike-REFUTED — 0/65 edge nodes bit-identical from a tile's own pinned field; edges now sample the shared ROOT field at endpoint-pinned bitwise coords, antimeridian-canonicalized) + worker-baked deterministic hillshade (the visibility floor; flat sea a byte-no-op, alpha untouched) + a dedicated heights∥lambert golden with a wasm twin + the failStage=relief recovery contract. Design: the Relief addendum in `globe-ground-3d-navigation.md`. NEXT: R2 displaced geometry + depthTest:true + displaced-mesh picking; R3 tilt camera + pitch-aware near; R4 quality pass; **base-globe off-thread**
   (the deferred rasterizer follow-up — needs a year-aware `render_rgba_at_year`).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
