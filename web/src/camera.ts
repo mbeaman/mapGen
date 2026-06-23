@@ -27,8 +27,9 @@ export interface GlobeCamState {
   altitude: number;
   /** radians; 0 = north is screen-up. */
   heading: number;
-  /** radians; 0 = straight-down (nadir), → π/2 looks at the horizon. UNWIRED in 1a
-   *  (pan+zoom only) — the math carries it for the relief increment + oblique view. */
+  /** radians; 0 = straight-down (nadir), → π/2 looks at the horizon. WIRED in R3
+   *  (Shift/right-drag tilt), clamped to maxPitch(altitude) so the camera can never
+   *  enter the displaced terrain. heading stays 0 (north-up) — out of scope. */
   pitch: number;
 }
 
@@ -199,12 +200,54 @@ export function panSubPoint(
   return { subLon: s.subLon - dx * k, subLat };
 }
 
-/** Dynamic near plane (Relief addendum §R3, altitude half pulled into R2 —
- * the measured defect: at MIN_ALT 0.05 the fixed near=0.1 swallowed the whole
- * 42° FOV, rendering BLACK). Half the camera's radial clearance over the
- * worst-case terrain ceiling R_TER = 1.024 (base 1.001 + max raw elevation
- * ~1.0 × VERT_EXAG 0.023), floored at 0.002 (depth precision), capped at the
- * legacy 0.1. Pitch joins in R3; at pitch 0 this is the full designed policy. */
-export function nearFor(camRadius: number): number {
-  return Math.min(0.1, Math.max(0.002, 0.5 * (camRadius - 1.024)));
+// ── R3: terrain-clearance pose invariant (Relief addendum §8) ────────────────
+// The displaced patches rise to R_TER above the centre; the camera must never
+// cross that ceiling (CAM-1) and the near plane must never let terrain through
+// (NEAR-1). Both are made POSE INVARIANTS here — pure functions swept in
+// camera.test.ts over the whole (altitude, pitch) lattice — so a tilt gesture
+// cannot tunnel the camera into the ground or near-clip the terrain to black.
+
+/** Worst-case terrain radius: patch base 1.001 + max raw elevation (~1.0) ×
+ * VERT_EXAG 0.023. The peak ceiling the camera and near plane clear. */
+export const R_TER = 1.024;
+/** Clearance the camera keeps above the terrain ceiling (the pitch clamp's
+ * binding margin at the steepest allowed tilt). */
+export const CLEAR_MARGIN = 0.005;
+/** Safe camera radius: at maxPitch the camera sits at or above this. */
+export const R_SAFE = R_TER + CLEAR_MARGIN;
+/** Tilt cap — the spike's MEASURED oblique envelope (NOT 55°; extrapolation
+ * rejected). Beyond this the set-edge/limb shading cliff (§9.4) dominates. */
+export const MAX_PITCH = (50 * Math.PI) / 180;
+
+/** Camera radius for a flight pose — EXACTLY |globeCamPose(...).position|:
+ * `sqrt(1 + 2·alt·cos(pitch) + alt²)` (the camera sits `alt` from the unit-sphere
+ * anchor, swinging from radial at pitch 0 toward tangential as pitch grows). The
+ * near plane and the clearance clamp both read pitch THROUGH this radius — that
+ * is what makes the near policy pitch-aware without a second formula. */
+export function camRadius(altitude: number, pitch: number): number {
+  return Math.sqrt(1 + 2 * altitude * Math.cos(pitch) + altitude * altitude);
+}
+
+/** The steepest pitch that keeps the camera at/above R_SAFE at this altitude:
+ * `min(MAX_PITCH, acos((R_SAFE² − 1 − alt²) / (2·alt)))`. Solving camRadius(alt,
+ * p) = R_SAFE for cos(p) gives the acos argument; clamped to [−1, 1] (far out the
+ * argument falls below −1 ⇒ acos = π ⇒ MAX_PITCH always binds). Across every
+ * PRODUCTION altitude (≥ MIN_ALT 0.05) MAX_PITCH binds; the geometry branch only
+ * matters as a defensive floor below MIN_ALT. */
+export function maxPitch(altitude: number): number {
+  const arg = (R_SAFE * R_SAFE - 1 - altitude * altitude) / (2 * altitude);
+  return Math.min(MAX_PITCH, Math.acos(Math.max(-1, Math.min(1, arg))));
+}
+
+/** Dynamic near plane (Relief addendum §8) — PITCH-AWARE via `camRadius`. The
+ * measured defect: at MIN_ALT 0.05 the fixed near=0.1 swallowed the whole 42°
+ * FOV, rendering BLACK. Half the camera's radial clearance over the terrain
+ * ceiling R_TER, floored at NEAR_MIN 0.002 (depth precision), capped at the
+ * legacy 0.1. Fed the REAL camera radius (which encodes pitch), this is the full
+ * designed `clamp(0.5·(camRadius(alt,pitch) − R_TER), 0.002, 0.1)` policy: a
+ * nadir-only `1+alt` formula over-reaches at oblique pitch (camera.test.ts pins
+ * that false-green). The pitch clamp guarantees the camRadius − R_TER clearance
+ * is ≥ CLEAR_MARGIN, so near < clearance always — terrain can never cross it. */
+export function nearFor(camRadiusValue: number): number {
+  return Math.min(0.1, Math.max(0.002, 0.5 * (camRadiusValue - R_TER)));
 }

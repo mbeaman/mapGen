@@ -44,7 +44,7 @@ import {
   type PatchParams,
 } from "./camera";
 import type { CamState } from "./lod";
-import { nearFor } from "./camera";
+import { maxPitch, nearFor } from "./camera";
 import type { DisplacedPatch } from "./relief";
 import { patchKey } from "./patchcache";
 import type { Sector } from "./sector";
@@ -247,8 +247,10 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   // state (and the pose math) but UNWIRED in 1a — pan+zoom is the increment.
   let flight: GlobeCamState | null = null;
   let dragLast: { x: number; y: number } | null = null; // active flight-pan drag origin
+  let pitchLast: { x: number; y: number } | null = null; // active flight-pitch (tilt) drag origin
   const PAN_SPEED = 0.0022; // rad of sub-point travel per px, scaled by altitude
   const ZOOM_RATE = 0.001; // altitude multiplier per wheel-delta unit
+  const PITCH_SPEED = 0.005; // rad of tilt per px of vertical drag (R3)
   const MIN_ALT = 0.05;
   const MAX_ALT = 2.5;
   const clampLat = (lat: number) => Math.max(-LAT_MAX, Math.min(LAT_MAX, lat));
@@ -312,9 +314,15 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
   const getCameraState = (): CamState => {
     const f = new Vector3();
     camera.getWorldDirection(f);
+    // R3 oblique LOD: in flight the camera may be TILTED, so its sub-point (posUnit)
+    // sits behind what it looks at. Hand the selector the look anchor (lookDir) to
+    // center the window on; the horizon cull still uses posUnit. Absent flight
+    // (overview) lookDir is omitted → byte-identical nadir centering.
+    const lookDir = flight ? lonLatToUnit(flight.subLon, flight.subLat) : undefined;
     return {
       posUnit: [camera.position.x, camera.position.y, camera.position.z],
       forward: [f.x, f.y, f.z],
+      lookDir,
       fovY: (camera.fov * Math.PI) / 180,
       aspect: camera.aspect,
       near: camera.near,
@@ -380,6 +388,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     canvas.dataset.subLon = flight.subLon.toFixed(4);
     canvas.dataset.subLat = flight.subLat.toFixed(4);
     canvas.dataset.altitude = flight.altitude.toFixed(4);
+    canvas.dataset.camPitch = flight.pitch.toFixed(4); // R3 tilt witness (e2e)
   };
 
   // Cinematic fly-to: on a click, animate the camera so the clicked point swings to
@@ -467,12 +476,16 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       // to +Y or OrbitControls' lookAt renders the globe rolled). ~1 ⇒ upright.
       canvas.dataset.camUpY = camera.up.y.toFixed(3);
     }
-    // Dynamic near plane (R2 — the measured black-screen defect): at low
-    // altitude the fixed near=0.1 swallowed the whole FOV. Recompute from the
-    // live camera radius every frame (cheap; updateProjectionMatrix only when
-    // it actually moves) — nearFor is pure + unit-tested.
+    // Dynamic near plane (R2 altitude + R3 pitch — the measured black-screen
+    // defect): at low altitude/oblique pitch the fixed near=0.1 swallowed the
+    // whole FOV. Recompute from the LIVE camera radius (which encodes pitch by
+    // construction), pitch-aware for free — nearFor is pure + unit-tested. >5%
+    // hysteresis before updateProjectionMatrix so a tilt/zoom doesn't churn the
+    // projection matrix every frame; snap to a clamp boundary (0.002 / 0.1) so the
+    // endpoints are always reached exactly.
     const near = nearFor(camera.position.length());
-    if (near !== camera.near) {
+    const atBound = near === 0.002 || near === 0.1;
+    if (Math.abs(near - camera.near) > camera.near * 0.05 || (atBound && near !== camera.near)) {
       camera.near = near;
       camera.updateProjectionMatrix();
       canvas.dataset.camNear = near.toFixed(4);
@@ -513,13 +526,38 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     // same element, so stopPropagation (bubble-only) leaves it untouched. (Pre-existing
     // bubbling hazard, same class as the #map drillAt double-fire.)
     e.stopPropagation();
+    // R3 TILT: right-button OR Shift+left starts a PITCH drag (never a pan or a
+    // drill click). Plain left-button keeps panning + the click-to-drill candidate.
+    if (flight && (e.button === 2 || (e.button === 0 && e.shiftKey))) {
+      pitchLast = { x: e.clientX, y: e.clientY };
+      down = null;
+      return;
+    }
+    if (e.button !== 0) return; // only the left button pans / drills
     down = { x: e.clientX, y: e.clientY };
     if (flight) dragLast = { x: e.clientX, y: e.clientY }; // start a flight pan
   });
-  // Flight-mode pan: drag the surface under the camera (OrbitControls is disabled
-  // while drilled, so it ignores these — no conflict). Sub-point travel scales
-  // with altitude, so the drag feels the same at every zoom.
+  // Right-drag (and Shift+left) tilt the camera; suppress the context menu so the
+  // gesture isn't interrupted. preventDefault here only — the global menu elsewhere.
+  canvas.addEventListener("contextmenu", (e) => {
+    if (flight) e.preventDefault();
+  });
+  // Flight-mode pan/tilt: drag the surface under the camera, or tilt toward the
+  // horizon (OrbitControls is disabled while drilled, so it ignores these — no
+  // conflict). Sub-point travel scales with altitude; tilt is clamped so the
+  // camera can never tunnel into the displaced terrain.
   canvas.addEventListener("pointermove", (e) => {
+    if (flight && pitchLast) {
+      const dy = e.clientY - pitchLast.y;
+      pitchLast = { x: e.clientX, y: e.clientY };
+      // Drag UP (dy < 0) tilts toward the horizon (pitch grows). Clamp to the
+      // altitude-dependent ceiling maxPitch(alt) — a POSE INVARIANT (camera.test.ts).
+      const next = flight.pitch - dy * PITCH_SPEED;
+      flight.pitch = Math.max(0, Math.min(maxPitch(flight.altitude), next));
+      writeFlightData();
+      markFlightChanged(); // tilt is camera motion: pump/settle treat it like pan/zoom
+      return;
+    }
     if (!flight || !dragLast) return;
     const dx = e.clientX - dragLast.x;
     const dy = e.clientY - dragLast.y;
@@ -539,6 +577,9 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       if (!flight) return; // let OrbitControls handle the overview wheel
       e.preventDefault();
       flight.altitude = Math.max(MIN_ALT, Math.min(MAX_ALT, flight.altitude * Math.exp(e.deltaY * ZOOM_RATE)));
+      // R3 re-clamp: zooming DOWN while tilted shrinks the clearance ceiling, so a
+      // previously-valid pitch could tunnel into terrain — re-clamp to the new altitude.
+      flight.pitch = Math.min(flight.pitch, maxPitch(flight.altitude));
       writeFlightData();
       markFlightChanged(); // re-stream when this zoom settles
     },
@@ -546,6 +587,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
   );
   canvas.addEventListener("pointerup", (e) => {
     dragLast = null; // end any flight pan
+    pitchLast = null; // end any flight tilt
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
     down = null;
@@ -563,7 +605,15 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     // precision contract). Same trusted convention the overview pick uses,
     // independent of which streamed patch happens to cover the click.
     if (flight && patchPickCb && patches.size > 0) {
-      const phit = raycaster.intersectObject(sphere)[0];
+      // R3 PATCHES-FIRST: raycast the LIVE DISPLACED patch meshes before the base
+      // sphere. The displaced surface is what the user sees; radial displacement
+      // preserves direction, so `normalize(hit.point)` IS the exact ground pick —
+      // the pinned exact-hit-point mechanism (NOT the barycentric hit.uv), now
+      // defended against the off-center / oblique parallax the smooth base sphere
+      // introduces (~1.4° at pitch 50°; pick.test.ts discriminator). Fallback to the
+      // base sphere for a click beyond the streamed set (undisplaced ⇒ parallax-free).
+      const meshes = Array.from(patches.values(), (p) => p.mesh);
+      const phit = raycaster.intersectObjects(meshes)[0] ?? raycaster.intersectObject(sphere)[0];
       if (phit?.point) {
         const pd = phit.point.clone().normalize();
         const { u: pu, v: pv } = unitToUv([pd.x, pd.y, pd.z]);
@@ -608,6 +658,10 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
       entryEase = null; // and any in-flight entry glide
       controls.enabled = true;
+      // R3: reset the tilt-dynamic near to the overview default (the raf loop is
+      // stopped on hide, so the tick can't restore it on re-show).
+      camera.near = 0.1;
+      camera.updateProjectionMatrix();
       disposePatches(); // free all patch GPU resources when leaving the globe
       hideLabel();
     },
@@ -751,6 +805,14 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       camera.position.set(0, 0, 3.6);
       controls.target.set(0, 0, 0);
       lastLook.set(0, 0, 0); // the overview looks at the origin again
+      // R3: restore the overview near plane (flight may have shrunk it under tilt /
+      // low altitude) and clear the tilt witness — write data-cam-near directly so
+      // the Globe-crumb return is observably restored (the tick's hysteresis would
+      // otherwise skip the write when the value already matches).
+      camera.near = 0.1;
+      camera.updateProjectionMatrix();
+      canvas.dataset.camNear = (0.1).toFixed(4);
+      delete canvas.dataset.camPitch;
       controls.update();
     },
     dispose() {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lonLatToUnit, type Vec3, worldToLonLat } from "./camera";
+import { globeCamPose, lonLatToUnit, MAX_PITCH, type Vec3, worldToLonLat } from "./camera";
 import { type CamState, desiredSectors, type LodConfig, predictedAhead } from "./lod";
 import { latLonToWorld, sectorAt, sectorRect } from "./sector";
 
@@ -145,6 +145,48 @@ describe("desiredSectors", () => {
     // The overshoot is EASTWARD: every ahead sector sits east of the in-view centre column.
     const subSec = sectorAt(latLonToWorld(0, 0, W, H).x, latLonToWorld(0, 0, W, H).y, 4, W, H);
     expect(ahead.some((s) => s.sx > subSec.sx)).toBe(true); // leads in the motion direction, not behind
+  });
+
+  it("R3 oblique window: centers on the LOOK ANCHOR under pitch, not the nadir sub-point behind the camera", () => {
+    // A pitched camera (50°) sits offset from the anchor it frames: its nadir
+    // sub-point lands ~2 sectors SOUTH of the anchor at this altitude. The window
+    // must follow what the camera LOOKS AT (lookDir), not where it sits (posUnit) —
+    // else the budget details open ground the user isn't looking at.
+    const subLon = 0;
+    const subLat = 0;
+    const alt = 1.0;
+    const pose = globeCamPose({ subLon, subLat, altitude: alt, heading: 0, pitch: MAX_PITCH });
+    const lookDir = lonLatToUnit(subLon, subLat);
+    const cam: CamState = {
+      posUnit: pose.position,
+      forward: [-lookDir[0], -lookDir[1], -lookDir[2]],
+      lookDir,
+      fovY: 0.7,
+      aspect: 1,
+      near: 0.1,
+      far: 100,
+    };
+    // The anchor's own sector at level 4 (span 16): lon0/lat0 → world centre → (8,8).
+    const anchorW = latLonToWorld(subLat, subLon, W, H);
+    const anchor = sectorAt(anchorW.x, anchorW.y, 4, W, H);
+    // Tight window (1) so the discriminator is sharp: lookDir-centred INCLUDES the
+    // anchor; nadir-centred (mutation) is ≥2 rows away and EXCLUDES it.
+    const withLook = desiredSectors(cam, 4, W, H, cfg(24, 1));
+    expect(withLook.some((s) => s.sx === anchor.sx && s.sy === anchor.sy)).toBe(true);
+    // Drop lookDir → centres on the nadir sub-point (south of the anchor) → the
+    // anchor's own sector falls outside the window-1 swath. This is the mutation.
+    const nadir = desiredSectors({ ...cam, lookDir: undefined }, 4, W, H, cfg(24, 1));
+    expect(nadir.some((s) => s.sx === anchor.sx && s.sy === anchor.sy)).toBe(false);
+  });
+
+  it("R3: a pitch-0 camera with lookDir == nadir is BYTE-IDENTICAL to no lookDir (stationary/overview unchanged)", () => {
+    const lon = 0.6;
+    const lat = -0.3;
+    const cam = camOver(lon, lat, 0.4); // pitch-0: posUnit is radially above the anchor
+    const lookDir = lonLatToUnit(lon, lat); // == the nadir direction at pitch 0
+    const withLook = desiredSectors({ ...cam, lookDir }, 3, W, H, cfg(24, 2));
+    const without = desiredSectors(cam, 3, W, H, cfg(24, 2));
+    expect(withLook.map((s) => `${s.sx}:${s.sy}`)).toEqual(without.map((s) => `${s.sx}:${s.sy}`));
   });
 
   it("POLAR CAP: rows centred beyond ±75° never stream (wedge-streak band)", () => {

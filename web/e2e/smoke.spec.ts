@@ -871,6 +871,163 @@ test("re-drilling the same point after a return lands at the same place", async 
   expect(crumb2).toMatch(/›L3 /);
 });
 
+// R3 TILT (CAM-1): Shift+left-drag tilts the camera toward the horizon. The pitch
+// climbs with the drag, CLAMPS at maxPitch (50° — the spike's envelope), the
+// during-motion pumps keep firing (tilt is camera motion), and the view STAYS 3D
+// (never falls through to the hidden 2D layer). The GPU camera can't be read from
+// the DOM, so globe.ts writes the live flight pitch to data-cam-pitch.
+const MAX_PITCH_RAD = (50 * Math.PI) / 180;
+test("globe tilts on Shift-drag: pitch climbs, clamps at maxPitch, pumps fire, stays 3D", async ({
+  page,
+}) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  // A fresh drill is nadir (pitch 0).
+  await expect.poll(async () => Number(await canvas.getAttribute("data-cam-pitch"))).toBe(0);
+
+  // A SMALL upward Shift-drag tilts a little (0 < pitch < max).
+  await page.keyboard.down("Shift");
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 40, { steps: 6 });
+  await page.mouse.up();
+  const pitch1 = Number(await canvas.getAttribute("data-cam-pitch"));
+  expect(pitch1).toBeGreaterThan(0);
+  expect(pitch1).toBeLessThan(MAX_PITCH_RAD);
+
+  // A LARGE upward Shift-drag (» the px needed for 50°) drives pitch to the clamp —
+  // monotonically up from pitch1, and never past maxPitch (the pose invariant).
+  const pumpsBefore = Number((await canvas.getAttribute("data-stream-pumps")) ?? "0");
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 350, { steps: 20 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  const pitch2 = Number(await canvas.getAttribute("data-cam-pitch"));
+  expect(pitch2).toBeGreaterThan(pitch1); // monotonic
+  expect(pitch2).toBeLessThanOrEqual(MAX_PITCH_RAD + 1e-3); // clamped, never past 50°
+  expect(pitch2).toBeGreaterThan(MAX_PITCH_RAD - 0.01); // actually REACHED the clamp
+
+  // The during-motion pump fired for the tilt (tilt is camera motion → markFlightChanged).
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-stream-pumps")) ?? "0"), {
+      timeout: 5_000,
+    })
+    .toBeGreaterThan(pumpsBefore);
+  // STILL 3D — never a fall-through to the hidden 2D sector.
+  await expect(canvas).toHaveAttribute("data-region", "1");
+  await expect(canvas).toBeVisible();
+  await expect(page.locator("#map-content")).toBeHidden();
+});
+
+// R3 NEAR (NEAR-1): the dynamic near plane tracks the camera's radial clearance,
+// so a deep wheel-zoom while tilted never clips the world to black (the measured
+// MIN_ALT defect). It drops below the legacy 0.1 at low altitude and is RESTORED to
+// 0.1 on the Globe-crumb return. data-cam-near reads the REAL camera.near.
+test("dynamic near drops below 0.1 at low altitude under tilt and restores on return", async ({
+  page,
+}) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+
+  // Tilt to the clamp, then wheel DOWN hard (toward MIN_ALT). The wheel re-clamps
+  // pitch to the new altitude every notch, so the pose never tunnels into terrain.
+  await page.keyboard.down("Shift");
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 350, { steps: 20 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  for (let i = 0; i < 12; i++) await page.mouse.wheel(0, -400); // zoom IN (negative deltaY) toward MIN_ALT
+  // Pitch stayed within the (constant-in-production) ceiling; never exceeded.
+  expect(Number(await canvas.getAttribute("data-cam-pitch"))).toBeLessThanOrEqual(
+    MAX_PITCH_RAD + 1e-3,
+  );
+  // Near dropped below the legacy 0.1 (and stayed positive — not black-clipped).
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-cam-near")), { timeout: 5_000 })
+    .toBeLessThan(0.1);
+  expect(Number(await canvas.getAttribute("data-cam-near"))).toBeGreaterThan(0);
+
+  // Globe-crumb return restores the overview near plane to 0.1 (exitRegion reset).
+  await page.locator("#breadcrumb").getByRole("button", { name: "Globe" }).click();
+  await expect(canvas).not.toHaveAttribute("data-region", "1");
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-cam-near")), { timeout: 5_000 })
+    .toBe(0.1);
+});
+
+// R3 PICK (PICK-2): a deeper drill under OBLIQUE pitch still works in 3D and nests
+// exactly one level — the patches-first raycast keeps the click landing on the
+// displaced terrain the user sees (the rigorous ≤0.1° vs ≥1.29° parallax
+// discriminator is the Vitest pick.test.ts; this is the end-to-end wiring + the
+// CLAIMS-166 ≤1° anchor sanity under pitch). pitch-0 precision is the separate
+// standing test above, untouched.
+test("a pitched deeper-drill stays in 3D, nests exactly one level, lands near the look anchor", async ({
+  page,
+}) => {
+  await page.goto("/?scale=globe&cells=2000&seed=8");
+  const canvas = page.locator("#globe-canvas");
+  await expect(page.locator("#status")).toContainText("Globe ready", { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-textured", "1", { timeout: 15_000 });
+  const box = (await canvas.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.click(cx, cy);
+  await expect(canvas).toHaveAttribute("data-region", "1", { timeout: 30_000 });
+  const crumbL3 = await page.locator("#breadcrumb").textContent();
+  expect(crumbL3).toMatch(/L3/);
+  // Let the displaced patches stream in (the click must raycast a real patch mesh).
+  await expect
+    .poll(async () => Number((await canvas.getAttribute("data-live-patches")) ?? "0"), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(0);
+  await expect
+    .poll(async () => Number(await canvas.getAttribute("data-pending-tiles")), { timeout: 30_000 })
+    .toBe(0);
+
+  // The camera looks at the anchor; tilt to ~50° (the camera keeps the anchor as its
+  // look target through the tilt), then a centre click drills DEEPER on that anchor.
+  const anchorLon = Number(await canvas.getAttribute("data-sub-lon"));
+  const anchorLat = Number(await canvas.getAttribute("data-sub-lat"));
+  await page.keyboard.down("Shift");
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.mouse.move(cx, cy - 350, { steps: 20 });
+  await page.mouse.up();
+  await page.keyboard.up("Shift");
+  expect(Number(await canvas.getAttribute("data-cam-pitch"))).toBeGreaterThan(MAX_PITCH_RAD - 0.01);
+
+  await page.mouse.click(cx, cy);
+  // Nested exactly ONE level (L3 → L4), still in 3D.
+  await expect(page.locator("#breadcrumb")).toContainText(/L4/, { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute("data-region", "1");
+  await expect(page.locator("#map-content")).toBeHidden();
+  // The deeper drill reset pitch to nadir (enterRegion) and landed at/near the look
+  // anchor — within ~1° (patches-first keeps the centre click on the terrain under
+  // the view axis; it did not fly off to the wrong place).
+  await expect.poll(async () => Number(await canvas.getAttribute("data-cam-pitch"))).toBe(0);
+  const dLon = Math.abs(Number(await canvas.getAttribute("data-sub-lon")) - anchorLon);
+  const dLat = Math.abs(Number(await canvas.getAttribute("data-sub-lat")) - anchorLat);
+  expect((dLon * 180) / Math.PI).toBeLessThan(2);
+  expect((dLat * 180) / Math.PI).toBeLessThan(2);
+});
+
 test("globe drills deeper in 3D — a patch click rebuilds a finer patch", async ({ page }) => {
   await page.goto("/?scale=globe&cells=2000&seed=8");
   const status = page.locator("#status");

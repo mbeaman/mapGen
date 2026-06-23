@@ -699,3 +699,16 @@ Feel-judged; revisit in the R4 quality pass with oblique screenshots.
 are RAW per-world values (never normalized — seam bit-identity + one fewer
 derived constant), so low-relief worlds displace proportionally less.
 Skirt depth 0.004; grid 129×65. Feel-judged at the R4 pass.
+
+## Tilt camera (relief R3, 2026-06-11)
+`PITCH_SPEED 0.005` rad/px (web/src/globe.ts): a ~175 px Shift/right-drag spans
+the full 0→50° envelope — fast enough to reach the limb in one gesture, slow
+enough to frame. `MAX_PITCH 50°` (web/src/camera.ts): the relief spike's MEASURED
+oblique envelope; 55° was an extrapolation and rejected (the set-edge/limb shading
+cliff, §9.4, dominates past it). Terrain-clearance constants (all derived, NOT
+feel-tuned): `R_TER 1.024` = patch base 1.001 + max raw elevation × VERT_EXAG;
+`CLEAR_MARGIN 0.005` → `R_SAFE 1.029` (the pitch clamp's binding margin at the
+steepest tilt); near `NEAR_FRAC 0.5`, `NEAR_MIN 0.002` (half the radial clearance,
+floored at depth precision, capped at the legacy 0.1). These are POSE INVARIANTS
+swept in camera.test.ts, not knobs to taste. Depth-precision banding at near 0.002
+/ far 100 under deep tilt is the R4 screenshot check.

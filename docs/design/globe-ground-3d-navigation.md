@@ -1802,9 +1802,29 @@ sequencing it later ships a contract regression the dead-centre e2e can't see).
   rewritten (depthTest) + risk-register; CLAIMS 166 mechanism text updated;
   tuning_log: VERT_EXAG, SKIRT_DEPTH.
 
-### R3 — Tilt camera + pitch-aware dynamic near + oblique LOD + the tilted precision contract — ~2 d
+### R3 — Tilt camera + pitch-aware dynamic near + oblique LOD + the tilted precision contract — SHIPPED 2026-06-11
 Pitch, near, and the oblique precision e2e ship TOGETHER (no intermediate ships a
 clip or a breach).
+
+> **SHIPPED 2026-06-11.** All four landed in one increment: tilt gesture
+> (Shift/right-drag, PITCH_SPEED 0.005, clamped to `maxPitch(alt)`, cap 50°) made a
+> POSE INVARIANT (`camRadius`/`maxPitch` swept in camera.test.ts; `camRadius ≥
+> R_SAFE` over the whole lattice); pitch-aware near COMPLETED (the R2 `nearFor`
+> already used the real radius, so R3 made the nadir-only false-green executable —
+> a `1+alt` formula breaches, the real-radius one never does); oblique LOD
+> (`CamState.lookDir` centres the window on the look anchor, horizon cull keeps
+> posUnit, `predictedAhead` drops lookDir); and **patches-first picking** — DEFERRED
+> from R2 (CLAIMS 188 recorded the deferral: the nadir parallax ≤~0.5° was inside
+> the ≤1° contract, so the smooth-base pick was acceptable until the tilt grew it).
+> CLAIMS rows CAM-1/NEAR-1/LOD-1/PICK-2 added. **Honest deviation from the plan
+> below:** the rigorous parallax discriminator is the Vitest `pick.test.ts`
+> (closed-form ground truth: 0.0001° displaced vs 1.29° base-sphere on the same
+> pitch-50° ray), NOT the e2e — a screen-CENTRE click rays along the view axis,
+> where the base-sphere answer is coincidentally near the anchor, so the e2e proves
+> WIRING + nesting + stays-3D + anchor sanity instead. The named R4 artifacts
+> (oblique/set-edge/near-plane screenshots) were not captured in-sandbox (no GPU;
+> SwiftShader e2e covers the data-* contracts) — they move to R4 with the rest of
+> the screenshot work. Render-only; no Rust/golden change. The plan of record:
 - **RED FIRST:** `camera.test.ts::maxPitch/nearFor` invariant sweep against
   constant-stub implementations → fails (incl. the PITCH-AWARE case: a nadir-only
   near formula must FAIL the sweep at pitch 50°/MIN_ALT — the false-green the

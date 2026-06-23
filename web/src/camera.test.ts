@@ -2,11 +2,16 @@ import { Mesh, PerspectiveCamera, Raycaster, SphereGeometry, Vector2, Vector3 } 
 import { describe, expect, it } from "vitest";
 import {
   type CamPose,
+  camRadius,
   type GlobeCamState,
   globeCamPose,
   lerpPose,
   lonLatToUnit,
+  MAX_PITCH,
+  maxPitch,
   panSubPoint,
+  R_SAFE,
+  R_TER,
   sectorPatchParams,
   unitToUv,
   worldToLonLat,
@@ -341,5 +346,57 @@ describe("nearFor (dynamic near plane)", () => {
       const r = 1 + alt;
       expect(nearFor(r)).toBeLessThanOrEqual(Math.max(0.002, r - 1.024));
     }
+  });
+
+  // R3 — the PITCH-AWARE near sweep. The R2 nearFor is fed the REAL camera radius
+  // (camRadius(alt,pitch)), which already encodes pitch — so it is correct at every
+  // allowed (alt,pitch). The red-team's "false-green" is a NADIR-ONLY formula that
+  // uses 1+alt (ignoring pitch): at oblique pitch the binding constraint is radial,
+  // and 1+alt over-reaches → terrain crosses the near plane. This makes that
+  // counterexample executable.
+  it("is pitch-aware: real-radius near < radial clearance over the whole lattice, while a nadir-only formula breaches", () => {
+    let nadirBreached = false;
+    for (const alt of [0.05, 0.1, 0.2, 0.5, 1.0, 2.5]) {
+      const mp = maxPitch(alt);
+      for (const pitch of [0, mp * 0.5, mp]) {
+        const r = camRadius(alt, pitch);
+        const clearance = r - R_TER; // ≥ CLEAR_MARGIN by the pitch clamp
+        expect(nearFor(r)).toBeLessThan(clearance); // never crosses, at any pose
+        if (nearFor(1 + alt) >= clearance) nadirBreached = true; // the false-green
+      }
+    }
+    expect(nadirBreached).toBe(true); // the nadir-only formula DOES over-reach somewhere
+  });
+});
+
+describe("camRadius + maxPitch (R3 terrain-clearance pose invariant)", () => {
+  it("camRadius equals the real globeCamPose camera radius at any pitch", () => {
+    for (const alt of [0.05, 0.2, 0.5, 1.0, 2.5]) {
+      for (const pitch of [0, 0.3, 0.6, MAX_PITCH]) {
+        const pose = globeCamPose({ subLon: 0.4, subLat: -0.2, altitude: alt, heading: 0, pitch });
+        near(camRadius(alt, pitch), length(pose.position), 1e-6);
+      }
+    }
+  });
+
+  it("the camera can never enter terrain: camRadius(alt, pitch) ≥ R_SAFE for every allowed pitch", () => {
+    for (const alt of [0.05, 0.1, 0.2, 0.5, 1.0, 2.5]) {
+      const mp = maxPitch(alt);
+      expect(mp).toBeGreaterThan(0);
+      expect(mp).toBeLessThanOrEqual(MAX_PITCH + 1e-12);
+      for (const pitch of [0, mp * 0.5, mp]) {
+        expect(camRadius(alt, pitch)).toBeGreaterThanOrEqual(R_SAFE - 1e-6);
+      }
+    }
+  });
+
+  it("MAX_PITCH binds across all production altitudes; the clearance geometry only binds below MIN_ALT", () => {
+    // At every production altitude (≥ MIN_ALT 0.05) the camera is far enough that
+    // even a 50° tilt clears the terrain ceiling, so the cap binds, not the geometry.
+    for (const alt of [0.05, 0.1, 0.5, 1.0, 2.5]) near(maxPitch(alt), MAX_PITCH, 1e-9);
+    // Below MIN_ALT the acos clearance branch binds first (< MAX_PITCH), and at that
+    // clamped pitch the camera sits EXACTLY on the safe radius (clearance == margin).
+    expect(maxPitch(0.03)).toBeLessThan(MAX_PITCH);
+    near(camRadius(0.03, maxPitch(0.03)), R_SAFE, 1e-4);
   });
 });

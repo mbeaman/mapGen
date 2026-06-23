@@ -6,23 +6,31 @@
 /// (continuous-LOD streaming addendum).
 ///
 /// SCOPE (ST-1): visible sectors at a FIXED level (the drilled level; the
-/// altitude→level snap is ST-2). The camera is pitch-0 (top-down) today, so an
-/// N×N window around the sub-point + horizon cull + clamp-to-K is correct and
-/// rigorously bounded — the frustum-corner footprint + frustum cull are the
-/// oblique-camera upgrade (deferred with pitch). Longitude WRAPS at the
-/// antimeridian (the periodic planet is a longitude-cylinder, so the window
-/// stitches across the seam — Phase 6); latitude stays CLAMPED at the poles.
+/// altitude→level snap is ST-2). The camera can now TILT (R3), so the window
+/// centers on the LOOK ANCHOR (lookDir) rather than the nadir sub-point, while the
+/// horizon cull keeps posUnit (geometric truth). The full frustum-corner footprint
+/// selector stays a registered follow-up; residual limb coarseness at max pitch is
+/// a named, screenshot-measured gap. Longitude WRAPS at the antimeridian (the
+/// periodic planet is a longitude-cylinder, so the window stitches across the
+/// seam — Phase 6); latitude stays CLAMPED at the poles.
 
 import { lonLatToUnit, unitToLonLat, type Vec3, worldToLonLat } from "./camera";
 import { latLonToWorld, type Sector, sectorAt, sectorRect } from "./sector";
 
-/// Camera state for the selector, in the unit-sphere frame (pivot identity). ST-1
-/// reads ONLY `posUnit` (the sub-point + horizon + radial ranking). `forward`,
-/// `vpMatrix`, and the `fov*` fields are carried for the oblique frustum-cull
-/// upgrade (deferred with pitch) — not consumed yet.
+/// Camera state for the selector, in the unit-sphere frame (pivot identity). The
+/// window CENTERS on `lookDir` when present (the look anchor under an oblique
+/// camera), else on `posUnit` (the nadir sub-point); the horizon cull ALWAYS uses
+/// `posUnit` (geometric truth). `forward`, `vpMatrix`, and the `fov*` fields are
+/// carried for the full frustum-cull upgrade (a registered follow-up) — not
+/// consumed yet.
 export interface CamState {
   posUnit: Vec3;
   forward: Vec3;
+  /// Unit direction the camera LOOKS at (the flight sub-point). R3: an oblique
+  /// (pitched) camera's nadir sits ~26° behind its look anchor, so centering the
+  /// window on `posUnit` wastes the budget behind the camera. Absent (overview /
+  /// pitch-0 nadir) ⇒ the window centers on `posUnit`, byte-identical to before.
+  lookDir?: Vec3;
   vpMatrix?: number[];
   fovY: number;
   aspect: number;
@@ -94,8 +102,16 @@ export function desiredSectors(
   const posLen = length(cam.posUnit) || 1;
   // The camera (radius 1+altitude) is above its sub-point; subDir = posUnit/|posUnit|.
   const camDir: Vec3 = [cam.posUnit[0] / posLen, cam.posUnit[1] / posLen, cam.posUnit[2] / posLen];
-  const horizon = 1 / posLen; // dot(centerDir, camDir) ≥ this ⇒ above the tangent horizon
-  const { lat, lon } = unitToLonLat(camDir);
+  const horizon = 1 / posLen; // dot(nearestDir, camDir) ≥ this ⇒ above the tangent horizon (posUnit truth)
+  // The window CENTERS on the look anchor (where the camera points) so an oblique
+  // camera details what it's looking at, not the nadir ground below it. Absent
+  // lookDir (overview / pitch-0) the center IS camDir → byte-identical to before.
+  let centerDir = camDir;
+  if (cam.lookDir) {
+    const ll = length(cam.lookDir) || 1;
+    centerDir = [cam.lookDir[0] / ll, cam.lookDir[1] / ll, cam.lookDir[2] / ll];
+  }
+  const { lat, lon } = unitToLonLat(centerDir);
   const sub = latLonToWorld(lat, lon, worldW, worldH);
   const subSec = sectorAt(sub.x, sub.y, level, worldW, worldH);
 
@@ -166,7 +182,14 @@ export function predictedAhead(
   // backward vector to a valid radius turns a self-culling overshoot (measured: 0
   // sectors) into a confident ANTIPODAL camera (measured: 16 garbage prefetches).
   const have = new Set(inView.map((s) => `${s.level}:${s.sx}:${s.sy}`));
-  return desiredSectors({ ...cam, posUnit: predicted }, level, worldW, worldH, cfg).filter(
-    (s) => !have.has(`${s.level}:${s.sx}:${s.sy}`),
-  );
+  // Prefetch centers on the EXTRAPOLATED posUnit and DROPS lookDir (R3): the ring
+  // leads the camera's motion, an idle-priority guess — using a stale look anchor
+  // would aim the ring where the camera WAS pointing, not where it's heading.
+  return desiredSectors(
+    { ...cam, posUnit: predicted, lookDir: undefined },
+    level,
+    worldW,
+    worldH,
+    cfg,
+  ).filter((s) => !have.has(`${s.level}:${s.sx}:${s.sy}`));
 }
