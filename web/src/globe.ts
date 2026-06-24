@@ -45,7 +45,7 @@ import {
 } from "./camera";
 import type { CamState } from "./lod";
 import { maxPitch, nearFor } from "./camera";
-import type { DisplacedPatch } from "./relief";
+import { PATCH_BASE_RADIUS, type DisplacedPatch } from "./relief";
 import { patchKey } from "./patchcache";
 import type { Sector } from "./sector";
 
@@ -269,6 +269,13 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   const patches = new Map<string, PatchEntry>();
   let patchTexCount = 0;
 let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-max) // cumulative texture uploads (data-patch-textures)
+  // The LIVE terrain-clearance ceiling for the pitch clamp + dynamic near: the
+  // tallest displaced vertex radius streamed in THIS drill (PATCH_BASE_RADIUS +
+  // the running max displacement). Raw elevation is NOT bounded to ≤1.0 (erosion +
+  // fill_depressions push peaks past it, measured ~1.05), so the hardcoded R_TER
+  // nominal can understate the real ceiling — this tracks the actual geometry and
+  // auto-follows any VERT_EXAG retune. Starts at PATCH_BASE_RADIUS (no relief yet).
+  const terrainCeiling = () => PATCH_BASE_RADIUS + reliefMaxSeen;
   let refineCount = 0; // cumulative patch loads (data-refines) — streaming activity
   const PATCH_STYLE = "globe"; // the globe always renders the fontless `globe` style
   const writeLive = () => {
@@ -483,7 +490,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     // hysteresis before updateProjectionMatrix so a tilt/zoom doesn't churn the
     // projection matrix every frame; snap to a clamp boundary (0.002 / 0.1) so the
     // endpoints are always reached exactly.
-    const near = nearFor(camera.position.length());
+    const near = nearFor(camera.position.length(), terrainCeiling());
     const atBound = near === 0.002 || near === 0.1;
     if (Math.abs(near - camera.near) > camera.near * 0.05 || (atBound && near !== camera.near)) {
       camera.near = near;
@@ -531,16 +538,31 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     if (flight && (e.button === 2 || (e.button === 0 && e.shiftKey))) {
       pitchLast = { x: e.clientX, y: e.clientY };
       down = null;
+      // Capture the pointer so pointerup/move fire on THIS canvas even if the
+      // drag leaves it — otherwise a release off-canvas never clears pitchLast and
+      // the camera keeps tilting on bare hover (mouse has no implicit capture).
+      canvas.setPointerCapture?.(e.pointerId);
       return;
     }
     if (e.button !== 0) return; // only the left button pans / drills
     down = { x: e.clientX, y: e.clientY };
-    if (flight) dragLast = { x: e.clientX, y: e.clientY }; // start a flight pan
+    if (flight) {
+      dragLast = { x: e.clientX, y: e.clientY }; // start a flight pan
+      canvas.setPointerCapture?.(e.pointerId); // (same off-canvas-release fix as the tilt)
+    }
   });
   // Right-drag (and Shift+left) tilt the camera; suppress the context menu so the
   // gesture isn't interrupted. preventDefault here only — the global menu elsewhere.
   canvas.addEventListener("contextmenu", (e) => {
     if (flight) e.preventDefault();
+  });
+  // A pointercancel (OS gesture takeover, capture loss) never reaches pointerup —
+  // clear all gesture latches so the next bare move doesn't pan/tilt from a stale
+  // origin. (pointer capture auto-releases on cancel/up, so no manual release.)
+  canvas.addEventListener("pointercancel", () => {
+    dragLast = null;
+    pitchLast = null;
+    down = null;
   });
   // Flight-mode pan/tilt: drag the surface under the camera, or tilt toward the
   // horizon (OrbitControls is disabled while drilled, so it ignores these — no
@@ -548,17 +570,25 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
   // camera can never tunnel into the displaced terrain.
   canvas.addEventListener("pointermove", (e) => {
     if (flight && pitchLast) {
+      if (e.buttons === 0) {
+        pitchLast = null; // a release we never saw (off-canvas / interrupted) — stop tilting
+        return;
+      }
       const dy = e.clientY - pitchLast.y;
       pitchLast = { x: e.clientX, y: e.clientY };
       // Drag UP (dy < 0) tilts toward the horizon (pitch grows). Clamp to the
       // altitude-dependent ceiling maxPitch(alt) — a POSE INVARIANT (camera.test.ts).
       const next = flight.pitch - dy * PITCH_SPEED;
-      flight.pitch = Math.max(0, Math.min(maxPitch(flight.altitude), next));
+      flight.pitch = Math.max(0, Math.min(maxPitch(flight.altitude, terrainCeiling()), next));
       writeFlightData();
       markFlightChanged(); // tilt is camera motion: pump/settle treat it like pan/zoom
       return;
     }
     if (!flight || !dragLast) return;
+    if (e.buttons === 0) {
+      dragLast = null; // a release we never saw (off-canvas / interrupted) — stop panning
+      return;
+    }
     const dx = e.clientX - dragLast.x;
     const dy = e.clientY - dragLast.y;
     dragLast = { x: e.clientX, y: e.clientY };
@@ -579,7 +609,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       flight.altitude = Math.max(MIN_ALT, Math.min(MAX_ALT, flight.altitude * Math.exp(e.deltaY * ZOOM_RATE)));
       // R3 re-clamp: zooming DOWN while tilted shrinks the clearance ceiling, so a
       // previously-valid pitch could tunnel into terrain — re-clamp to the new altitude.
-      flight.pitch = Math.min(flight.pitch, maxPitch(flight.altitude));
+      flight.pitch = Math.min(flight.pitch, maxPitch(flight.altitude, terrainCeiling()));
       writeFlightData();
       markFlightChanged(); // re-stream when this zoom settles
     },
@@ -752,6 +782,18 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       if (displaced.reliefMax > reliefMaxSeen) {
         reliefMaxSeen = displaced.reliefMax;
         canvas.dataset.reliefMax = reliefMaxSeen.toFixed(5);
+        // A taller patch just raised the terrain ceiling — re-clamp the live pitch
+        // so terrain that streamed in AFTER the user tilted can't end up above the
+        // camera (the wheel re-clamp only fires on zoom; this covers tall relief
+        // arriving mid-tilt). maxPitch is 50° across production altitudes, so this
+        // is a defensive no-op there, but it keeps the pose invariant exact.
+        if (flight) {
+          const clamped = Math.min(flight.pitch, maxPitch(flight.altitude, terrainCeiling()));
+          if (clamped !== flight.pitch) {
+            flight.pitch = clamped;
+            writeFlightData();
+          }
+        }
       }
       patches.set(key, { mesh, sector, texBytes: gpuBytes, lastSeen: performance.now() });
       canvas.dataset.patch = String(sector.level);

@@ -712,3 +712,17 @@ steepest tilt); near `NEAR_FRAC 0.5`, `NEAR_MIN 0.002` (half the radial clearanc
 floored at depth precision, capped at the legacy 0.1). These are POSE INVARIANTS
 swept in camera.test.ts, not knobs to taste. Depth-precision banding at near 0.002
 / far 100 under deep tilt is the R4 screenshot check.
+
+**R3 review fix (2026-06-11): `R_TER` is the NOMINAL fallback, not the live ceiling.**
+Raw elevation is NOT bounded to ≤1.0 — `erosion::run` (`elev += delta`) and
+`fill_depressions` (`elev = spill + EPS`) run AFTER the Terrain-stage `clamp(-1,1)`
+with no upper bound, so peaks reach ~1.05 (measured: 5/48 seeds exceed 1.0, max
+1.0507 on planet seed-6). The hardcoded `R_TER 1.024` (which assumes max elev 1.0)
+therefore understates the real terrain ceiling and partially eats CLEAR_MARGIN. The
+pitch clamp + dynamic near now take a `rTer` argument; globe.ts passes the LIVE
+ceiling `PATCH_BASE_RADIUS + reliefMaxSeen` (the tallest displaced vertex actually
+streamed this drill), so the safety tracks real geometry and auto-follows a
+VERT_EXAG retune. `R_TER` survives only as the pure-function default + the
+overview/no-relief case, pinned against VERT_EXAG so a retune trips a unit test.
+If you ever clamp elevation to ≤1.0 after erosion/fill in the Rust pipeline, the
+nominal premise becomes true again and the live ceiling collapses back onto R_TER.

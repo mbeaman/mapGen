@@ -18,6 +18,7 @@ import {
   nearFor,
 } from "./camera";
 import { latLonToWorld, patchUvToWorld, ROOT, sectorRect, uvToWorld } from "./sector";
+import { PATCH_BASE_RADIUS, VERT_EXAG } from "./relief";
 
 const W = 2048;
 const H = 1280;
@@ -388,6 +389,38 @@ describe("camRadius + maxPitch (R3 terrain-clearance pose invariant)", () => {
         expect(camRadius(alt, pitch)).toBeGreaterThanOrEqual(R_SAFE - 1e-6);
       }
     }
+  });
+
+  // R3 REVIEW FIX: raw elevation is NOT bounded to ≤1.0 — erosion + fill_depressions
+  // push peaks past it (measured ~1.05 on planet seed-6), so the hardcoded R_TER
+  // nominal can UNDERSTATE the real terrain ceiling. maxPitch/nearFor take a live
+  // `rTer` (globe.ts passes PATCH_BASE_RADIUS + reliefMaxSeen) so the clamp + near
+  // track the actual built displacement, not a constant.
+  it("R_TER nominal stays in sync with the shared VERT_EXAG (a retune trips THIS test, not just a screenshot)", () => {
+    near(R_TER, PATCH_BASE_RADIUS + 1.0 * VERT_EXAG, 1e-9);
+  });
+
+  it("a taller live ceiling (terrain > 1.0) tightens maxPitch and shrinks nearFor below the nominal", () => {
+    const tall = PATCH_BASE_RADIUS + 1.05 * VERT_EXAG; // ≈ 1.02515, above R_TER 1.024
+    expect(tall).toBeGreaterThan(R_TER);
+    // Low altitudes where the 0.5·clearance term is active (above ~0.25 both
+    // saturate at the 0.1 cap, so "shrinks" only bites where the policy isn't capped).
+    for (const alt of [0.05, 0.1, 0.15]) {
+      const r = camRadius(alt, 0);
+      expect(nearFor(r, tall)).toBeLessThan(nearFor(r, R_TER)); // shrinks
+      expect(nearFor(r, tall)).toBeLessThan(r - tall); // still strictly clears the taller terrain
+    }
+    for (const alt of [0.03, 0.05, 0.2]) {
+      expect(maxPitch(alt, tall)).toBeLessThanOrEqual(maxPitch(alt, R_TER) + 1e-12); // never looser
+    }
+  });
+
+  it("the live ceiling keeps the camera + near clear of the MEASURED worst-case terrain at MIN_ALT + max tilt", () => {
+    const ceiling = PATCH_BASE_RADIUS + 1.0507 * VERT_EXAG; // planet seed-6 peak
+    const alt = 0.05;
+    const r = camRadius(alt, maxPitch(alt, ceiling));
+    expect(r).toBeGreaterThan(ceiling); // camera stays ABOVE the terrain ceiling
+    expect(nearFor(r, ceiling)).toBeLessThan(r - ceiling); // near never clips it
   });
 
   it("MAX_PITCH binds across all production altitudes; the clearance geometry only binds below MIN_ALT", () => {

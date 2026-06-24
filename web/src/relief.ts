@@ -21,8 +21,16 @@ export const GH = 65;
 
 /** Radial exaggeration: peak land (raw elevation ~0.86 on seed-42) displaces
  * ~2% of the sphere radius — the spike's screenshot-verified value. Heights
- * are per-world relative (RAW, not normalized); see tuning_log.md. */
+ * are per-world relative (RAW, not normalized) and are NOT bounded to ≤1.0 —
+ * erosion + fill_depressions (Rust) can push a peak past 1.0 (measured max
+ * ~1.05). The camera-clearance ceiling must therefore track the ACTUAL built
+ * displacement (globe.ts reliefMaxSeen), not a constant; see tuning_log.md. */
 export const VERT_EXAG = 0.023;
+
+/** The displaced patch's sea-level shell radius (flush with the legacy 1.001
+ * globe). Single source of truth: the camera-clearance ceiling in globe.ts is
+ * `PATCH_BASE_RADIUS + reliefMaxSeen`, and `displacedPatchArrays` builds from it. */
+export const PATCH_BASE_RADIUS = 1.001;
 
 /** Skirt drop below the patch base — closes the patch-to-base gap at the
  * streamed-set edge / polar cap into a short textured wall. */
@@ -65,7 +73,7 @@ export function displacedPatchArrays(
   gw: number,
   gh: number,
   vertExag: number = VERT_EXAG,
-  baseRadius = 1.001,
+  baseRadius = PATCH_BASE_RADIUS,
   skirtDepth = SKIRT_DEPTH,
 ): DisplacedPatch {
   if (heights.length !== gw * gh) throw new Error("heights len != gw*gh");
