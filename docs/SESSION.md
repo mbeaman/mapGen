@@ -12,9 +12,9 @@ process.
 
 | Field | Value |
 |---|---|
-| Branch | `claude/fantasy-map-generator-1du5B` |
-| Latest commit | **The Sundered Lanes (inter-continental) + 3D globe + cartographic-generalisation arcs all shipped** (2026-06-07). Run `git log -1` for the head; see BACKLOG "Up next" for the full state + next tasks (the remaining generalisation increments: scale-rank selection, per-level stylesheet). |
-| Tree | clean |
+| Branch | `claude/resume-pngmai` |
+| Latest commit | **Relief R3 shipped + reviewed + cleaned** (2026-06-11): the oblique-camera increment (tilt camera, pitch-aware near, oblique LOD, patches-first picking), then a high-effort code review drove two fixes (live terrain-clearance ceiling — raw elevation isn't bounded ≤1.0; gesture-leak guard) + a cleanup. Commits `b906ad8`→`f38691e`→`c30e9c6`. Render-only, no Rust/golden change. NEXT: relief R4 quality pass — see BACKLOG "Up next". |
+| Tree | clean (all pushed) |
 | Tests | green across the board: `just check` (fmt + clippy -D + workspace tests + wasm release), web `tsc`/`vitest`/`check:bundle`/Playwright e2e (incl. 3D globe — run with `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` on a too-new distro), and `wasm-pack test --node` (native↔wasm goldens incl. the laned seed-9 `far_shore` pin). |
 | Schema | **v22** — `Event::far_shore` (landmass place tag; `skip_serializing_if`-elided). Earlier: v17 `world.continents`/`oceans`, v18 `sea_lanes`, v20 `faith_changes`, v21 `Nation::prosperity`. The 3D-globe + generalisation work is render-only (planet SVG never hashed) → no further schema/golden moves. |
 | Architecture | LOCKED 2026-05-17 (§5.5 + Phase 2.5 require explicit user approval + trigger). §2/§4 amended 2026-05-24 (six-loop Phase-4 scope). Inter-continental arc per `docs/inter_continental_design.md`; multi-scale render LOD per `docs/adr/0001-multiscale-navigation.md`. |
@@ -64,11 +64,17 @@ git log -8 --oneline
 
 ## Currently in flight
 
-**Nothing mid-flight (clean tree, all pushed).** Since the Phase-7 era this file
-otherwise describes, three arcs shipped on top: **The Sundered Lanes** (inter-
-continental society/history + Phase-3 surfacing), the **3D globe** view, and
-**cartographic generalisation** (river + coastline simplification). The clean
-high-value work is done.
+**Nothing mid-flight (clean tree, all pushed on `claude/resume-pngmai`).** The active
+arc is **relief displacement** on the 3D globe (design: the Relief addendum in
+`docs/design/globe-ground-3d-navigation.md`). R1 (seam-banded grids + worker
+hillshade), R2 (displaced geometry + dynamic-near altitude half + pick deferred), and
+**R3 (tilt camera + pitch-aware near + oblique LOD + patches-first picking)** are all
+shipped; R3 was code-reviewed and got a live terrain-clearance-ceiling fix (raw
+elevation isn't bounded ≤1.0) + a gesture-leak guard + cleanup. **NEXT: relief R4**
+(quality/close-out pass) — see `docs/BACKLOG.md` "Up next" for the full R4 checklist
+and the 3 deferred review nits. Earlier arcs (Sundered Lanes, 3D globe base,
+cartographic generalisation, periodic seamless globe, off-thread rasterizer +
+continuous-follow) are all shipped.
 
 **Next tasks** (see `docs/BACKLOG.md` "## Up next — resume here" for the actionable
 detail): the two remaining generalisation increments — **scale-rank feature

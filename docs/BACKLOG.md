@@ -21,12 +21,25 @@ guess at value-per-day. Re-prioritize freely.
 
 ---
 
-## Up next — resume here (2026-06-09)
+## Up next — resume here (2026-06-11)
 
-**🌍 SEAMLESS GLOBE SHIPPED (periodic world gen, all phases 0–6 — `f426c31`/`4f2e46a`).** The planet is a
-longitude-cylinder with no antimeridian seam, base + drilled (screenshot-confirmed). The carrier seed
-taxonomy was re-derived (`CROSSING=[11,19,26,30]`, `SUNDERED=[23,10]`, `COLONIZE=[18,27,32]`). NOT pushed.
-Next candidates: 1f framing/entry-ease, ST-5 OffscreenCanvas spike — see the "NEXT candidates" line below.
+**⛰️ RELIEF R3 SHIPPED + REVIEWED + CLEANED (branch `claude/resume-pngmai`, pushed).** The oblique-camera
+increment of the relief arc: tilt camera (Shift/right-drag, clamped to maxPitch — a swept POSE INVARIANT),
+pitch-aware dynamic near, oblique LOD (lookDir window-centering), and patches-first picking (deferred from
+R2). A high-effort code review then drove two fixes + a cleanup, all pushed:
+- **Live terrain-clearance ceiling** (`f38691e`): a verifier found raw elevation is NOT bounded ≤1.0 —
+  erosion + fill_depressions push peaks to ~1.05 (5/48 seeds), so the hardcoded R_TER=1.024 understated the
+  real ceiling. maxPitch/nearFor now take a live `rTer = PATCH_BASE_RADIUS + reliefMaxSeen`; R_TER survives
+  as the pinned nominal fallback (a VERT_EXAG retune now trips a unit test).
+- **Gesture-leak guard** (`f38691e`): pointer capture + pointercancel + an `e.buttons===0` guard so a
+  tilt/pan released off-canvas can't keep moving the camera on bare hover.
+- **Cleanup** (`c30e9c6`): shared `norm`, single `resetOverviewNear()` helper (also fixed stale
+  data-cam-near on hide).
+
+Commits on this branch: R3 `b906ad8` → review fixes `f38691e` → cleanup `c30e9c6`. 97 web unit + tsc +
+bundle-guard + 27 e2e green; render-only, no Rust/golden change. **NEXT: R4 quality pass** (see the relief
+line below) + 3 review nits deferred to R4 (per-pump lookDir recompute, atBound hysteresis, tilt-as-motion
+prefetch). Older: 1f/ST-5 and the periodic-globe work below are all DONE.
 
 
 Picking this branch up on a fresh clone / new machine? Start here. Branch
@@ -296,7 +309,7 @@ follow gated behind a 1-day OffscreenCanvas spike). Build order: foundation **1a
 - **NEXT candidates:** the **"storied globe" surfacing arc** (the vision-gap audit's top finding: 28
   event kinds + characters/dynasties/arcs/mythic ages are generated but ~none experienceable in the
   app; the just-recovered 3-strand chronicle is CLI-only) — surface events/chronicles/settlements in
-  the primary globe view; **relief displacement — IN PROGRESS (user-elected full arc 2026-06-11; the evidence gate was lifted by choice). R1 SHIPPED:** seam-banded relief grids (the Increment-G seam assumption was spike-REFUTED — 0/65 edge nodes bit-identical from a tile's own pinned field; edges now sample the shared ROOT field at endpoint-pinned bitwise coords, antimeridian-canonicalized) + worker-baked deterministic hillshade (the visibility floor; flat sea a byte-no-op, alpha untouched) + a dedicated heights∥lambert golden with a wasm twin + the failStage=relief recovery contract. Design: the Relief addendum in `globe-ground-3d-navigation.md`. R2 SHIPPED: displaced patch geometry from the seam-banded grid (pure relief.ts, 6 unit contracts), depthTest:true, data-relief-max running witness, honest patchGpuBytes, AND the altitude half of the dynamic near pulled forward (measured black-screen at MIN_ALT — nearFor + e2e witness; screenshot-verified fixed). R3 SHIPPED: tilt camera (Shift/right-drag pitch, PITCH_SPEED 0.005, clamped to maxPitch(alt), cap 50° — the spike's envelope) made a POSE INVARIANT (camRadius ≥ R_SAFE swept off-GPU); pitch-aware dynamic near COMPLETED (the nadir-only false-green made executable — a `1+alt` formula breaches, the real-radius one never does); oblique LOD (CamState.lookDir centres the window on the look anchor, not the nadir ~26° behind it; horizon cull keeps posUnit; predictedAhead drops lookDir); and patches-first picking (deferred from R2) — `pick.test.ts` discriminator measures 0.0001° displaced vs 1.29° base-sphere on the same pitch-50° ray. data-cam-pitch/near witnesses; all 4 camera-reset sites covered. 94 web unit + tsc + bundle-guard + 27 e2e green; render-only, no Rust/golden change. NEXT: R4 quality pass (seam-shade residual + pure-root stencil contingency; oblique under-coverage at MAX_PITCH + frustum-footprint selector; depth banding at near 0.002; worker tile latency; texBytes→gpuBytes rename; polar-cap screenshot); **base-globe off-thread**
+  the primary globe view; **relief displacement — IN PROGRESS (user-elected full arc 2026-06-11; the evidence gate was lifted by choice). R1 SHIPPED:** seam-banded relief grids (the Increment-G seam assumption was spike-REFUTED — 0/65 edge nodes bit-identical from a tile's own pinned field; edges now sample the shared ROOT field at endpoint-pinned bitwise coords, antimeridian-canonicalized) + worker-baked deterministic hillshade (the visibility floor; flat sea a byte-no-op, alpha untouched) + a dedicated heights∥lambert golden with a wasm twin + the failStage=relief recovery contract. Design: the Relief addendum in `globe-ground-3d-navigation.md`. R2 SHIPPED: displaced patch geometry from the seam-banded grid (pure relief.ts, 6 unit contracts), depthTest:true, data-relief-max running witness, honest patchGpuBytes, AND the altitude half of the dynamic near pulled forward (measured black-screen at MIN_ALT — nearFor + e2e witness; screenshot-verified fixed). R3 SHIPPED: tilt camera (Shift/right-drag pitch, PITCH_SPEED 0.005, clamped to maxPitch(alt), cap 50° — the spike's envelope) made a POSE INVARIANT (camRadius ≥ R_SAFE swept off-GPU); pitch-aware dynamic near COMPLETED (the nadir-only false-green made executable — a `1+alt` formula breaches, the real-radius one never does); oblique LOD (CamState.lookDir centres the window on the look anchor, not the nadir ~26° behind it; horizon cull keeps posUnit; predictedAhead drops lookDir); and patches-first picking (deferred from R2) — `pick.test.ts` discriminator measures 0.0001° displaced vs 1.29° base-sphere on the same pitch-50° ray. data-cam-pitch/near witnesses; all 4 camera-reset sites covered. **R3 REVIEW (high-effort, 8 angles + verifier; `f38691e`/`c30e9c6`):** the verifier empirically caught that raw elevation is NOT bounded ≤1.0 (erosion + fill_depressions push peaks to ~1.05, 5/48 seeds) — so the hardcoded R_TER understated the real ceiling; FIXED by deriving the live ceiling `PATCH_BASE_RADIUS + reliefMaxSeen` (R_TER kept as a VERT_EXAG-pinned nominal). Also FIXED a gesture-leak (pointer capture + pointercancel + e.buttons guard). Cleanup: shared `norm`, single `resetOverviewNear()` (also fixed stale data-cam-near on hide). 97 web unit + tsc + bundle-guard + 27 e2e green; render-only, no Rust/golden change. NEXT: R4 quality pass (seam-shade residual + pure-root stencil contingency; oblique under-coverage at MAX_PITCH + frustum-footprint selector; depth banding at near 0.002; worker tile latency; texBytes→gpuBytes rename; polar-cap screenshot) + 3 deferred review nits (per-pump lookDir recompute, atBound hysteresis, tilt-as-motion prefetch); **base-globe off-thread**
   (the deferred rasterizer follow-up — needs a year-aware `render_rgba_at_year`).
 
 **Fresh-machine setup.** `just web-setup` (Node + wasm-pack + npm deps + first wasm
