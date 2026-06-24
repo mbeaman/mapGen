@@ -14,7 +14,7 @@
 /// periodic planet is a longitude-cylinder, so the window stitches across the
 /// seam — Phase 6); latitude stays CLAMPED at the poles.
 
-import { lonLatToUnit, unitToLonLat, type Vec3, worldToLonLat } from "./camera";
+import { lonLatToUnit, norm, unitToLonLat, type Vec3, worldToLonLat } from "./camera";
 import { latLonToWorld, type Sector, sectorAt, sectorRect } from "./sector";
 
 /// Camera state for the selector, in the unit-sphere frame (pivot identity). The
@@ -106,11 +106,7 @@ export function desiredSectors(
   // The window CENTERS on the look anchor (where the camera points) so an oblique
   // camera details what it's looking at, not the nadir ground below it. Absent
   // lookDir (overview / pitch-0) the center IS camDir → byte-identical to before.
-  let centerDir = camDir;
-  if (cam.lookDir) {
-    const ll = length(cam.lookDir) || 1;
-    centerDir = [cam.lookDir[0] / ll, cam.lookDir[1] / ll, cam.lookDir[2] / ll];
-  }
+  const centerDir = cam.lookDir ? norm(cam.lookDir) : camDir;
   const { lat, lon } = unitToLonLat(centerDir);
   const sub = latLonToWorld(lat, lon, worldW, worldH);
   const subSec = sectorAt(sub.x, sub.y, level, worldW, worldH);

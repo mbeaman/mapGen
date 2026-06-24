@@ -47,6 +47,7 @@ const norm = (a: Vec3): Vec3 => {
   const l = Math.hypot(a[0], a[1], a[2]) || 1;
   return [a[0] / l, a[1] / l, a[2] / l];
 };
+export { norm };
 
 /// Unit vector on the sphere for a geographic (lon, lat). North pole → +Y;
 /// (lon 0, lat 0) → +X. Matches the three.js `SphereGeometry` uv parameterization

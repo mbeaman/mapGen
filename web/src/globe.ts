@@ -215,7 +215,8 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   renderer.setClearColor(0x15110c, 1); // dark sepia backdrop — the sphere pops
 
   const scene = new Scene();
-  const camera = new PerspectiveCamera(42, 1, 0.1, 100);
+  const OVERVIEW_NEAR = 0.1; // resting near plane off the globe (also nearFor's cap)
+  const camera = new PerspectiveCamera(42, 1, OVERVIEW_NEAR, 100);
   // Pulled back enough that the unit sphere reads as a ball with breathing room
   // around it (at this distance + fov the sphere spans ~60% of the view height).
   camera.position.set(0, 0, 3.6);
@@ -396,6 +397,16 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
     canvas.dataset.subLat = flight.subLat.toFixed(4);
     canvas.dataset.altitude = flight.altitude.toFixed(4);
     canvas.dataset.camPitch = flight.pitch.toFixed(4); // R3 tilt witness (e2e)
+  };
+  // Restore the overview near plane (flight may have shrunk it under tilt / low
+  // altitude) and clear the tilt witness. Written directly so the return is
+  // observably restored even when the raf tick is stopped (hide) or its hysteresis
+  // would skip the write (the value already matches). Shared by hide + exitRegion.
+  const resetOverviewNear = () => {
+    camera.near = OVERVIEW_NEAR;
+    camera.updateProjectionMatrix();
+    canvas.dataset.camNear = OVERVIEW_NEAR.toFixed(4);
+    delete canvas.dataset.camPitch;
   };
 
   // Cinematic fly-to: on a click, animate the camera so the clicked point swings to
@@ -688,10 +699,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       flyTo = null; // cancel any in-flight fly so a re-show doesn't resume it
       entryEase = null; // and any in-flight entry glide
       controls.enabled = true;
-      // R3: reset the tilt-dynamic near to the overview default (the raf loop is
-      // stopped on hide, so the tick can't restore it on re-show).
-      camera.near = 0.1;
-      camera.updateProjectionMatrix();
+      resetOverviewNear(); // raf is stopped on hide, so the tick can't restore it on re-show
       disposePatches(); // free all patch GPU resources when leaving the globe
       hideLabel();
     },
@@ -847,14 +855,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       camera.position.set(0, 0, 3.6);
       controls.target.set(0, 0, 0);
       lastLook.set(0, 0, 0); // the overview looks at the origin again
-      // R3: restore the overview near plane (flight may have shrunk it under tilt /
-      // low altitude) and clear the tilt witness — write data-cam-near directly so
-      // the Globe-crumb return is observably restored (the tick's hysteresis would
-      // otherwise skip the write when the value already matches).
-      camera.near = 0.1;
-      camera.updateProjectionMatrix();
-      canvas.dataset.camNear = (0.1).toFixed(4);
-      delete canvas.dataset.camPitch;
+      resetOverviewNear(); // restore the near plane + clear the tilt witness (Globe-crumb return)
       controls.update();
     },
     dispose() {
