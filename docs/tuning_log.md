@@ -693,6 +693,17 @@ sea byte-identical). `ambient` must stay ≥ 0.5 — the flat-field ≡ 1.0 exac
 contract (`relief.rs::flat_field_shading_is_a_byte_noop`) relies on Sterbenz.
 Feel-judged; revisit in the R4 quality pass with oblique screenshots.
 
+**R4 seam-shade fix (2026-06-11):** the R4 hunt MEASURED the seam-shade residual
+(SEAM-2) at **0.177** max |Δlambert| across a shared tile edge — a visible
+bright/dark line at every sector seam (≫ the 0.005 tolerance and the u8 step
+0.0039). Cause: the one-sided cross-edge lambert gradient measures the slope on
+each tile's OWN side, and the two sides differ. Fix: `lambert_grid` ZEROES the
+cross-edge gradient at tile boundaries, so edge shading uses only the along-edge
+slope (bit-identical across tiles per SEAM-1) → residual 0.0 (bit-identical).
+Cost: a one-node band loses cross-edge relief shading (named; far better than the
+line). Re-anchored `seed42_relief_grid.blake3.txt` (+ wasm twin); the contingency
+the design §9.3 anticipated, now measurement-gated ON and built.
+
 ## VERT_EXAG (relief R2, 2026-06-11)
 `0.023` (web/src/relief.ts): peak raw land elevation ~0.86 (seed-42 stats) →
 ~2% of sphere radius — the spike's screenshot-verified displacement. Heights

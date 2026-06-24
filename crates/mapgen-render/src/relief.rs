@@ -64,19 +64,27 @@ pub fn lambert_grid(heights: &[f32], gw: u32, gh: u32, p: &ShadeParams) -> Vec<f
     let mut out = Vec::with_capacity((gw * gh) as usize);
     for j in 0..gh as i64 {
         for i in 0..gw as i64 {
-            // Central difference, degrading to one-sided at the edges via the
-            // clamp (the step then spans 1 node instead of 2 — fold the 0.5).
-            let (gx, gy);
-            if i == 0 || i == gw as i64 - 1 {
-                gx = at(i + 1, j) - at(i - 1, j);
+            // SEAM-2 (R4): central difference INSIDE; the CROSS-edge gradient is
+            // ZEROED at a tile boundary. A one-sided cross-edge difference would
+            // measure the slope on THIS tile's side only — the neighbour measures
+            // the opposite side, so the two disagree by up to ~0.18 lambert and
+            // draw a bright/dark line at every sector seam (measured 0.177 ≫ the
+            // 0.005 tolerance, the un-fixed one-sided form). Zeroing makes edge
+            // shading depend only on the ALONG-edge slope, which is bit-identical
+            // across tiles (the edge heights are — SEAM-1) ⇒ bit-identical edge
+            // lambert, no seam line. Cost: a one-node band loses its cross-edge
+            // relief shading (named, far better than the discontinuity); the
+            // along-edge slope and ALL interior shading are untouched.
+            let gx = if i == 0 || i == gw as i64 - 1 {
+                0.0
             } else {
-                gx = (at(i + 1, j) - at(i - 1, j)) * 0.5;
-            }
-            if j == 0 || j == gh as i64 - 1 {
-                gy = at(i, j + 1) - at(i, j - 1);
+                (at(i + 1, j) - at(i - 1, j)) * 0.5
+            };
+            let gy = if j == 0 || j == gh as i64 - 1 {
+                0.0
             } else {
-                gy = (at(i, j + 1) - at(i, j - 1)) * 0.5;
-            }
+                (at(i, j + 1) - at(i, j - 1)) * 0.5
+            };
             let nx = -s * gx;
             let ny = -s * gy;
             let ndotl = nx * lx + ny * ly + lz; // nz = 1

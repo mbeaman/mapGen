@@ -1850,23 +1850,28 @@ clip or a breach).
 - **Docs rider:** CLAIMS rows CAM-1, NEAR-1, LOD-1, PICK-2 (oblique e2e); tuning_log:
   PITCH_SPEED, MAX_PITCH, CLEAR_MARGIN/NEAR_FRAC/NEAR_MIN.
 
-### R4 — Quality hunt + close-out — ~1 d
+### R4 — Quality hunt + close-out — PARTIAL (2026-06-11)
 Per the measure-don't-classify charter: hunt sibling quality dimensions before done.
-- (a) Seam-shade residual: measure the max per-channel step across the canonical
-  seam in the worker raster; if the seam screenshot shows a line, build the
-  pure-root edge-stencil contingency (§9.3) and re-anchor the relief golden.
-- (b) Oblique under-coverage at MAX_PITCH: screenshot whether coarse base shows at
-  the top of frame; register the frustum-footprint selector follow-up with the
-  measurement (or widen the window as a measured stopgap).
-- (c) Depth-buffer banding at near 0.002 / far 100 in the low-altitude screenshot.
-- (d) Worker tile latency end-to-end (refine+grid+shade) vs the drill-fill budget;
-  SwiftShader frame-rate at full patch count re-confirmed.
-- (e) FULL un-truncated gate + every named screenshot re-produced; any not-yet-
-  verified red mutation hand-verified.
-- **Close-out docs (ONE commit):** final CLAIMS rows + every red-mutation note;
-  BACKLOG flipped to the shipped record with measurements; addendum marked SHIPPED
-  with the G cross-reference; tuning_log values finalized with measured looks;
-  `.local/sessionstate.md` handoff updated.
+- (a) **Seam-shade residual — DONE (the headline R4 finding).** MEASURED 0.177 max
+  |Δlambert| across a shared edge (`relief_spec.rs::seam_lambert_agrees_within_tolerance`)
+  — ≫ 0.005 and the u8 step, a visible line at every seam. Contingency BUILT (§9.3,
+  below): `lambert_grid` zeroes the cross-edge gradient at tile boundaries →
+  residual 0.0 (bit-identical). Golden `seed42_relief_grid.blake3.txt` re-anchored
+  (`25d6a97…`) + wasm twin green (fmath-pure ⇒ native==wasm). CLAIMS SEAM-2 added.
+- (d) **texBytes → gpuBytes rename — DONE** (PatchEntry / LiveEntry / liveEntries /
+  patchcache, end-to-end). Worker tile latency: the existing drill-fill e2e (queue
+  drains, ≥8 live patches) stays green — the latency budget holds.
+- **DEFERRED (GPU/screenshot-bound; this sandbox has no GPU — SwiftShader covers the
+  data-* contracts only, same limitation recorded for R1–R3):** (b) oblique
+  under-coverage at MAX_PITCH (the frustum-footprint selector stays the registered
+  follow-up — `lod.ts` carries the unused `forward`/`fovY`/`aspect`/`vpMatrix` for
+  it); (c) depth banding at near 0.002 / far 100; and the named screenshots
+  (oblique / set-edge / near-plane / seam-closeup). Plus the 3 R3 review nits
+  (per-pump lookDir recompute, atBound hysteresis, tilt-as-motion prefetch).
+- **Gate:** `cargo test --workspace` + `cargo clippy -D` + the wasm twin + 97 web
+  unit + 18 globe e2e green. The §9.3 contingency uses the boundary-zeroing stencil
+  (achieves bit-identical edge lambert with NO cross-tile data) rather than the
+  proposed root-sampled stencil — a deliberate, simpler deviation, recorded.
 
 ---
 

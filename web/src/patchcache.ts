@@ -31,11 +31,11 @@ export function patchKey(sec: Sector, style: string): string {
 }
 
 /// A live cache entry, as the three.js `PatchCache` tracks it (plain state so the
-/// policy is pure). `lastSeen` drives LRU; `texBytes` the memory cap.
+/// policy is pure). `lastSeen` drives LRU; `gpuBytes` the memory cap.
 export interface LiveEntry {
   key: string;
   lastSeen: number;
-  texBytes: number;
+  gpuBytes: number;
 }
 
 export interface CacheConfig {
@@ -67,7 +67,7 @@ export function reconcile(
 
   const inView = live.filter((e) => desiredKeys.has(e.key)); // never evicted
   const outOfView = live.filter((e) => !desiredKeys.has(e.key));
-  const inViewBytes = inView.reduce((s, e) => s + e.texBytes, 0);
+  const inViewBytes = inView.reduce((s, e) => s + e.gpuBytes, 0);
 
   // Truncate toLoad to the room left after the never-evicted in-view set, under
   // BOTH caps (so the eventual live set is provably bounded even if the selector
@@ -87,9 +87,9 @@ export function reconcile(
   const toEvict: string[] = [];
   const mru = [...outOfView].sort((a, b) => b.lastSeen - a.lastSeen);
   for (const e of mru) {
-    if (count < cfg.maxPatches && bytes + e.texBytes <= cfg.maxBytes) {
+    if (count < cfg.maxPatches && bytes + e.gpuBytes <= cfg.maxBytes) {
       count++;
-      bytes += e.texBytes;
+      bytes += e.gpuBytes;
     } else {
       toEvict.push(e.key);
     }

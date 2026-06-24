@@ -3,7 +3,7 @@ import { type CacheConfig, type LiveEntry, patchKey, reconcile } from "./patchca
 import type { Sector } from "./sector";
 
 const sec = (sx: number, sy: number, level = 3): Sector => ({ level, sx, sy });
-const live = (key: string, lastSeen: number, texBytes = 1): LiveEntry => ({ key, lastSeen, texBytes });
+const live = (key: string, lastSeen: number, gpuBytes = 1): LiveEntry => ({ key, lastSeen, gpuBytes });
 const cfg = (maxPatches: number, maxBytes = 96_000_000, estBytes = 1): CacheConfig => ({
   maxPatches,
   maxBytes,

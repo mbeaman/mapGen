@@ -79,7 +79,45 @@ fn adjacent_tiles_share_a_bit_identical_relief_edge() {
     assert!(a.iter().any(|h| *h > 0.0), "relief grid is all-sea/flat");
 }
 
-/// Dedicated relief golden: blake3 over `heights.le_bytes ∥ lambert.le_bytes`
+/// SEAM-2 (Relief addendum §9.3, R4 quality hunt): adjacent tiles' SHADE agrees
+/// within a MEASURED tolerance. Heights are bit-identical at the shared edge
+/// (SEAM-1), but the lambert gradient at an edge node pulls one stencil arm from
+/// each tile's OWN first-inland node (different meshes), so edge lambert agrees
+/// only approximately. Contract: max |Δlambert| along the canonical shared edge
+/// < 0.005 (under the u8 quantization step 1/255 ≈ 0.0039) — the named seam
+/// SCREENSHOT is the severity judge, and the pure-root edge-stencil contingency
+/// (§9.3) is gated on THIS measurement, not built speculatively.
+///
+/// The un-fixed one-sided cross-edge gradient measured **0.177** here (≫ both
+/// 0.005 AND the u8 step — a visible bright/dark line at every seam), so the
+/// contingency was BUILT: `lambert_grid` zeroes the cross-edge gradient at tile
+/// boundaries (mapgen-render relief.rs), making edge lambert depend only on the
+/// bit-identical along-edge slope. AFTER: max |Δlambert| == 0.0 (bit-identical).
+#[test]
+fn seam_lambert_agrees_within_tolerance() {
+    let world = generate_full(GenerateParams::planet(42));
+    let lambert = |sec: Sector| -> Vec<f32> {
+        let tile = refine_sector(&world, sec, RefineParams::default());
+        let h = mapgen_world::relief::relief_grid(&world, &tile, sec, 129, 65).expect("relief grid");
+        mapgen_render::relief::lambert_grid(&h, 129, 65, &Default::default())
+    };
+    // (1,3)'s east edge (column 128) vs (2,3)'s west edge (column 0) — the SAME
+    // canonical shared edge SEAM-1 proves bit-identical in HEIGHT.
+    let a = lambert(sector(3, 1, 3));
+    let b = lambert(sector(3, 2, 3));
+    let mut max_d = 0.0f32;
+    for j in 0..65u32 {
+        let la = a[(j * 129 + 128) as usize];
+        let lb = b[(j * 129) as usize];
+        max_d = max_d.max((la - lb).abs());
+    }
+    eprintln!("SEAM-2 measured max |Δlambert| = {max_d}");
+    assert!(
+        max_d < 0.005,
+        "seam shade residual {max_d} exceeds tolerance 0.005 — build the pure-root edge stencil (§9.3)"
+    );
+}
+
 /// for the canonical call — seed-42 continental parent → L2 (1,1) (the SAME
 /// sector the `seed42_sector` cross-platform golden pins), default refine,
 /// gw=129 gh=65, `ShadeParams::default()`. The relief grid + shade factors are

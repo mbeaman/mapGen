@@ -80,7 +80,7 @@ export interface GlobeHandle {
   /** Evict ONE patch (by `patchKey`) and free its GPU resources (ST-1). */
   evictPatch(key: string): void;
   /** The live patch cache state for the pure `reconcile` policy (ST-1). */
-  liveEntries(): { key: string; lastSeen: number; texBytes: number }[];
+  liveEntries(): { key: string; lastSeen: number; gpuBytes: number }[];
   /** Mark these patch keys as just-seen (in-view) so LRU eviction spares them (ST-1). */
   markSeen(keys: string[]): void;
   /** The camera state the LOD selector consumes (ST-1) — packs the camera in the
@@ -264,7 +264,7 @@ export function mountGlobe(canvas: HTMLCanvasElement): GlobeHandle {
   interface PatchEntry {
     mesh: Mesh;
     sector: Sector;
-    texBytes: number;
+    gpuBytes: number;
     lastSeen: number;
   }
   const patches = new Map<string, PatchEntry>();
@@ -803,7 +803,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
           }
         }
       }
-      patches.set(key, { mesh, sector, texBytes: gpuBytes, lastSeen: performance.now() });
+      patches.set(key, { mesh, sector, gpuBytes, lastSeen: performance.now() });
       canvas.dataset.patch = String(sector.level);
       canvas.dataset.patchTextures = String((patchTexCount += 1));
       canvas.dataset.refines = String((refineCount += 1));
@@ -820,7 +820,7 @@ let reliefMaxSeen = 0; // running per-drill displacement witness (data-relief-ma
       return Array.from(patches.values()).map((e) => ({
         key: patchKey(e.sector, PATCH_STYLE),
         lastSeen: e.lastSeen,
-        texBytes: e.texBytes,
+        gpuBytes: e.gpuBytes,
       }));
     },
     markSeen(keys: string[]) {
